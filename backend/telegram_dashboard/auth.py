@@ -9,6 +9,13 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 CROSS_SITE = {"cross-site", "same-site"}  # Sec-Fetch-Site of a request another page made
 COOKIE_AGE = 400 * 86400  # browsers cap cookie lifetime at 400 days
+# The page shows other people's text: no plugins, no <base> hijack, never framed, forms post nowhere.
+# ponytail: no script-src — the static export boots with inline scripts; a nonce/hash CSP needs build support
+PAGE_GUARD = (
+    (b"content-security-policy", b"object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"),
+    (b"x-content-type-options", b"nosniff"),
+    (b"referrer-policy", b"same-origin"),  # a link out never carries the page's URL
+)
 
 
 def _json(status: int, code: str, headers: dict | None = None) -> JSONResponse:
@@ -76,7 +83,7 @@ class LocalGuardMiddleware:
                 message = {**message, "headers": [*hdrs, (b"cache-control", b"public, max-age=31536000, immutable")]}
             elif message["type"] == "http.response.start" and not scope["path"].startswith("/_next/"):
                 # The page shell is not content-hashed: revalidate so a rebuilt UI shows up on reload.
-                message = {**message, "headers": [*message["headers"], (b"cache-control", b"no-cache")]}
+                message = {**message, "headers": [*message["headers"], (b"cache-control", b"no-cache"), *PAGE_GUARD]}
             await send(message)
 
         await self.app(scope, receive, send_wrapper)

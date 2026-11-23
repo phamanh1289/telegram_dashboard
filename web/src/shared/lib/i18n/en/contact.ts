@@ -65,4 +65,5 @@ export default {
   "Hỏi thẳng điều cần biết, kèm màn đang mở và điều bạn đã thử.": "Ask what you need to know, with the screen you're on and what you've tried.",
   "Câu hỏi ngắn, vd: Briefing tự chạy lúc mấy giờ?": "A short question, e.g. When does Briefing run by itself?",
   "Bạn muốn biết điều gì, đang ở màn nào, đã thử gì…": "What you want to know, which screen you're on, what you've tried…",
+  "Thả ảnh vào đây": "Drop images here",
 } satisfies Dict;

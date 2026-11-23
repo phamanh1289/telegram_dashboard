@@ -264,3 +264,19 @@ async def test_a_name_taken_by_another_attachment_gets_the_savers_name(tmp_path)
     async with c:  # only the file being replaced has that name: kept as is
         await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
     assert b'filename="uiflow-VA-1.html"' in yt2.upload
+
+
+async def test_flow_image_cannot_run_script_on_the_app_origin(tmp_path, monkeypatch):
+    """A Zeplin "image" served as image/svg+xml from 127.0.0.1 would run its script with the app's cookie when
+    opened in a tab (Markdown "Mở ảnh ở tab mới"): same guard headers as /attachment."""
+    from telegram_dashboard import zeplin
+
+    async def image(_u):
+        return b"<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>", "image/svg+xml"
+
+    monkeypatch.setattr(zeplin, "image", image)
+    c, _ = flow_app(FakeYt([]), tmp_path)
+    async with c:
+        r = await c.get("/api/yt/flow/image", params={"u": "https://img.zeplin.io/a.svg"})
+    assert r.status_code == 200
+    assert r.headers["content-security-policy"] == "sandbox" and r.headers["x-content-type-options"] == "nosniff"

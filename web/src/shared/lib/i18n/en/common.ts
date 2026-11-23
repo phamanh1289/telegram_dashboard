@@ -69,6 +69,9 @@ export default {
   "Thư mục này không phải bản git có nhánh theo dõi trên GitHub.": "This folder is not a git checkout tracking a GitHub branch.",
   "Có file đã sửa trong thư mục app; cập nhật tay bằng git.": "Files in the app folder were modified; update manually with git.",
   "Đang có task AI Agent chạy; đợi xong rồi cập nhật.": "An AI Agent task is running; wait for it to finish, then update.",
+  "Đang có task AI Agent chạy; đợi xong rồi khởi động lại.": "An AI Agent task is running; wait for it to finish, then restart.",
+  "Bản mới đã cài, khởi động lại server để dùng.": "The new version is installed; restart the server to use it.",
+  "Không có bản mới chờ khởi động lại.": "No installed version is waiting for a restart.",
   "Đã đẩy nhánh; máy chưa có gh nên chưa mở PR.": "Branch pushed; gh is not installed, so no PR was opened.",
   // Settings › Chung › Ngôn ngữ
   "Ngôn ngữ": "Language",

@@ -144,6 +144,7 @@ export default {
   // errors (lib/docs)
   "Thư mục không còn tồn tại.": "The folder no longer exists.",
   "Không chọn được cả ổ đĩa: hãy chọn một thư mục bên trong.": "A whole drive can't be added: pick a folder inside it.",
+  "Không chọn được thư mục của chính app hay dữ liệu của nó (chứa token).": "The app's own folder or its data (which holds tokens) can't be added.",
   "Mã project không hợp lệ.": "Invalid project code.",
   "Đường dẫn thư mục không hợp lệ.": "Invalid folder path.",
   "Tài liệu không còn trong kho: bấm đồng bộ lại.": "The document is no longer in the library: sync again.",

@@ -1,6 +1,8 @@
 import json
+import os
 import sys
 
+from telegram_dashboard import provider_cmds
 from telegram_dashboard.config import Settings
 from telegram_dashboard.provider_cmds import task_cmd
 from telegram_dashboard.providers import items, split_session
@@ -92,9 +94,9 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     # an indexed project: its codegraph MCP, one read-only tool, no shell, telemetry off
     i = task_cmd(s, "claude", "plan", "sid", False, "", "", index=True)
     server = json.loads(i[i.index("--mcp-config") + 1])["mcpServers"]["codegraph"]
-    assert server["args"][-3:] == ["codegraph", "serve", "--mcp"] and server["env"] == {"DO_NOT_TRACK": "1"}
-    # pinned to the project (projectPath); -P: a json.py the AI planted in the project (its cwd) never loads
-    assert server["args"][:3] == ["-P", "-m", "telegram_dashboard.mcp_pin"]
+    assert server["args"][-3:] == ["codegraph", "serve", "--mcp"] and server["env"]["DO_NOT_TRACK"] == "1"
+    # pinned to the project (projectPath); by path under -I: a json.py planted in the project (its cwd) never loads
+    assert [server["command"], *server["args"][:2]] == provider_cmds.PIN and server["args"][0] == "-I"
     assert i[i.index("--allowedTools") + 1] == "Read,Grep,Glob,Skill,mcp__codegraph__codegraph_explore"
     assert "--strict-mcp-config" in i and i[i.index("--tools") + 1] == "Read,Grep,Glob,Skill"
     # the user's own MCP servers: only an edit turn they ticked it for, only OWN_MCP ones; Bash stays sandboxed
@@ -132,8 +134,8 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     from telegram_dashboard.provider_cmds import RUN_DIR
 
     zep = json.loads(z[z.index("--mcp-config") + 1])["mcpServers"]["zeplin"]
-    away = ["-P", "-m", "telegram_dashboard.mcp_pin", "--cwd", str(RUN_DIR / "mcp"), "npx"]
-    assert zep["command"] == sys.executable and zep["args"][:6] == away and zep["args"][6:] == zs["args"]
+    away = [*provider_cmds.PIN[1:], "--cwd", str(RUN_DIR / "mcp"), "npx"]
+    assert zep["command"] == sys.executable and zep["args"][:5] == away and zep["args"][5:] == zs["args"]
     # Codex: read-only zeplin tools approved ahead, token from the env; with MCP on, the user's config
     c = task_cmd(s, "codex", "plan", "codex:", False, "", "", zeplin=zs)
     assert "--ignore-user-config" in c and 'mcp_servers.zeplin.env_vars=["ZEPLIN_ACCESS_TOKEN"]' in c
@@ -364,3 +366,37 @@ def test_no_ai_run_reads_the_users_other_credentials(tmp_path, monkeypatch):
     assert f'"{tmp_path / ".claude.json"}"="none"' in fs and f'"{tmp_path / ".docker"}"="none"' in fs
     agy = " ".join(task_cmd(s, "antigravity", "plan", "", False, "", ""))
     assert f"read_file({tmp_path / '.npmrc'})" in agy
+
+
+def test_mcp_pin_starts_from_a_project_on_an_install_and_loads_nothing_from_it(tmp_path):
+    """An install has no telegram_dashboard on sys.path (found from its app/ dir only): `-m` from the project failed
+    there. PIN runs mcp_pin by path (no package import); a json.py planted in the project (its cwd) never loads."""
+    import subprocess
+
+    from telegram_dashboard import provider_cmds
+
+    (tmp_path / "json.py").write_text("raise SystemExit(7)")
+    r = subprocess.run([*provider_cmds.PIN, sys.executable, "-c", "pass"], cwd=tmp_path, stdin=subprocess.DEVNULL,
+                       capture_output=True, env={"PATH": os.environ.get("PATH", "")}, timeout=30)  # fmt: skip
+    assert r.returncode == 0, r.stderr
+
+
+def test_codegraph_runs_no_program_a_planted_nested_repo_names(tmp_path):
+    """codegraph (outside the sandbox, cwd = the project) runs git in nested repos: a `sub/.git` file pointing at a
+    config an edit turn wrote must not run its core.fsmonitor / hooks. The control run shows the plant works."""
+    import shutil
+    import subprocess
+
+    git = shutil.which("git")
+    sub, gitdir, mark = tmp_path / "sub", tmp_path / "x", tmp_path / "ran"
+    subprocess.run([git, "init", "-q", f"--separate-git-dir={gitdir}", str(sub)], check=True)
+    (sub / "a.txt").write_text("a")
+    hook = tmp_path / "hook.sh"
+    hook.write_text(f"#!/bin/sh\ntouch {mark}\n")
+    hook.chmod(0o755)
+    subprocess.run([git, "-C", str(sub), "config", "core.fsmonitor", str(hook)], check=True)
+    base = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path)}
+    subprocess.run([git, "-C", str(sub), "status"], env={**base, **provider_cmds.CODEGRAPH["env"]}, capture_output=True)
+    assert not mark.exists()
+    subprocess.run([git, "-C", str(sub), "status"], env=base, capture_output=True)
+    assert mark.exists()  # the plant is real

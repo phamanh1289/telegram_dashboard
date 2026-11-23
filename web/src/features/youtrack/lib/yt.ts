@@ -248,8 +248,9 @@ export const DAY = 864e5;
 export const fmt = (n: number) => fmtNum(n);
 export const when = (ts: number | null | undefined) => (ts ? fmtDate(ts, { dateStyle: "short", timeStyle: "short" }) : "—");
 export const hue = (s: string) => 200 + [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7) % 100; // blue→violet only, never reads as ok / warn / bad
-export const shortName = (n: string) => n.trim().split(/\s+/).slice(-2).join(" ");
-export const initials = (n: string) => { const w = n.trim().split(/\s+/); return ((w.length > 1 ? w[w.length - 2][0] : "") + w[w.length - 1][0]).toUpperCase(); };
+/** "Phạm Tuấn Anh" → "Anh Phạm" (tên + họ). */
+export const shortName = (n: string) => { const w = n.trim().split(/\s+/); return w.length > 1 ? `${w[w.length - 1]} ${w[0]}` : w[0]; };
+export const initials = (n: string) => shortName(n).split(" ").map((w) => w[0]).join("").toUpperCase();
 export const shortSp = (s: string) => s.replace(/^Tuần\s*(\d+)\s*-\s*T(\d+)$/i, "T$1-T$2");
 export const issueUrl = (base: string, id: string) => `${base}/issue/${id}`;
 

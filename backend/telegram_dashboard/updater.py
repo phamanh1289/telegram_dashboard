@@ -29,6 +29,7 @@ CHECK_EVERY = 3600  # seconds between background checks (badge; auto-update when
 restart_requested = False  # read by __main__._serve after uvicorn returns
 behind = 0  # last background/manual check, for the badge on the Settings button
 last_error = ""  # the last auto-update failure (shown in Settings), "" once a check/update succeeds
+pending = ""  # the version auto-update installed, running once the user restarts from the page ("" = none)
 _lock = asyncio.Lock()
 REPO = "phamanh1289/telegram_dashboard"
 RESTART_CODE = 75  # launcher loop: start versions/<current> again
@@ -259,6 +260,13 @@ async def apply(root: Path) -> dict:
         return {**info, "updated": True}
 
 
+async def _installed(root: Path) -> str:
+    """The version on disk (what a restart runs), as `check` names the running one."""
+    if h := home():
+        return "v" + (h / "current").read_text().strip()
+    return await _run(root, "git", "rev-parse", "--short", "HEAD")
+
+
 def restart(agent) -> None:
     """Graceful uvicorn shutdown (as Ctrl+C), then __main__ re-execs the server. Waits while an AI
     Agent task runs: one may have started while the update was building."""
@@ -277,17 +285,18 @@ def auto_enabled(settings) -> bool:
 
 async def auto_loop(settings, agent) -> None:
     """Check every CHECK_EVERY (feeds the badge). When auto-update is on in Settings and no AI Agent
-    task is running: pull, rebuild, restart; open pages reload when /api/update/state's version changes."""
-    global last_error
+    task is running: install, then wait for the user to restart from the page (`pending`, POST /restart)."""
+    global last_error, pending
     await asyncio.sleep(60)
     while True:
         try:
             await check(settings.root)
             if (behind and auto_enabled(settings) and not agent.busy
                     and (await apply(settings.root))["updated"]):
-                log.info("auto-update applied, restarting")
-                restart(agent)
-                return
+                pending = await _installed(settings.root)
+                log.info("auto-update installed %s, waiting for a restart", pending)
+                last_error = ""
+                return  # the running code is stale now: a check would offer the same update again
             last_error = ""
         except ApiError as e:
             log.warning("update check skipped: %s %s", e.code, e.detail)
@@ -303,7 +312,7 @@ def build_router(settings) -> APIRouter:
 
     @r.get("")
     async def get_update() -> dict:
-        return {**await check(settings.root), "auto": auto_enabled(settings), "error": last_error}
+        return {**await check(settings.root), "auto": auto_enabled(settings), "error": last_error, "pending": pending}
 
     @r.get("/state")
     async def get_state() -> dict:
@@ -314,7 +323,7 @@ def build_router(settings) -> APIRouter:
                 ver = await _run(settings.root, "git", "rev-parse", "--short", "HEAD")
             except ApiError:
                 ver = ""
-        return {"version": ver, "behind": behind, "error": last_error}
+        return {"version": ver, "behind": behind, "error": last_error, "pending": pending}
 
     @r.post("")
     async def post_update(request: Request) -> dict:
@@ -322,11 +331,24 @@ def build_router(settings) -> APIRouter:
         agent = request.app.state.agent
         if agent.busy:
             raise ApiError(409, "agent_running", detail="Đang có task AI Agent chạy; đợi xong rồi cập nhật.")
+        if pending:  # installed already (a release check still counts it as new): only the restart is left
+            raise ApiError(409, "restart_pending", detail="Bản mới đã cài, khởi động lại server để dùng.")
         res = await apply(settings.root)
         last_error = ""
         if res["updated"]:
             restart(agent)
         return res
+
+    @r.post("/restart")
+    async def post_restart(request: Request) -> dict:
+        """Run what auto-update installed: the page then waits for /health and reloads."""
+        agent = request.app.state.agent
+        if not pending:
+            raise ApiError(409, "nothing_pending", detail="Không có bản mới chờ khởi động lại.")
+        if agent.busy:
+            raise ApiError(409, "agent_running", detail="Đang có task AI Agent chạy; đợi xong rồi khởi động lại.")
+        restart(agent)
+        return {"restarting": True}
 
     @r.put("/auto", status_code=204)
     async def put_auto(body: dict) -> None:

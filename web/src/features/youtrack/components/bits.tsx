@@ -24,7 +24,7 @@ import { useYt } from "./state";
 export function Avatar({ name, className }: { name: string; className?: string }) {
   return (
     <b aria-hidden className={cn("inline-grid size-6 shrink-0 place-items-center rounded-full text-xs font-bold text-ink-2", className)}
-      style={{ background: `oklch(var(--av-l) var(--av-c) ${hue(name)})` }}>{initials(name)}</b>
+      style={{ background: `oklch(var(--av-l) var(--av-c) ${hue(name)})` }}><span className="[text-box:trim-both_cap_alphabetic]">{initials(name)}</span></b>
   );
 }
 
@@ -337,10 +337,11 @@ export function YtPicks({ heavy, className }: { heavy: boolean; className?: stri
 
 /** An AI run as a conversation, the AI Agent look: asks in bubbles, answers in result cards, the live turn thinking or
  *  writing. `ids={false}`: ticket IDs stay plain text (in the AI sheet, opening one would replace the answer).
- *  `stop={false}`: no stop button by the live turn (the page's prompt box has its own). */
+ *  `stop={false}`: no stop button by the live turn (the page's prompt box has its own).
+ *  `close={false}`: no ✕ on the answer (an AI session: ✕ wiped its thread; "Cuộc mới" starts over there). */
 /** `onDescribe`: the answer is a whole new description (a rewrite: it comes with `base`, the text it was made on): the
  *  caller opens its review and save. */
-export function AiBox({ ai, className, onClose, onUse, onDescribe, ids = true, stop = true }: { ai: ReturnType<typeof useAi>; className?: string; onClose?: () => void; onUse?: (text: string) => void; onDescribe?: (text: string, base: string) => void; ids?: boolean; stop?: boolean }) {
+export function AiBox({ ai, className, onClose, onUse, onDescribe, ids = true, stop = true, close: closable = true }: { ai: ReturnType<typeof useAi>; className?: string; onClose?: () => void; onUse?: (text: string) => void; onDescribe?: (text: string, base: string) => void; ids?: boolean; stop?: boolean; close?: boolean }) {
   const t = useT();
   const y = useYt();
   const s = ai.s;
@@ -349,7 +350,7 @@ export function AiBox({ ai, className, onClose, onUse, onDescribe, ids = true, s
   const close = () => { ai.cancel(); onClose?.(); };
   const turns = s.status === "done" ? ai.thread.slice(0, -1) : ai.thread; // done: the last turn is drawn below with its actions
   const lastQ = s.status === "done" ? ai.thread.at(-1)?.q : ai.q;
-  const closeBtn = <Button size="icon-xs" variant="ghost" aria-label={t("Đóng")} onClick={close}><X /></Button>;
+  const closeBtn = closable && <Button size="icon-xs" variant="ghost" aria-label={t("Đóng")} onClick={close}><X /></Button>;
   return (
     <div aria-live="polite" className={cn("grid grid-cols-[minmax(0,1fr)] gap-3", className)}>
       {turns.map((x, k) => (

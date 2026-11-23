@@ -148,11 +148,14 @@ async def _project(lib: Library, yt, project: str, errors: list, every: dict, ro
     await lib.drop_articles(f"{project}-A-", keep={a["idReadable"] for a in rows})  # deleted on YouTrack
 
 
-def _walk(folder: str, errors: list) -> tuple[list[tuple[Path, int, int]], set[str], bool]:
+def _walk(folder: str, errors: list, guarded=()) -> tuple[list[tuple[Path, int, int]], set[str], bool]:
     """(resolved path, mtime ms, size) of each supported file under `folder`, the refs of files it could not stat
     (their rows stay), and whether the walk was complete (a dir it could not list: nothing under it is dropped).
-    Symlinks are not followed out of the folder; dot dirs and node_modules are skipped."""
+    Symlinks are not followed out of the folder; dot dirs, node_modules and `guarded` (this app, its data: tokens)
+    are skipped."""
     root = Path(folder).resolve()
+    if any(root.is_relative_to(g) for g in guarded):  # saved before the guard: its docs go
+        return [], set(), True
     prefix, out, failed, complete = folder_prefix(folder), [], set(), [True]
 
     def onerror(e: OSError) -> None:
@@ -160,7 +163,8 @@ def _walk(folder: str, errors: list) -> tuple[list[tuple[Path, int, int]], set[s
         _err(errors, "file", e.filename or folder, "unreadable", type(e).__name__)
 
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False, onerror=onerror):
-        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS)
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS
+                             and (Path(dirpath) / d).resolve() not in guarded)  # fmt: skip
         for name in sorted(filenames):
             p = Path(dirpath) / name
             if p.suffix.lower() not in EXTS:
@@ -187,7 +191,7 @@ async def _folder(lib: Library, folder: str, errors: list) -> None:
     if not Path(folder).is_dir():  # renamed, unmounted: its docs stay until the user drops the folder
         _err(errors, "file", folder, "folder_missing")
         return
-    files, failed, complete = await asyncio.to_thread(_walk, folder, errors)
+    files, failed, complete = await asyncio.to_thread(_walk, folder, errors, lib.settings.guarded_dirs)
     have = {r["ref"]: r for r in await lib.db.read(lib.db.store.doc_list, source="file")}
     for path, mtime, size in files:
         _go(lib)

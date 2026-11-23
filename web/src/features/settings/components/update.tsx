@@ -8,14 +8,50 @@ import { AiFetching, UpdateHero } from "@/shared/components/ai/fetching";
 import { Markdown } from "@/shared/components/markdown";
 import { FoldMore } from "@/shared/components/ui/fold";
 import { Button } from "@/shared/components/ui/button";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/shared/components/ui/dialog";
+import { ConfirmDialog, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/shared/components/ui/dialog";
 import { Hint } from "@/shared/components/ui/hint";
-import { api, ApiError, errorText } from "@/shared/lib/api";
+import { api, ApiError, errorText, updateStateQuery } from "@/shared/lib/api";
 import { type Key, t as tPlain, tMaybe, useT } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
 import { cn } from "@/shared/lib/utils";
 
-type UpdateInfo = { branch: string; current: string; behind: number; dirty: boolean; auto: boolean; error?: string; updated?: boolean; commits: { sha: string; subject: string; when: string; notes?: string }[] };
+type UpdateInfo = { branch: string; current: string; behind: number; dirty: boolean; auto: boolean; error?: string; pending?: string; updated?: boolean; commits: { sha: string; subject: string; when: string; notes?: string }[] };
+
+/** Restart into what auto-update installed (`pending`), then reload once the server answers again. */
+function useRestartServer() {
+  const [lost, setLost] = useState(false);
+  const run = useMutation({
+    mutationFn: () => api("/update/restart", { method: "POST" }),
+    onSuccess: async () => { if (!(await waitRestart())) setLost(true); },
+  });
+  const t = useT();
+  return {
+    restart: () => { setLost(false); run.mutate(); },
+    busy: run.isPending || (run.isSuccess && !lost),
+    error: run.isError ? errorText(run.error, {}, t("Không khởi động lại được server, thử lại."))
+      : lost ? t("Server chưa chạy lại sau 1 phút: mở lại app (Start Dashboard) rồi tải lại trang.") : undefined,
+  };
+}
+
+let dismissed = ""; // the pending version whose prompt was closed: asked once per page load, then Settings › Cập nhật
+
+/** Shown on every page (TopBar) once auto-update installed a version: restart now, or later from Settings. */
+export function RestartPrompt() {
+  const pending = useQuery({ ...updateStateQuery, retry: false }).data?.pending ?? "";
+  const [closed, setClosed] = useState(dismissed);
+  return pending && pending !== closed ? <RestartDialog pending={pending} onClose={() => { dismissed = pending; setClosed(pending); }} /> : null;
+}
+
+function RestartDialog({ pending, onClose }: { pending: string; onClose: () => void }) {
+  const t = useT();
+  const r = useRestartServer();
+  return (
+    <ConfirmDialog open onOpenChange={(o) => { if (!o) onClose(); }} tone="default" icon={RotateCw}
+      title={t.n("Đã cập nhật lên {v}", { v: <span className="font-mono">{pending}</span> })}
+      description={t("Khởi động lại server để dùng bản mới; xong trang tự tải lại. Để sau thì vào Cài đặt › Cập nhật bấm \"Khởi động lại server\".")}
+      confirmLabel={r.busy ? t("Đang khởi động lại…") : t("Khởi động lại server")} busy={r.busy} error={r.error} onConfirm={r.restart} />
+  );
+}
 
 /** git fetch on open; "Cập nhật" pulls, rebuilds, restarts the server, then reloads this page. */
 export function UpdateSection() {
@@ -44,6 +80,8 @@ export function UpdateSection() {
     onError: (e) => toast({ text: errorText(e, {}, tPlain("Không đổi được tự cập nhật, thử lại")) }),
   });
   const d = info.data;
+  const pending = useQuery({ ...updateStateQuery, retry: false }).data?.pending || d?.pending || "";
+  const reboot = useRestartServer();
   // The updater's `detail` is fixed Vietnamese text from the server (English in en/common.ts): translated when known.
   const err = (e: unknown) => (e instanceof ApiError && ((e.detail && tMaybe(e.detail)) || t("Cập nhật lỗi ({code}).", { code: e.code }))) || t("Không kết nối được GitHub.");
   const busy = run.isPending || restarting;
@@ -52,8 +90,9 @@ export function UpdateSection() {
   return <>
     <div className="grid gap-2.5 py-3 first:pt-1">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <StatusLine tone={info.isFetching ? "idle" : !d ? "error" : d.behind ? "warn" : "ok"}>
-          {info.isFetching ? t("Đang kiểm tra…") : !d ? t("Chưa kiểm tra được") : d.behind ? t.n("Có {n} bản mới trên {branch}", { n: <b className="font-bold">{d.behind}</b>, branch: d.branch }) : <>{t("Đã mới nhất")} <span className="font-mono text-xs text-ink-3">{d.current} · {d.branch}</span></>}
+        <StatusLine tone={pending ? "warn" : info.isFetching ? "idle" : !d ? "error" : d.behind ? "warn" : "ok"}>
+          {pending ? t.n("Đã cài {v}: khởi động lại server để dùng", { v: <b className="font-mono font-bold">{pending}</b> })
+            : info.isFetching ? t("Đang kiểm tra…") : !d ? t("Chưa kiểm tra được") : d.behind ? t.n("Có {n} bản mới trên {branch}", { n: <b className="font-bold">{d.behind}</b>, branch: d.branch }) : <>{t("Đã mới nhất")} <span className="font-mono text-xs text-ink-3">{d.current} · {d.branch}</span></>}
         </StatusLine>
         <div className="flex gap-2">
           <Hint side="bottom" text={t("Kiểm tra lại bản mới trên GitHub")}>
@@ -61,9 +100,16 @@ export function UpdateSection() {
               <RotateCw className={cn(info.isFetching && "animate-spin")} />
             </Button>
           </Hint>
-          <Button size="sm" aria-busy={run.isPending || restarting} disabled={!d?.behind || d.dirty || busy} onClick={() => { run.reset(); setAsk(true); }}>
-            {restarting ? t("Đang khởi động lại…") : run.isPending ? t("Đang cập nhật…") : t("Cập nhật")}
-          </Button>
+          {pending ? (
+            <Button size="sm" aria-busy={reboot.busy} disabled={reboot.busy} onClick={reboot.restart}>
+              {reboot.busy ? <Loader2 className="animate-spin" aria-hidden /> : <RotateCw aria-hidden />}
+              {reboot.busy ? t("Đang khởi động lại…") : t("Khởi động lại server")}
+            </Button>
+          ) : (
+            <Button size="sm" aria-busy={run.isPending || restarting} disabled={!d?.behind || d.dirty || busy} onClick={() => { run.reset(); setAsk(true); }}>
+              {restarting ? t("Đang khởi động lại…") : run.isPending ? t("Đang cập nhật…") : t("Cập nhật")}
+            </Button>
+          )}
         </div>
       </div>
       {!!d?.commits.length && (
@@ -78,6 +124,7 @@ export function UpdateSection() {
       {d?.error && !run.isPending && <p role="alert" className="text-xs text-warn">{t("Lần tự cập nhật gần nhất lỗi:")} {tMaybe(d.error)}</p>}
       {d?.dirty && <p className="text-xs text-warn">{t("Thư mục app có file đã sửa tay: không tự cập nhật được, dùng git.")}</p>}
       {(info.isError || (run.isError && !ask)) && <p role="alert" className="text-xs text-error">{err(info.error ?? run.error)}</p>}
+      {pending && reboot.error && <p role="alert" className="text-xs text-error">{reboot.error}</p>}
       {restartFailed && <p role="alert" className="text-xs text-error">{t("Đã cập nhật nhưng server chưa chạy lại sau 1 phút: mở lại app (Start Dashboard) rồi tải lại trang.")}</p>}
     </div>
     {d && (
@@ -85,7 +132,7 @@ export function UpdateSection() {
         error={run.isError ? err(run.error) : undefined} onConfirm={() => run.mutate()} />
     )}
     {d && (
-      <Row label={t("Tự động cập nhật")} desc={t("Server kiểm tra mỗi giờ (tắt thì chỉ hiện chấm trên nút Cài đặt). Bật: có bản mới thì tự cập nhật, khởi động lại server và tải lại trang; bỏ qua khi đang có task AI Agent.")}>
+      <Row label={t("Tự động cập nhật")} desc={t("Server kiểm tra mỗi giờ (tắt thì chỉ hiện chấm trên nút Cài đặt). Bật: có bản mới thì tự tải và cài, rồi hỏi bạn khởi động lại server (xong trang tự tải lại); bỏ qua khi đang có task AI Agent.")}>
         <Switch label={t("Tự động cập nhật")} checked={auto.isPending ? !!auto.variables : d.auto} disabled={auto.isPending} onChange={(v) => auto.mutate(v)} />
       </Row>
     )}

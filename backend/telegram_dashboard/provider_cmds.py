@@ -12,6 +12,7 @@ from pathlib import Path
 from .claude import flags_for
 from .config import RUN_DIR
 from .errors import ApiError
+from .gitops import safe_env
 from .providers import (
     CODEX_EFFORTS,
     ZEPLIN,
@@ -82,9 +83,12 @@ ALLOW = {"plan": "Read,Grep,Glob,Skill", "edit": "Bash"}
 # (codegraph_explore: no shell, no writes, no network), so a read-only turn finds code without grepping around.
 # DO_NOT_TRACK: no telemetry or update check from a run whose prompt carries others' text.
 # Through mcp_pin: codegraph_explore takes any indexed repo's path (this app's too), the pin keeps it on the project.
-CODEGRAPH = {"type": "stdio", "command": sys.executable, "env": {"DO_NOT_TRACK": "1"},
-             # -P: cwd is the project, which an AI edit turn writes; a planted json.py must not load here, unsandboxed
-             "args": ["-P", "-m", "telegram_dashboard.mcp_pin", "codegraph", "serve", "--mcp"]}  # fmt: skip
+# mcp_pin runs by its path under -I: cwd is the project, which an AI edit turn writes, so nothing may load from it (a
+# planted json.py, unsandboxed); an install finds telegram_dashboard from its app/ dir only, so `-m` fails there.
+PIN = [sys.executable, "-I", str(Path(__file__).with_name("mcp_pin.py"))]
+# safe_env: it runs git in every repo under the project, a nested one an edit turn planted (fsmonitor, hooks) included
+CODEGRAPH = {"type": "stdio", "command": PIN[0], "env": {"DO_NOT_TRACK": "1", **safe_env()},
+             "args": [*PIN[1:], "codegraph", "serve", "--mcp"]}  # fmt: skip
 CODEGRAPH_TOOL = "mcp__codegraph__codegraph_explore"
 ZEPLIN_READ = ("get_screen", "get_component", "get_design_tokens")
 ZEPLIN_TOOLS = ",".join(f"mcp__zeplin__{t}" for t in ZEPLIN_READ)
@@ -162,10 +166,10 @@ def _by_ref(server: dict, name: str = "zeplin") -> dict:
 def _away(command: str, args) -> tuple[str, list[str]]:
     """A user's stdio server (npx …) starts outside the sandbox: from the project it would take the project's .npmrc /
     node_modules (an edit turn may have written them) as its registry or its code. mcp_pin starts it in this app's own
-    empty folder instead (-P: no module from the project dir either)."""
+    empty folder instead (PIN: no module from the project dir either)."""
     home = RUN_DIR / "mcp"
     home.mkdir(parents=True, exist_ok=True, mode=0o700)
-    return sys.executable, ["-P", "-m", "telegram_dashboard.mcp_pin", "--cwd", str(home), command, *(args or [])]
+    return PIN[0], [*PIN[1:], "--cwd", str(home), command, *(args or [])]
 
 
 # The user's MCP servers "Dùng MCP / plugin" loads, by name: they run outside the sandbox with the user's logins, so

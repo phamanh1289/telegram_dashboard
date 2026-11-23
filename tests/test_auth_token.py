@@ -39,3 +39,14 @@ def test_posting_the_token_sets_a_strict_http_only_cookie():
 
 def test_no_token_means_no_auth():
     assert _client(None).get("/api/status").json() == {"ok": True}
+
+
+def test_the_page_carries_a_csp_that_breaks_nothing_it_uses():
+    """Defence in depth for a page that shows other people's text: no plugins, no <base> hijack, never framed,
+    forms post nowhere. No script-src: the static export boots with inline scripts."""
+    page = _client(TOKEN).get("/").headers
+    assert page["x-content-type-options"] == "nosniff" and page["referrer-policy"] == "same-origin"
+    csp = page["content-security-policy"]
+    for d in ("object-src 'none'", "base-uri 'self'", "frame-ancestors 'none'", "form-action 'self'"):
+        assert d in csp
+    assert "content-security-policy" not in _client(TOKEN).get("/api/status").headers  # json, 401 here

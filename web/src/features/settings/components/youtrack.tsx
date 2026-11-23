@@ -11,6 +11,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { Textarea } from "@/shared/components/ui/textarea";
+import { CharCount } from "@/shared/components/ui/char-count";
 import { api, errorText } from "@/shared/lib/api";
 import { type Key, tMaybe, useT } from "@/shared/lib/i18n";
 import { onPrefs, readReportAt, readYtRole, type ReportAt, saveReportAt, YT_ROLES, type YtRole } from "@/shared/lib/prefs";
@@ -147,7 +148,7 @@ function NotesSection({ role }: { role: YtRole | null }) {
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" size="sm" disabled={draft === null || save.isPending}>{t("Lưu")}</Button>
         {draft !== null && <Button type="button" size="sm" variant="ghost" onClick={() => setEdit(null)}>{t("Hủy")}</Button>}
-        <span className="ml-auto font-mono text-xs text-ink-3 tabular-nums">{text.length}/4000</span>
+        <CharCount n={text.length} max={4000} className="ml-auto" />
       </div>
       {save.isError && <p role="alert" className="text-xs text-error">{t("Không lưu được:")} {tMaybe((save.error as Error).message)}</p>}
     </form>

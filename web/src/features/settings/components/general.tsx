@@ -5,6 +5,7 @@ import { useState, useSyncExternalStore } from "react";
 import { Card, PickPill, picked, quietBtn, Row } from "@/features/settings/components/parts";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { Textarea } from "@/shared/components/ui/textarea";
+import { CharCount } from "@/shared/components/ui/char-count";
 import { type Key, type Lang, saveLang, useT } from "@/shared/lib/i18n";
 import { getPref, INTRO_MAX, onPrefs, type Platform, PLATFORMS, readIntro, readPlatform, readYtRole, saveYtRole, setPref, useRole, YT_ROLES, type YtRole } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
@@ -85,7 +86,7 @@ function IntroSection({ platform }: { platform: Platform }) {
       <span className="flex items-center justify-between gap-3 text-xs text-ink-3">
         {text.trim() ? <span className="flex items-center gap-1 text-ok"><Check className="size-3.5" aria-hidden /> {t("Đã lưu, AI dùng từ lần chạy kế tiếp")}</span>
           : <span className="text-signal-2">{t("Chưa có: AI phải đoán bạn làm gì.")}</span>}
-        <span className="font-mono tabular-nums">{text.length}/{INTRO_MAX}</span>
+        <CharCount n={text.length} max={INTRO_MAX} />
       </span>
     </div>
   );

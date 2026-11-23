@@ -74,7 +74,11 @@ def register(r, svc: YouTrackDashboard) -> None:
             data, kind = await zeplin.image(u)
         except zeplin.ZeplinError as e:
             raise YtError(502, str(e)) from None
-        return Response(data, media_type=kind, headers={"Cache-Control": "private, max-age=86400"})
+        # same guard as /attachment: an svg opened in its own tab must not run script on the app's origin
+        return Response(data, media_type=kind, headers={
+            "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox",
+        })  # fmt: skip
 
     flow_lock = asyncio.Lock()  # ponytail: one for every ticket, saves are rare; other users still race on YouTrack
 

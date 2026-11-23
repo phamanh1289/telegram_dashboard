@@ -16,7 +16,19 @@ from .errors import ApiError
 # What a project's own repo could run when the dashboard runs git there, outside any AI sandbox: an AI session may have
 # planted it (.git/config, hooks), so none of it runs. Diffs also pass --no-textconv (a config-named program).
 SAFE = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never",
-        "-c", "log.showSignature=false")  # fmt: skip
+        "-c", "log.showSignature=false", "-c", "safe.bareRepository=explicit")  # fmt: skip
+
+
+def safe_env() -> dict[str, str]:
+    """SAFE for a git this app does not call itself (codegraph's, run outside the sandbox in the project): git reads
+    GIT_CONFIG_COUNT/KEY/VALUE as `-c`, over any repo config an AI turn planted (a nested `sub/.git` too)."""
+    pairs = [SAFE[i + 1].split("=", 1) for i in range(0, len(SAFE), 2)]
+    env = {"GIT_CONFIG_COUNT": str(len(pairs))}
+    for i, (k, v) in enumerate(pairs):
+        env |= {f"GIT_CONFIG_KEY_{i}": k, f"GIT_CONFIG_VALUE_{i}": v}
+    return env
+
+
 PATCH = ("--no-color", "--no-ext-diff", "--no-textconv")  # a patch for the page: no program from the repo's config
 MAX_DIFF = 200_000  # chars of patch text sent to the page
 TIMEOUT = 60.0

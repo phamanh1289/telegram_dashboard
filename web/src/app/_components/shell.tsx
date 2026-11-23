@@ -21,6 +21,7 @@ import { useAsked } from "@/features/youtrack/lib/trace";
 import { Pill } from "@/shared/components/ui/segmented";
 import { Hint } from "@/shared/components/ui/hint";
 import { prefillReport } from "@/features/settings/lib/contact-prefill";
+import { RestartPrompt } from "@/features/settings/components/update";
 import { GuideBot, type Module } from "@/app/_components/guide";
 import { YtLogo } from "@/shared/components/yt-logo";
 import { note } from "@/features/youtrack/components/watch";
@@ -145,6 +146,7 @@ export function TopBar({ module, children }: { module: Module; children?: React.
           {behind > 0 && <span aria-hidden className="absolute top-1 right-1 size-2 rounded-full bg-hl ring-2 ring-paper-2" />}
         </Link></Hint>
       </div>
+      <RestartPrompt />
     </div>
   );
 }

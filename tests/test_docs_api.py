@@ -200,6 +200,14 @@ def test_the_filesystem_root_is_not_a_docs_folder(client, tmp_path):
     assert client.get("/api/docs/sources").json()["folders"] == []
 
 
+def test_the_apps_own_folders_are_not_a_docs_folder(client, settings):
+    for f in (settings.root, settings.data_dir):
+        f.mkdir(parents=True, exist_ok=True)
+        r = client.post("/api/docs/sources", json={"projects": [], "folders": [str(f)]})
+        assert r.status_code == 422 and r.json()["error"]["code"] == "doc_folder_forbidden"
+    assert client.get("/api/docs/sources").json()["folders"] == []
+
+
 def test_the_picker_asks_for_a_docs_folder(client, tmp_path, monkeypatch):
     from telegram_dashboard import desktop
 

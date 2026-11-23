@@ -212,9 +212,13 @@ class Settings:
     def forbids_project(self, path: str | Path) -> bool:
         """A folder no AI session or run works in (SCOPE_RULE): this app (its root, inside it, or a folder holding it),
         the home folder, the app's data and its token dir (or a folder holding them)."""
-        p, root = Path(path).expanduser().resolve(), self.root.resolve()
-        guarded = [root, *self.secret_dirs, RUN_DIR.resolve()]
-        return p == Path.home().resolve() or any(p.is_relative_to(d) or d.is_relative_to(p) for d in guarded)
+        p = Path(path).expanduser().resolve()
+        return p == Path.home().resolve() or any(p.is_relative_to(d) or d.is_relative_to(p) for d in self.guarded_dirs)
+
+    @property
+    def guarded_dirs(self) -> list[Path]:
+        """This app, its data and its token dir: no AI reads them, neither as a project nor as a Tài liệu folder."""
+        return [self.root.resolve(), *self.secret_dirs, RUN_DIR.resolve()]
 
     @property
     def secret_dirs(self) -> list[Path]:

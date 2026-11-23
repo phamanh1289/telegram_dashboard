@@ -132,6 +132,7 @@ export function useDocSync() {
 export const docErrors = () => ({
   doc_folder_not_a_directory: t("Thư mục không còn tồn tại."),
   doc_folder_is_root: t("Không chọn được cả ổ đĩa: hãy chọn một thư mục bên trong."),
+  doc_folder_forbidden: t("Không chọn được thư mục của chính app hay dữ liệu của nó (chứa token)."),
   doc_bad_project: t("Mã project không hợp lệ."),
   doc_bad_article: t("Mã bài Knowledge Base không hợp lệ."),
   doc_kb_yt_unreachable: t("Không kết nối được YouTrack để tải cây bài."),

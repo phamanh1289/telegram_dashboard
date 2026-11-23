@@ -156,7 +156,7 @@ const COMMON: Record<string, (e: ApiError) => string> = {
 /** Newer versions on GitHub (the server checks hourly) and the running one; the shell's badge and Liên hệ share it. */
 export const updateStateQuery = {
   queryKey: ["update-state"],
-  queryFn: ({ signal }: { signal: AbortSignal }) => api<{ version: string; behind: number }>("/update/state", { signal }),
+  queryFn: ({ signal }: { signal: AbortSignal }) => api<{ version: string; behind: number; pending?: string }>("/update/state", { signal }), // pending: installed, awaiting a restart
 };
 
 /** The backend's status (Telegram, AI, YouTrack); one cache shared by the shell, Settings and the Digest actions. */

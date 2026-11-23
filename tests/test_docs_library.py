@@ -68,7 +68,7 @@ def ai():
 
 @pytest.fixture
 def lib(tmp_path, store, ai):
-    return Library(NS(data_dir=tmp_path / "data"), Db(store, NS(notify=lambda: None)), ai)
+    return Library(NS(data_dir=tmp_path / "data", guarded_dirs=[]), Db(store, NS(notify=lambda: None)), ai)
 
 
 @pytest.fixture
@@ -421,3 +421,18 @@ async def test_a_chosen_branch_reads_that_article_and_those_under_it_only(lib, y
     assert {r["ref"] for r in await lib.cached()} == {"VA-A-4"}  # kept for the Agent, hidden
     with pytest.raises(ValueError):
         await lib.set_sources([], [], articles=["VA-12"])  # a ticket, not an article
+
+
+async def test_a_folder_holding_the_app_skips_its_data_and_source(store, ai, yt, tmp_path):
+    """Docs under ~/Documents with the app beside them: the app's data/ (YouTrack token, api_hash) and its own
+    files never reach the index, so never a Hỏi AI prompt (SCOPE_RULE)."""
+    folder, app = tmp_path / "Documents", tmp_path / "Documents" / "Telegram dashboard"
+    (app / "data").mkdir(parents=True)
+    (app / "data" / "youtrack.json").write_text('{"token": "perm:bi-mat"}')
+    (app / "README.md").write_text("mã nguồn app")
+    (folder / "ok.md").write_text("ổn")
+    lib = Library(NS(data_dir=tmp_path / "d", guarded_dirs=[app.resolve()]), Db(store, NS(notify=lambda: None)), ai)
+    await lib.set_sources([], [str(folder)])
+    await sync.run(lib, yt)
+    assert _files(store) == {str((folder / "ok.md").resolve())}
+    assert not store.doc_search("bi mat")

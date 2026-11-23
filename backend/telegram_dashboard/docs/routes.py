@@ -84,6 +84,8 @@ async def _save_sources(lib, projects: list[str], folders: list[str], articles: 
             raise ApiError(422, "doc_folder_not_a_directory", detail=f)
         if (p := Path(f).resolve()).parent == p:  # "/" or "C:\\": the whole disk, and its prefix would match nothing
             raise ApiError(422, "doc_folder_is_root", detail=f)
+        if any(p.is_relative_to(g) for g in lib.settings.guarded_dirs):  # this app, its data (tokens)
+            raise ApiError(422, "doc_folder_forbidden", detail=f)
     try:
         await lib.set_sources(list(dict.fromkeys(projects)), folders,
                               articles=None if articles is None else list(dict.fromkeys(articles)))  # fmt: skip

@@ -221,7 +221,7 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
               : <>{t("Hỏi bất kỳ điều gì về {n} ticket ở trên, hoặc chọn một gợi ý bên dưới.", { n: list.length })}{dev && ` ${t("Chọn thư mục dự án để AI đọc code.")}`}</>}
           </p>
         )}
-        <AiBox ai={ai} stop={false} onUse={one && !y.config?.mock ? (text) => y.setSheet({ kind: "ticket", id: one, nav: [], comment: text }) : undefined}
+        <AiBox ai={ai} stop={false} close={false} onUse={one && !y.config?.mock ? (text) => y.setSheet({ kind: "ticket", id: one, nav: [], comment: text }) : undefined}
           // a PO tool, as Cập nhật story (the story is their spec)
           onDescribe={one && !y.config?.mock && y.mode === "po" ? (text, base) => setStory({ text, base }) : undefined} />
         {retry && ai.s.status !== "busy" && <>

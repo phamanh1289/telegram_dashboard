@@ -48,3 +48,33 @@ def test_the_shipped_release_key_loads():
     from telegram_dashboard.updater import RELEASE_KEY
 
     assert rsa.PublicKey.load_pkcs1(RELEASE_KEY.read_bytes()).n.bit_length() >= 3072
+
+
+def test_auto_update_installs_then_waits_for_the_user_to_restart(tmp_path, monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    async def no_sleep(_):
+        return None
+
+    async def check(_root):
+        updater.behind = 1
+        return {}
+
+    async def apply(_root):
+        return {"updated": True}
+
+    async def installed(_root):
+        return "v1.2.0"
+
+    restarts = []
+    monkeypatch.setattr(updater.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(updater, "check", check)
+    monkeypatch.setattr(updater, "apply", apply)
+    monkeypatch.setattr(updater, "_installed", installed)
+    monkeypatch.setattr(updater, "auto_enabled", lambda _s: True)
+    monkeypatch.setattr(updater, "restart", restarts.append)
+    monkeypatch.setattr(updater, "pending", "")
+    asyncio.run(updater.auto_loop(SimpleNamespace(root=tmp_path), SimpleNamespace(busy=False)))
+    assert updater.pending == "v1.2.0"
+    assert restarts == []  # the page asks first (POST /api/update/restart)

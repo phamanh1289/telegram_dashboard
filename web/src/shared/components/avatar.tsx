@@ -15,7 +15,8 @@ export function Avatar({ name, className }: { name: string; className?: string }
       style={{ background: `color-mix(in oklch, var(--cat-${hueOf(name)}) 24%, var(--color-cotton))` }}
       className={cn("grid size-6 shrink-0 place-items-center rounded-full text-2xs font-bold text-ink-2", className)}
     >
-      {initial(name)}
+      {/* trim to the cap height: caps sit high in the line box, so a centred line box leaves them ~0.5px above centre */}
+      <span className="[text-box:trim-both_cap_alphabetic]">{initial(name)}</span>
     </span>
   );
 }

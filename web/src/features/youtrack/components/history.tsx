@@ -9,7 +9,7 @@ import { t as tNow, useT } from "@/shared/lib/i18n";
 import { getPref, put, readJson } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 import { AI_MAX, type AiReq, type AiTurn, DAY, when, yt } from "@/features/youtrack/lib/yt";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { type AiPending, YtFetching } from "./bits";
 import { sessionId } from "@/features/telegram/lib/inbox";
 import { toast } from "@/shared/lib/notifications";
@@ -167,7 +167,7 @@ export function HistoryPage() {
   const [editing, setEditing] = useState<string | null>(null); // the open session's name being edited
   const [ver, setVer] = useState<Record<string, number>>({}); // a background run ended: its session is read again
   // the server's background runs (after a reload: which "Chưa xong" sessions still run, or wait with their answer)
-  const jobs = useQuery({ queryKey: ["yt", "ai-jobs", idx.filter((m) => m.pending).length], queryFn: () => yt.aiJobStatus(), enabled: idx.some((m) => m.job),
+  const jobs = useQuery({ queryKey: ["yt", "ai-jobs", idx.filter((m) => m.pending).length], queryFn: () => yt.aiJobStatus(), enabled: idx.some((m) => m.job), placeholderData: keepPreviousData, // a new key: the tags keep their last state
     refetchInterval: (q) => (Object.values(q.state.data ?? {}).includes("running") ? 10_000 : false) }); // one query: a run that ends shows "Đã xong"
   useEffect(() => {
     const f = (e: Event) => { const id = (e as CustomEvent<string>).detail; setVer((v) => ({ ...v, [id]: (v[id] ?? 0) + 1 })); };
@@ -186,9 +186,13 @@ export function HistoryPage() {
   const remove = (ids: string[]) => { drop(ids); setIdx(readIdx()); };
 
   // opening the tab: the sessions + their tickets are gathered (held AI_WAIT_MS), and the background runs' state when some session has one
-  const [opening, setOpening] = useState(true);
-  useEffect(() => { const h = setTimeout(() => setOpening(false), AI_WAIT_MS); return () => clearTimeout(h); }, []);
-  if (useAiWait(opening || jobs.isLoading)) return <YtFetching kind="sessions" className="max-lg:min-h-[calc(100dvh-8rem)]" />;
+  // once only: a turn changes the pending count (the jobs key), and waiting again would unmount the open chat mid-run
+  const [timing, setTiming] = useState(true);
+  useEffect(() => { const h = setTimeout(() => setTiming(false), AI_WAIT_MS); return () => clearTimeout(h); }, []);
+  const [opened, setOpened] = useState(false);
+  const opening = !opened && (timing || jobs.isLoading);
+  if (!opened && !opening) setOpened(true);
+  if (useAiWait(opening)) return <YtFetching kind="sessions" className="max-lg:min-h-[calc(100dvh-8rem)]" />;
   if (!idx.length) return (
     <Empty className="h-full min-h-[50vh] content-center max-lg:min-h-[calc(100dvh-8rem)]" title={t("Chưa có phiên AI nào")}
       art={<BotStage className="mb-2"><AiBot className="ai-float relative size-20 drop-shadow-lg" />
