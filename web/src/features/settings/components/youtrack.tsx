@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, RotateCw } from "lucide-react";
+import { ExternalLink, Plug, RotateCw, Sparkles, Workflow } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 import { Card, linkCls, Row, StatusLine, Switch, tMap } from "@/features/settings/components/parts";
 import { PromptManager } from "@/features/youtrack/components/prompts";
@@ -17,10 +17,10 @@ import { type Key, tMaybe, useT } from "@/shared/lib/i18n";
 import { onPrefs, readReportAt, readYtRole, type ReportAt, saveReportAt, YT_ROLES, type YtRole } from "@/shared/lib/prefs";
 
 export type YtView = "connect" | "ai" | "workflow";
-const YT_VIEWS: { value: YtView; label: Key; title: Key }[] = [
-  { value: "connect", label: "Kết nối và báo cáo", title: "Token YouTrack, báo cáo release tự động" },
-  { value: "ai", label: "AI và prompt", title: "Instructions cho AI theo vai trò, kho prompt" },
-  { value: "workflow", label: "Workflow", title: "Luồng State cho từng project và vai trò" },
+const YT_VIEWS: { value: YtView; label: Key; title: Key; icon: typeof Plug }[] = [
+  { value: "connect", label: "Kết nối và báo cáo", icon: Plug, title: "Token YouTrack, báo cáo release tự động" },
+  { value: "ai", label: "AI và prompt", icon: Sparkles, title: "Instructions cho AI theo vai trò, kho prompt" },
+  { value: "workflow", label: "Workflow", icon: Workflow, title: "Luồng State cho từng project và vai trò" },
 ];
 
 export function YouTrackGroup({ view, setView }: { view: YtView; setView: (v: YtView) => void }) {
@@ -29,7 +29,7 @@ export function YouTrackGroup({ view, setView }: { view: YtView; setView: (v: Yt
   const roleName = YT_ROLES.find(([r]) => r === role)?.[1];
   return <>
     <Segmented id="set-yt-view" variant="card" label={t("Nhóm cài đặt YouTrack")} value={view} onChange={setView}
-      items={YT_VIEWS.map((v) => ({ value: v.value, label: t(v.label), title: t(v.title) }))} />
+      items={YT_VIEWS.map((v) => ({ value: v.value, label: <><v.icon className="size-3.5" aria-hidden />{t(v.label)}</>, title: t(v.title) }))} />
     {view === "connect" && <>
       <Card title="Tài khoản YouTrack" info="Token chỉ lưu trên máy này (thư mục data/), dùng cho trang YouTrack và nút tạo issue.">
         <YouTrackSection />

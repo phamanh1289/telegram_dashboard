@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Plus, X } from "lucide-react";
+import { AtSign, BellOff, Clock1, Clock12, Clock2, Clock4, Clock8, Eye, ExternalLink, MousePointerClick, Plus, Timer, Users, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState, useSyncExternalStore } from "react";
 import { AUTO_BRIEF } from "@/features/telegram/components/briefing-page";
@@ -15,6 +15,10 @@ import { api, errorText } from "@/shared/lib/api";
 import { type Key, useT } from "@/shared/lib/i18n";
 import { applyRowActions, getPref, onPrefs, OVERDUE_CHOICES, QA_REMIND_CHOICES, qaRemindLabel, readNotify, readOverdueHours, readQaAnswerBy, readRowActions, setPref, useQaRemind, useRoleOrDev, YT_ROLES } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
+
+/** A waiting time's chip icon: off, a timer under an hour, else the clock showing its hours (24 h on 12). */
+const CLOCKS: Record<number, typeof Timer> = { 1: Clock1, 2: Clock2, 4: Clock4, 8: Clock8, 24: Clock12 };
+const clock = (mins: number) => (!mins ? BellOff : mins < 60 ? Timer : CLOCKS[mins / 60] ?? Clock12);
 
 /** Telegram-only preferences: the account, the queue, notifications, Q&A, Briefing, rules, local data. */
 export function TelegramGroup() {
@@ -46,11 +50,11 @@ export function TelegramGroup() {
     <Card title="Hàng chờ">
       <Row label={t("Ngưỡng quá hạn")} desc={t("Tin tag chờ lâu hơn ngưỡng này hiện màu hổ phách.")} stack>
         <Segmented id="set-overdue" variant="card" label={t("Ngưỡng quá hạn")} value={overdue} onChange={(v) => { setOverdue(v); setPref("overdueHours", String(v)); }}
-          items={OVERDUE_CHOICES.map((h) => ({ value: h, label: t("{n} giờ", { n: h }) }))} />
+          items={OVERDUE_CHOICES.map((h) => { const Icon = clock(h * 60); return { value: h, label: <><Icon className="size-3.5" aria-hidden />{t("{n} giờ", { n: h })}</> }; })} />
       </Row>
       <Row label={t("Nút thao tác trên tin")} desc={t("Hoãn, ngữ cảnh, Đối chiếu BE, đính kèm, chép ID và menu ⋯. Màn hình cảm ứng luôn hiện.")} stack>
         <Segmented id="set-row-actions" variant="card" label={t("Nút thao tác trên tin")} value={rowActions} onChange={(v) => { setRowActions(v); applyRowActions(v); }}
-          items={[{ value: "hover", label: t("Khi rê vào nút Xong") }, { value: "always", label: t("Luôn hiện") }]} />
+          items={[{ value: "hover", label: <><MousePointerClick className="size-3.5" aria-hidden />{t("Khi rê vào nút Xong")}</> }, { value: "always", label: <><Eye className="size-3.5" aria-hidden />{t("Luôn hiện")}</> }]} />
       </Row>
     </Card>
 
@@ -68,11 +72,11 @@ export function TelegramGroup() {
     <Card title="Q&A">
       <Row label={t("Nhắc câu hỏi Q&A chưa ai trả lời")} desc={t("Câu hỏi bạn đăng ở Q&A mà chưa ai trả lời sau khoảng này (tính từ tin cuối của bạn trong chuỗi): trang Q&A báo và cho nhắc lại ngay trong nhóm. Đổi nhanh được ở trang Q&A.")} stack>
         <Segmented id="set-qa-remind" variant="card" label={t("Nhắc câu hỏi Q&A chưa ai trả lời")} value={qaRemind} onChange={(v) => setPref("qaRemindMins", String(v))}
-          items={QA_REMIND_CHOICES.map((m) => ({ value: m, label: qaRemindLabel(m) }))} />
+          items={QA_REMIND_CHOICES.map((m) => { const Icon = clock(m); return { value: m, label: <><Icon className="size-3.5" aria-hidden />{qaRemindLabel(m)}</> }; })} />
       </Row>
       <Row label={t("Câu hỏi Q&A tính là đã trả lời khi")} desc={t("“Người được tag”: chỉ khi chính người câu hỏi tag (@tên) trả lời; câu không tag ai thì ai trả lời cũng tính. Chốt câu trả lời thì luôn tính là xong.")} stack>
         <Segmented id="set-qa-answer-by" variant="card" label={t("Câu hỏi Q&A tính là đã trả lời khi")} value={qaAnswerBy} onChange={(v) => setPref("qaAnswerBy", v)}
-          items={[{ value: "any", label: t("Bất kỳ ai khác trả lời") }, { value: "tagged", label: t("Người được tag trả lời") }]} />
+          items={[{ value: "any", label: <><Users className="size-3.5" aria-hidden />{t("Bất kỳ ai khác trả lời")}</> }, { value: "tagged", label: <><AtSign className="size-3.5" aria-hidden />{t("Người được tag trả lời")}</> }]} />
       </Row>
     </Card>
 

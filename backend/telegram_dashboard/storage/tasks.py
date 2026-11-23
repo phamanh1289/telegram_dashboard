@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from collections.abc import Sequence
 
 from ..errors import ApiError
 from ..models import StoredMessage
@@ -291,6 +292,15 @@ class Tasks:
             rows = c.execute("SELECT code, state FROM qa_marks WHERE chat_id=?", (chat_id,))
             return {r["code"]: r["state"] for r in rows}
 
+    def done_qa(self, chat_id: str) -> tuple[set[str], set[int]]:
+        """The group's Q&A threads marked Xong: their codes, and the messages they had then (qa_members)."""
+        with self._conn() as c:
+            codes = {r[0] for r in c.execute("SELECT code FROM qa_marks WHERE chat_id=? AND state='done'", (chat_id,))}
+            rows = c.execute("SELECT message_id FROM qa_members JOIN qa_marks USING (chat_id, code) "
+                             "WHERE chat_id=? AND state='done'", (chat_id,)) if codes else []  # fmt: skip
+            ids = {r[0] for r in rows}
+        return codes, ids
+
     def qa_answers(self, chat_id: str) -> dict[str, str]:
         """Thread code -> the message id marked as its answer ("Chốt"), for one group."""
         with self._conn() as c:
@@ -314,11 +324,13 @@ class Tasks:
                 c.execute("DELETE FROM qa_marks WHERE chat_id=? AND code=?", (chat_id, code))
             return r[0] if r else None
 
-    def mark_qa_thread(self, chat_id: str, code: str, handled: bool) -> list[int]:
+    def mark_qa_thread(self, chat_id: str, code: str, handled: bool, *, ids: Sequence[int] = ()) -> list[int]:
         """Done / reopen (no reaction) the kept tags (not mine) of a Q&A thread: its question and the replies under
-        it; the ones that flipped."""
+        it; the ones that flipped. `ids`: the thread's messages read live, so a question never stored still roots it."""
         with self._conn(write=True) as c:
-            tags = _tags_under(c, _code_roots(c, chat_id, code))
+            if handled:
+                c.executemany("INSERT OR REPLACE INTO qa_members VALUES (?,?,?)", [(chat_id, i, code) for i in ids])
+            tags = _tags_under(c, _code_roots(c, chat_id, code) | {(chat_id, i) for i in ids})
             return [mid for cid, mid in tags if self._mark(c, cid, mid, handled, "quiet")]
 
     def has_project(self, path: str) -> bool:

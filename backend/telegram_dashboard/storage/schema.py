@@ -121,6 +121,12 @@ CREATE TABLE IF NOT EXISTS qa_marks (  -- a Q&A thread (live from Telegram, neve
   at INTEGER NOT NULL,
   PRIMARY KEY (chat_id, code)
 );
+CREATE TABLE IF NOT EXISTS qa_members (  -- the messages a thread had when marked Xong (read live: its question may
+  chat_id TEXT NOT NULL,                 -- not be stored), so a tag replying in it later closes too
+  message_id INTEGER NOT NULL,
+  code TEXT NOT NULL,
+  PRIMARY KEY (chat_id, message_id)
+);
 CREATE TABLE IF NOT EXISTS qa_answers (  -- "Chốt": the reply you marked as a Q&A thread's answer
   chat_id TEXT NOT NULL,
   code TEXT NOT NULL,

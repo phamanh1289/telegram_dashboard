@@ -11,7 +11,7 @@ import { Checkbox } from "@/shared/components/ui/checkbox";
 import { Hint } from "@/shared/components/ui/hint";
 import { type AiPicks, api, ApiError, apiStart, errorText, type Message, type Task } from "@/shared/lib/api";
 import { attach, chatTitle, MAX_REFS, messageQuery, parseRefs, type Ref, sameRef, setRefs, splitAttachments, takeConfirm, takeLines, takeWantEdit, useConfirm, useLines, useRefs, useWantEdit, withAttachments } from "@/features/telegram/lib/attach";
-import { readIntro, readPlatform, setPref, useAgentMcp, useRole } from "@/shared/lib/prefs";
+import { aboutMe, readIntro, readPlatform, setPref, useAgentMcp, useRole } from "@/shared/lib/prefs";
 import { toast } from "@/shared/lib/notifications";
 import { timeLabel } from "@/shared/lib/time";
 import { cn, MOD } from "@/shared/lib/utils";
@@ -139,7 +139,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut, redo }: {
   };
   const send = useMutation({
     mutationFn: ({ line, refs, edit: e = plan && edit, mcp: m = mcp }: Queued & { queued?: boolean }) => {
-      if (!assist) return api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line, refs, edit: e, mcp: m } });
+      if (!assist) return api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line, refs, edit: e, mcp: m, ...aboutMe() } });
       // the AI reads attached messages as group messages, so only the session's group (its tag first)
       if (refs.some((r) => r.chat_id !== task.chat_id)) throw new ApiError(422, "assist_other_chat", null, null);
       return apiStart("/ai/draft", {

@@ -200,7 +200,7 @@ export interface paths {
         put?: never;
         /**
          * Task Message
-         * @description Follow-up turn in a headless task (resumes the same session).
+         * @description Follow-up turn in a headless task (resumes the same session; starts it over if it never ran).
          */
         post: operations["task_message_api_tasks__task_id__message_post"];
         delete?: never;
@@ -4711,6 +4711,8 @@ export interface components {
             code: string;
             /** State */
             state: ("done" | "deleted") | null;
+            /** Message Ids */
+            message_ids?: string[];
         };
         /** QaPostRequest */
         QaPostRequest: {
@@ -5019,6 +5021,19 @@ export interface components {
         };
         /** TaskMessage */
         TaskMessage: {
+            /** Role */
+            role?: ("dev" | "qa" | "po") | null;
+            /**
+             * Platform
+             * @default android
+             * @enum {string}
+             */
+            platform: "android" | "ios" | "web" | "mobile" | "any";
+            /**
+             * Intro
+             * @default
+             */
+            intro: string;
             /** Text */
             text: string;
             /**

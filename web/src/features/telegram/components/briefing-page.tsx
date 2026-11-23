@@ -267,7 +267,7 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
 
         {summarized && (
           <div className="shrink-0 px-3 pt-2 lg:hidden">
-            <Segmented id="brief-pane" label={tx("Khung")} variant="card" value={pane} onChange={setPane}
+            <Segmented id="brief-pane" label={tx("Khung")} variant="bar" value={pane} onChange={setPane}
               items={[{ value: "todo", label: <><ListTodo className="size-3.5" aria-hidden />{tx("Việc · {n}", { n: scope ? scopeLeft : leftAll })}</> }, { value: "ai", label: <><Sparkles className="size-3.5" aria-hidden />{tx("Trợ lý AI")}</> }]} />
           </div>
         )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { Apple, Check, Globe, Layers, Monitor, Smartphone, TabletSmartphone } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 import { Card, PickPill, picked, quietBtn, Row } from "@/features/settings/components/parts";
 import { Segmented } from "@/shared/components/ui/segmented";
@@ -9,6 +9,10 @@ import { CharCount } from "@/shared/components/ui/char-count";
 import { type Key, type Lang, saveLang, useT } from "@/shared/lib/i18n";
 import { getPref, INTRO_MAX, onPrefs, type Platform, PLATFORMS, readIntro, readPlatform, readYtRole, saveYtRole, setPref, useRole, YT_ROLES, type YtRole } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
+
+const PLATFORM_ICONS: Record<Platform, typeof Globe> = { android: Smartphone, ios: Apple, web: Globe, mobile: TabletSmartphone, any: Layers };
+/** A language's chip mark: its code in a small outlined box (one globe on every chip would say nothing). */
+const LangTag = ({ children }: { children: string }) => <span aria-hidden className="rounded-sm border border-current px-0.5 text-2xs leading-none font-bold">{children}</span>;
 
 /** Only what every module reads: who you are (role, platform, intro for the AI) and the language. */
 export function GeneralGroup() {
@@ -23,14 +27,14 @@ export function GeneralGroup() {
     <Card title="Ngôn ngữ">
       <Row label={<span className="font-normal text-ink-3">{t("Theo máy: Tiếng Việt khi máy dùng tiếng Việt, còn lại English.")}</span>}>
         <Segmented id="set-lang" variant="card" label={t("Ngôn ngữ")} value={lang} onChange={(v) => saveLang(v === "system" ? null : v)}
-          items={[{ value: "system", label: t("Theo máy") }, { value: "vi", label: "Tiếng Việt" }, { value: "en", label: "English" }]} />
+          items={[{ value: "system", label: <><Monitor className="size-3.5" aria-hidden />{t("Theo máy")}</> }, { value: "vi", label: <><LangTag>VI</LangTag>Tiếng Việt</> }, { value: "en", label: <><LangTag>EN</LangTag>English</> }]} />
       </Row>
     </Card>
     <Card title="Giới thiệu bản thân cho AI" info="AI phía Telegram (tóm tắt, soạn nháp, Briefing, tạo ticket từ tin, Đối chiếu BE, AI Agent) đọc phần này để biết bạn làm gì, rành gì, cần gì. Chưa có thì AI phải đoán, dễ lan man và lệch chuyên môn. Bên YouTrack dùng Instructions cho AI riêng (Cài đặt › YouTrack). Lưu trên trình duyệt này.">
       <IntroSection platform={platform} />
       <Row label={t("Tóm tắt theo nền tảng")} desc={t("Dev: nền tảng bạn code, AI bỏ phần chỉ liên quan nền tảng khác. QA/QC, PO/PM: chọn Mobile (Android + iOS) hoặc Tất cả, AI báo tình trạng từng nền tảng (xong, chưa test, đang chậm).")} stack>
         <Segmented id="set-platform" variant="card" label={t("Tóm tắt theo nền tảng")} value={platform} onChange={(v) => { setPlatform(v); setPref("aiPlatform", v); }}
-          items={PLATFORMS.map(([value, name]) => ({ value, label: t(name) }))} />
+          items={PLATFORMS.map(([value, name]) => { const Icon = PLATFORM_ICONS[value]; return { value, label: <><Icon className="size-3.5" aria-hidden />{t(name)}</> }; })} />
       </Row>
     </Card>
   </>;

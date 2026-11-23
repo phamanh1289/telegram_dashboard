@@ -746,7 +746,7 @@ class TaskRef(BaseModel):
     message_id: str = Field(max_length=16)
 
 
-class TaskMessage(BaseModel):
+class TaskMessage(AboutMe):  # who the user is: a session whose first turn never ran starts over (tasks.send_turn)
     text: str = Field(min_length=1, max_length=16000)  # 8000 typed + attached messages
     refs: list[TaskRef] = Field(default=[], max_length=10)  # attached messages (MAX_REFS): Done ticks them
     edit: bool = False  # "Accept edit": run this turn of a plan task allowed to edit files
@@ -912,6 +912,8 @@ class QaMarkRequest(BaseModel):
     chat_id: str
     code: str = Field(pattern=r"^#QA(?:_(?:BE|PO|QC)_)?\d+$")
     state: Literal["done", "deleted"] | None  # None: back to normal
+    # the thread's messages as listed (read live): its question may not be stored (sent from the Q&A box / Telegram)
+    message_ids: list[str] = Field(default_factory=list, max_length=500)
 
 
 class QaAcceptRequest(BaseModel):

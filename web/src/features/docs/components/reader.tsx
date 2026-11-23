@@ -202,7 +202,7 @@ function Body({ data, part, q, onPart, onTicket, onBack, onAi, onDoc }: {
         <p className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 pb-0.5 text-xs text-ink-3">
           {/* a file's ref is its full path: "Mở file" shows it, the line keeps the short facts */}
           {doc.source === "youtrack" && <span className="font-mono">{doc.ref}</span>}
-          {doc.updated_at && <Updated at={doc.updated_at} revs={data.revs ?? []} onOpen={() => setRevs(true)} onLine={showLine} />}
+          {doc.updated_at && <Updated at={doc.updated_at} title={doc.title} revs={data.revs ?? []} onOpen={() => setRevs(true)} onLine={showLine} />}
           <span>{t("{n} ký tự", { n: fmtNum(doc.chars) })}</span>
           {doc.tickets.length > 0 && <Tickets ids={doc.tickets} onTicket={onTicket} />}
         </p>

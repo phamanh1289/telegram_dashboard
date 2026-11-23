@@ -412,7 +412,7 @@ export function Composer({
         {/* Narrow: the reply or the assistant, so the AI prompt box stays pinned at the bottom of its pane. */}
         {(aiConfigured || tools) && (
           <div className="shrink-0 px-3 pt-2 @3xl:hidden">
-            <Segmented id="composer-pane" label={t("Khung")} variant="card" value={pane} onChange={setPane}
+            <Segmented id="composer-pane" label={t("Khung")} variant="bar" value={pane} onChange={setPane}
               items={[{ value: "reply", label: <><Send className="size-3.5" aria-hidden />{t("Trả lời")}</> }, { value: "ai", label: <><Sparkles className="size-3.5" aria-hidden />{aiConfigured ? t("Trợ lý AI") : t("Công cụ")}</> }]} />
           </div>
         )}

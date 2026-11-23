@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Bug, Check, Cpu, Eye, FileText, HelpCircle, ImagePlus, Info, Lightbulb, Send, Sparkles, Square, TriangleAlert, X } from "lucide-react";
+import { BookOpen, Bug, Check, Cpu, Ellipsis, Eye, FileText, HelpCircle, ImagePlus, Info, Lightbulb, Send, Settings, Sparkles, Square, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Card, linkCls, PickPill, picked, StatusLine, tMap, useStatus } from "@/features/settings/components/parts";
@@ -18,6 +18,7 @@ import { Input } from "@/shared/components/ui/input";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { Textarea } from "@/shared/components/ui/textarea";
+import { YtLogo } from "@/shared/components/yt-logo";
 import { api, apiStream, errorText, updateStateQuery } from "@/shared/lib/api";
 import { type Key, useT } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
@@ -56,7 +57,8 @@ const KINDS: { value: Req["kind"]; label: Key; icon: typeof Bug; hint: Key; guid
     title: "Câu hỏi ngắn, vd: Briefing tự chạy lúc mấy giờ?",
     text: "Bạn muốn biết điều gì, đang ở màn nào, đã thử gì…" },
 ];
-const AREAS: [Req["area"], Key][] = [["telegram", "Telegram"], ["youtrack", "YouTrack"], ["docs", "Tài liệu"], ["ai", "AI"], ["settings", "Cài đặt"], ["other", "Khác"]];
+/** Each area with the icon its page has in the nav (Telegram, YouTrack, AI) or its own. */
+const AREAS: [Req["area"], Key, React.ComponentType<{ className?: string }>][] = [["telegram", "Telegram", Send], ["youtrack", "YouTrack", YtLogo], ["docs", "Tài liệu", BookOpen], ["ai", "AI", Sparkles], ["settings", "Cài đặt", Settings], ["other", "Khác", Ellipsis]];
 const MIN_H = 560; // below this the page scrolls instead of squeezing the description
 const EMPTY: Draft = { kind: "bug", area: "telegram", title: "", text: "" };
 let seq = 0;
@@ -253,9 +255,8 @@ export function ContactGroup() {
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="text-xs font-medium text-ink-2">{t("Khu vực")}</span>
-          {/* @max-md: three per row in a narrow card, six don't fit side by side */}
           <Segmented id="contact-area" variant="card" label={t("Khu vực")} value={d.area} onChange={(v) => edit({ area: v })}
-            items={AREAS.map(([value, k]) => ({ value, label: t(k) }))} className="min-w-0 flex-1 @max-md:grid-flow-row @max-md:grid-cols-3" />
+            items={AREAS.map(([value, k, Icon]) => ({ value, label: <><Icon className="size-3.5" />{t(k)}</> }))} />
         </div>
         <div className="flex gap-2 rounded-md bg-paper-2 px-3 py-2 text-xs leading-relaxed text-ink-2">
           <Info aria-hidden className="mt-0.5 size-3.5 shrink-0 text-ink-3" />

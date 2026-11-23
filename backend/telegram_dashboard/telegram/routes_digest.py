@@ -192,10 +192,11 @@ def build_router(live_reads: TelegramReads) -> APIRouter:
         null undoes. Xong / undoing it moves the thread's kept tags too, as Done on each from the list (no reaction)."""
         s = S(request)
         await known_chat(s, live_reads, body.chat_id)
+        thread = [int_or_404(i, "message_not_found") for i in body.message_ids]
         prev = await s.db.write(s.store.set_qa_mark, body.chat_id, body.code, body.state)
         if body.state == "done" or (body.state is None and prev == "done"):
             on = body.state == "done"
-            if ids := await s.db.write(s.store.mark_qa_thread, body.chat_id, body.code, on):
+            if ids := await s.db.write(s.store.mark_qa_thread, body.chat_id, body.code, on, ids=thread):
                 await mark_tags(s, body.chat_id, ids, on, False)  # their sessions follow, as Done from the list
 
 

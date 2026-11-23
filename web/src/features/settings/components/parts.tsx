@@ -29,10 +29,14 @@ export function Card({ title, info, action, advanced, badge, fill, children }: {
   const body = <div className={cn("grid divide-y divide-rule px-4 pb-4 sm:px-5", fill && "min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)]")}>{children}</div>;
   return (
     <section aria-label={t(title)} data-card={title} className={cn("grid scroll-mt-24 rounded-[var(--radius-card)] border border-rule bg-cotton shadow-stock outline-offset-2 data-flash:outline-2 data-flash:outline-hl", fill && "h-full grid-cols-1 grid-rows-[auto_minmax(0,1fr)]")}>
-      <header className="flex min-h-11 items-center gap-1.5 px-4 py-3 sm:px-5">
+      {/* A folding card's whole header toggles it (the mouse's bigger target); the button inside stays the keyboard's and
+          screen reader's control, and clicks on the header's other buttons (the bulb, an action) keep their own job. */}
+      <header onClick={advanced ? (e) => { if (!(e.target as Element).closest("button, a, input")) setOpen(!open); } : undefined}
+        className={cn("group/head flex min-h-11 items-center gap-1.5 px-4 py-3 sm:px-5", advanced && "cursor-pointer select-none")}>
         {advanced ? (
           <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex items-center gap-1.5 rounded-sm text-sm font-bold text-ink">
-            <ChevronDown className={cn("size-4 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-out)", !open && "-rotate-90")} aria-hidden />
+            {/* the chevron lights up anywhere over the header, saying the whole row folds */}
+            <ChevronDown className={cn("size-4 text-ink-3 transition-[rotate,color] duration-(--dur-short) ease-(--ease-out) group-hover/head:text-ink", !open && "-rotate-90")} aria-hidden />
             <h3>{t(title)}</h3>
             <span className="rounded-full bg-paper-2 px-1.5 text-2xs font-medium text-ink-3">{t("Nâng cao")}</span>
             {!open && badge}

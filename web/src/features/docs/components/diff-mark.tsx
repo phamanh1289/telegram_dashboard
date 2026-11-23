@@ -5,7 +5,7 @@ import { type RefObject, useLayoutEffect, useRef } from "react";
 import { Button } from "@/shared/components/ui/button";
 import { fmtClock, fmtDay, useT } from "@/shared/lib/i18n";
 import type { DocDetail, DocPart } from "@/features/docs/lib/docs";
-import { ADD, DEL, Line } from "./revs";
+import { DiffRows } from "./diff-rows";
 
 // A changed line clicked in Lịch sử thay đổi, shown in the document as a code diff: the block's added lines still in
 // the text are lit green (CSS Custom Highlight, no change to the Markdown) and a card with the lines that are not
@@ -141,8 +141,7 @@ export function DiffMark({ mark, aimRef, onClose }: {
         <span className="min-w-0 flex-1 truncate">{t("Thay đổi lúc {d}", { d: `${fmtDay(mark.rev.at)} ${fmtClock(mark.rev.at)}` })}{mark.rev.by && ` · ${mark.rev.by}`}</span>
         <Button size="icon-xs" variant="ghost" aria-label={t("Đóng")} onClick={onClose}><X /></Button>
       </div>
-      {mark.minus.map((l, k) => <Line key={`r${k}`} sign="−" text={l} cls={DEL} />)}
-      {mark.plus.map((l, k) => <Line key={`a${k}`} sign="+" text={l} cls={ADD} />)}
+      <DiffRows removed={mark.minus} added={mark.plus} />
     </div>
   );
 }

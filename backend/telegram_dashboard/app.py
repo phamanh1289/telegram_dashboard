@@ -75,7 +75,7 @@ from .models import (
     StatusDTO,
 )
 from .storage import Db, Store, parse_cursor
-from .tasks import add_refs, assist_history, new_task_id, start_task
+from .tasks import add_refs, assist_history, close_in_done_qa, new_task_id, start_task
 from .tasks import build_router as build_task_router
 from .telegram.bridge import TelegramBridge, Transport, notify_mac
 from .telegram.contact import build_router as build_contact_router
@@ -205,7 +205,13 @@ def create_app(
         app.state.digest = DigestService(settings, st, db, bridge, app.state.ai, live=live_reads.live)
         app.state.agent = AgentRunner(settings)
         app.state.autobe = auto = AutoBe(app.state)  # Vòng BE tự chạy: rules relay / agent on new tags
-        app.state.agent.on_idle, bridge.on_tags = auto.on_idle, auto.on_tags
+        app.state.agent.on_idle = auto.on_idle
+
+        async def on_tags(msgs):  # a tag landing in a Q&A thread already Xong closes first, then Vòng BE sees it
+            await close_in_done_qa(app.state, msgs)
+            await auto.on_tags(msgs)
+
+        bridge.on_tags = on_tags
         app.state.yt = yt_dashboard  # links.py reads YouTrack articles / tickets with its token
         app.state.settings = settings
         await auto.restore()

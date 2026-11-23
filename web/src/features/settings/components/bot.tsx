@@ -1,5 +1,6 @@
 "use client";
 
+import { ArrowDownLeft, ArrowDownRight, ArrowUpLeft, ArrowUpRight, Move, PanelRight, PanelTop } from "lucide-react";
 import { Card, Row, Switch } from "@/features/settings/components/parts";
 import { ModelEffortPicker } from "@/shared/components/ai";
 import { AiBot } from "@/shared/components/ai/chat";
@@ -8,7 +9,8 @@ import { type Key, useT } from "@/shared/lib/i18n";
 import { type BotCorner, type BotMode, type BotSize, setPref, useBotDock, useBotMode, useBotShow, useBotSize } from "@/shared/lib/prefs";
 
 const BOT_SIZE_ITEMS: [BotSize, Key, string][] = [["s", "Nhỏ", "size-3.5"], ["m", "Vừa", "size-4"], ["l", "Lớn", "size-5"]];
-const BOT_CORNERS: [BotCorner, Key][] = [["tl", "Trên trái"], ["tr", "Trên phải"], ["bl", "Dưới trái"], ["br", "Dưới phải"]];
+const BOT_CORNERS: [BotCorner, Key, typeof Move][] = [["tl", "Trên trái", ArrowUpLeft], ["tr", "Trên phải", ArrowUpRight], ["bl", "Dưới trái", ArrowDownLeft], ["br", "Dưới phải", ArrowDownRight]];
+const BOT_MODE_ICONS: Record<BotMode, typeof Move> = { float: Move, side: PanelRight, bar: PanelTop };
 const BOT_MODES: [BotMode, Key, Key][] = [
   ["float", "Nổi", "Bot nổi, kéo tới chỗ nào sát mép màn hình cũng được; khung chat mở ra từ chính nó."],
   ["side", "Cố định bên phải", "Bot nằm yên ở giữa cạnh phải; khung chat trượt ra từ bên phải, giữa màn hình."],
@@ -27,7 +29,7 @@ export function BotSection() {
     </Row>
     <Row label={t("Cách hiển thị")} desc={t(BOT_MODES.find(([m]) => m === mode)![2])} stack>
       <Segmented id="set-bot-mode" variant="card" label={t("Cách hiển thị")} value={mode} onChange={(v) => setPref("botMode", v === "float" ? null : v)}
-        items={BOT_MODES.map(([v, name]) => ({ value: v, label: t(name) }))} />
+        items={BOT_MODES.map(([v, name]) => { const Icon = BOT_MODE_ICONS[v]; return { value: v, label: <><Icon className="size-3.5" aria-hidden />{t(name)}</> }; })} />
     </Row>
     {mode !== "bar" && <Row label={t("Kích thước bot")} stack>
       <Segmented id="set-bot-size" variant="card" label={t("Kích thước bot")} value={size} onChange={(v) => setPref("botSize", v === "m" ? null : v)}
@@ -35,7 +37,7 @@ export function BotSection() {
     </Row>}
     {mode === "float" && <Row label={t("Vị trí")} desc={t("Chọn nhanh một góc, hoặc kéo bot rồi thả ở bất kỳ chỗ nào sát một trong 4 mép màn hình: bot tự bám vào mép gần nhất.")} stack>
       <Segmented id="set-bot-corner" variant="card" label={t("Vị trí")} value={corner} onChange={(v) => setPref("botCorner", v === "br" ? null : v)}
-        items={BOT_CORNERS.map(([v, name]) => ({ value: v, label: t(name) }))} />
+        items={BOT_CORNERS.map(([v, name, Icon]) => ({ value: v, label: <><Icon className="size-3.5" aria-hidden />{t(name)}</> }))} />
     </Row>}
     </Card>
     <Card title="Cách trả lời">

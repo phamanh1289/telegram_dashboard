@@ -14,9 +14,11 @@ from .ai import at_usernames, role_tags
 from .ai_prompts import session_rules, task_state
 from .errors import ApiError, int_or_404
 from .links import expand, has_links, links_dir
-from .models import HandledRequest, PrRequest, TaskAi, TaskDTO, TaskMessage, TaskRequest
+from .models import AboutMe, HandledRequest, PrRequest, StoredMessage, TaskAi, TaskDTO, TaskMessage, TaskRequest
 from .providers import split_session
-from .telegram.qa import chain_code
+from .storage import CHAIN_MAX
+from .telegram.qa import chain_code, chain_walk, names_code
+from .telegram.qa import codes as qa_codes
 
 log = logging.getLogger("telegram_dashboard.tasks")
 
@@ -38,6 +40,32 @@ async def _ref_qa(s, chat_id: str, mid: int) -> str:
     except Exception as e:  # the turn already runs: a failed lookup only loses the Q&A link, never fails the send
         log.warning("Q&A code of %s/%s not read: %r", chat_id, mid, e)
         return ""
+
+
+async def close_in_done_qa(s, msgs: list[StoredMessage]) -> None:
+    """New tags (first seen) inside a Q&A thread already marked Xong: Done too, quietly, as Xong did for the tags it
+    found then (else one stays hidden by Q&A yet counted as waiting). In the thread: up its reply chain (kept copies
+    first, else live) a message naming its code, or one the thread had when marked Xong (qa_members: the question
+    someone asked that I answered with Q&A too). Its new answers still show as "trả lời mới".
+    ponytail: one chain walk per tag replying in a group with a Xong thread; batch per group if backfills grow."""
+    for m in msgs:
+        if m.outgoing or (m.reply_to_id is None and not names_code(m.text)):
+            continue
+        try:
+            done, members = await s.db.read(s.store.done_qa, m.chat_id)
+            if not done:
+                continue
+
+            async def fetch(ids: list[int], cid=m.chat_id):
+                kept, _ = await s.db.read(s.store.get_messages_by_ids, cid, ids)
+                return kept or await s.bridge.fetch_ids(cid, ids)
+
+            async for x in chain_walk(fetch, m.message_id, CHAIN_MAX):
+                if x.message_id in members or qa_codes(x.text) & done:
+                    await s.db.write(s.store.set_handled, m.chat_id, m.message_id, True, "quiet")
+                    break
+        except Exception as e:  # a background hook: the tag just stays open
+            log.warning("tag %s/%s not checked against Xong Q&A: %r", m.chat_id, m.message_id, e)
 
 
 async def add_refs(s, task_id: str, refs, *, ask: bool = True) -> None:
@@ -127,19 +155,14 @@ async def start_task(
         base = None
     await s.db.write(s.store.add_task, task_id, chat_id, message_id, project, prompt,
                      mode=mode, session_id=session, kind=kind, title=title, git_base=base)  # fmt: skip
-    # one frame for every session (Giao AI Agent, Đối chiếu BE): who the user is, rules, answer sections, questions
-    rules = session_rules(mode, about.role, about.platform, about.intro,
-                          tags=role_tags(await s.db.read(s.store.list_rules)))  # fmt: skip
+    rules = await _rules(s, mode, about)
 
     async def text() -> str:
         return await expand(s, at_usernames(prompt), task_id, chat_id=chat_id) + f"\n\n{rules}"
 
     async def first() -> None:
         named = await s.agent.start(task_id, project, text, mode, session, False, mcp=mcp)
-        if named != session:  # Codex / Antigravity name their session once it runs
-            await s.db.write(s.store.set_task_session, task_id, named)
-        if message_id is not None:  # the tag itself, with its Q&A code: a later answer in that thread finds it
-            await add_refs(s, task_id, [(chat_id, message_id)], ask=False)  # (open_task_by_qa); asks keep their target
+        await _first_ran(s, task_id, session, named, chat_id, message_id)
         await add_refs(s, task_id, refs, ask=ask_refs)
 
     # eager: start() reserves the run before its first await, so the session shows running before the id goes out
@@ -147,6 +170,20 @@ async def start_task(
     _starts.add(run)
     run.add_done_callback(lambda t: _started(task_id, t))
     return run
+
+
+async def _rules(s, mode: str, about) -> str:
+    """One frame for every session (Giao AI Agent, Đối chiếu BE): who the user is, rules, answer sections, questions."""
+    tags = role_tags(await s.db.read(s.store.list_rules))
+    return session_rules(mode, about.role, about.platform, about.intro, tags=tags)
+
+
+async def _first_ran(s, task_id: str, session: str, named: str, chat_id: str | None, message_id) -> None:
+    """Once a session's first turn runs: the id its CLI gave it, and the tag it is about."""
+    if named != session:  # Codex / Antigravity name their session once it runs
+        await s.db.write(s.store.set_task_session, task_id, named)
+    if message_id is not None:  # the tag itself, with its Q&A code: a later answer in that thread finds it
+        await add_refs(s, task_id, [(chat_id, message_id)], ask=False)  # (open_task_by_qa); asks keep their target
 
 
 _starts: set[asyncio.Task] = set()  # the loop holds tasks weakly: a first turn must not be collected while it starts
@@ -173,12 +210,14 @@ RELAY_EFFORT = "medium"  # a turn Vòng BE sends on its own: the session's model
 
 async def send_turn(
     s, row: dict, typed: str, refs, edit: bool, *, auto: bool = False, mcp: bool = False, model: str | None = None,
+    about: AboutMe | None = None,
 ) -> None:  # fmt: skip
     """A follow-up turn of a session (resumes it): typed text (+ its attached messages, `refs`), allowed to edit files
     when `edit` (per turn, so a plan can be approved). The composer and autobe's relayed answers (`auto`: nobody
     asked for that turn, so it runs at RELAY_EFFORT unless the session's own effort is lower). `mcp`: the user let this
     turn use their own MCP servers / plugins (an edit turn only). `model`: this turn alone runs on it, not on the
-    session's (Vòng BE sparing quota)."""
+    session's (Vòng BE sparing quota). `about`: who the user is, for a session whose first turn never ran (it starts
+    over with the frame start_task gives; Vòng BE passes none: the defaults)."""
     task_id = row["id"]
 
     # made in start(), once reserved: a double send must not rewrite the files a turn reads
@@ -192,8 +231,21 @@ async def send_turn(
     effort = row["effort"]
     if auto and effort not in ("low", RELAY_EFFORT):
         effort = RELAY_EFFORT
-    await s.agent.start(task_id, row["project"], text, mode, row["session_id"], True, (model or row["model"], effort),
-                        auto=auto, mcp=mcp)  # fmt: skip
+    ai = (model or row["model"], effort)
+    if not await asyncio.to_thread(s.agent.ran, task_id):  # its first turn never reached the CLI: nothing to resume,
+        rules = await _rules(s, mode, about or AboutMe())  # so it starts again, the session's job then this turn's text
+        job = "\n\n".join(x for x in (row["prompt"] or read_task_prompt(s.settings, task_id), typed) if x)
+
+        async def first() -> str:
+            return await expand(s, at_usernames(job), task_id, chat_id=row["chat_id"]) + f"\n\n{rules}"
+
+        session = s.agent.new_session(split_session(row["session_id"])[0])
+        named = await s.agent.start(task_id, row["project"], first, mode, session, False, ai, auto=auto, mcp=mcp)
+        await _first_ran(s, task_id, session, named, row["chat_id"], row["message_id"])
+        if named == session:  # Claude: the row still names the session that never ran
+            await s.db.write(s.store.set_task_session, task_id, session)
+    else:
+        await s.agent.start(task_id, row["project"], text, mode, row["session_id"], True, ai, auto=auto, mcp=mcp)
     await add_refs(s, task_id, refs)
 
 
@@ -278,13 +330,13 @@ def build_router(settings) -> APIRouter:
 
     @r.post("/{task_id}/message", status_code=204)
     async def task_message(task_id: str, body: TaskMessage, request: Request) -> None:
-        """Follow-up turn in a headless task (resumes the same session)."""
+        """Follow-up turn in a headless task (resumes the same session; starts it over if it never ran)."""
         s = request.app.state
         row = await _task(s, task_id, headless=True)
         if not row["session_id"]:
             raise ApiError(404, "task_not_found")
         await send_turn(s, row, body.text, [(x.chat_id, x.message_id) for x in body.refs], body.edit,
-                        mcp=body.mcp)  # fmt: skip
+                        mcp=body.mcp, about=body)  # fmt: skip
 
     @r.put("/{task_id}/ai", status_code=204)
     async def task_ai(task_id: str, body: TaskAi, request: Request) -> None:

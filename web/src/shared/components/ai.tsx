@@ -2,7 +2,7 @@
 
 import { Popover } from "@base-ui/react/popover";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChartColumn, Copy, Cpu, ExternalLink, History, Play, SlidersHorizontal, UserRound } from "lucide-react";
+import { ChartColumn, Copy, Cpu, ExternalLink, History, Play, SlidersHorizontal, UserRound, WandSparkles } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
@@ -107,7 +107,7 @@ export function AiQuota({ scope = "telegram" }: { scope?: AiScope }) {
               </header>
               <Segmented id="quota-agent" label={t("AI hiện hạn mức trên thanh trên cùng")} variant="card" value={pick === provider ? pick : ""} onChange={saveQuotaAgent}
                 items={[
-                  { value: "", label: t("Tự động"), title: t("Theo AI đang chạy việc hằng ngày ở trang này ({name})", { name: info(auto)?.name ?? auto }) },
+                  { value: "", label: <><WandSparkles className="size-3.5" aria-hidden />{t("Tự động")}</>, title: t("Theo AI đang chạy việc hằng ngày ở trang này ({name})", { name: info(auto)?.name ?? auto }) },
                   ...AIS.map(([id, short]) => ({ value: id as string, title: t("Luôn hiện hạn mức của {name}", { name: info(id)?.name ?? short }),
                     label: <><AgentIcon provider={id} className="agent-still size-3.5" />{short}</> })),
                 ]} />

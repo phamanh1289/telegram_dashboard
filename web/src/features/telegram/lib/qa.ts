@@ -1,10 +1,10 @@
 "use client";
 
-import { useIsFetching, useQueries, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { useIsFetching, useQueries, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { api, errorText, type Member, type Message, type QaItem, type QaList } from "@/shared/lib/api";
 import { t as tr } from "@/shared/lib/i18n";
-import { msgKey, openQa, QA_CODE, qaAskKey } from "@/features/telegram/lib/inbox";
+import { acted, inQaPage, msgKey, openQa, pendingQuery, QA_CODE, qaAskKey, useTasks } from "@/features/telegram/lib/inbox";
 import { useNow } from "@/shared/hooks/use-now";
 import { toast } from "@/shared/lib/notifications";
 import { getPref, notifyPreview, onPrefs, readNotify, readQaAnswerBy, setPref, useQaRemind } from "@/shared/lib/prefs";
@@ -83,7 +83,8 @@ export function moveOldAnswers(qc: QueryClient, items: QaItem[]) {
 export type QaMark = "done" | "deleted" | null;
 async function markQa(qc: QueryClient, i: QaItem, state: QaMark) {
   const chatId = i.question.chat_id;
-  await api("/qa/mark", { method: "PUT", json: { chat_id: chatId, code: i.code, state } });
+  // the thread as listed: its question may not be stored, so Xong roots its tags from these
+  await api("/qa/mark", { method: "PUT", json: { chat_id: chatId, code: i.code, state, message_ids: thread(i).map((m) => m.message_id) } });
   setQa(qc, chatId, (d) => (state === "deleted"
     ? d.filter((x) => x.code !== i.code) : d.map((x) => (x.code === i.code ? { ...x, done: state === "done" } : x))));
   void qc.invalidateQueries({ queryKey: ["qa", chatId] }); // undoing a Xóa brings the thread back
@@ -198,6 +199,24 @@ function notifyLate(items: QaItem[], preview: boolean) {
 
 const dataOf = (rs: UseQueryResult<QaList>[]) => ({ datas: rs.map((r) => r.data?.items), errors: rs.map((r) => r.error) }); // structurally shared: stable until results change
 
+/** msgKey → "#QA…" of every message in these threads, and of the tag each question replied to (QaCodes). */
+const codesOf = (datas: (QaItem[] | undefined)[]) => new Map(datas.flatMap((d) => (d ?? []).flatMap((i) => [
+  ...thread(i).map((m) => [msgKey(m), i.code] as const),
+  ...(i.question.reply_to_id ? [[qaAskKey({ chat_id: i.question.chat_id, message_id: i.question.reply_to_id }), i.code] as const] : []),
+])));
+
+/** Tags on the "Đang chờ" tab (open, not left to Q&A, no AI session yet) over every day range: the Telegram switch's
+ *  red count off the inbox. Off the inbox there is no QaCodes provider, so the Q&A threads are read here, over the
+ *  7 days Hôm nay reads (same cache): a tag inside a thread with no code in its text is left to Q&A, as Hôm nay does. */
+export function useWaitingCount(on: boolean) {
+  const ids = useQaRecent().slice(0, 8);
+  const { datas } = useQueries({ queries: ids.map((id) => ({ ...qaQuery(id, 7), enabled: on, refetchInterval: on && 300_000 })), combine: dataOf });
+  const codes = useMemo(() => codesOf(datas), [datas]);
+  const tasks = useTasks();
+  const rows = useQuery({ ...pendingQuery(""), enabled: on, refetchInterval: on && 60_000 }).data;
+  return useMemo(() => (on ? (rows ?? []).filter((p) => !inQaPage(codes, p.message) && !acted(p, tasks)).length : 0), [on, rows, codes, tasks]);
+}
+
 /** The groups you asked lately (newest 8): their new replies (`by` group, `total`), your questions waiting for a nudge
  *  (`late` group, `lateTotal`) and `codes`, msgKey → "#QA…" of every message in their threads (tags show the badge).
  *  Read on load and every 5 min, every 2 min on the Q&A page.
@@ -209,10 +228,7 @@ export function useQaNews(days: number, onPage: boolean, poll = true) { // poll 
   const mins = useQaRemind();
   const now = useNow();
   const { datas, errors } = useQueries({ queries: ids.map((id) => ({ ...qaQuery(id, days), refetchInterval: poll && (onPage ? 120_000 : 300_000) })), combine: dataOf });
-  const codes = useMemo(() => new Map(datas.flatMap((d) => (d ?? []).flatMap((i) => [
-    ...thread(i).map((m) => [msgKey(m), i.code] as const),
-    ...(i.question.reply_to_id ? [[qaAskKey({ chat_id: i.question.chat_id, message_id: i.question.reply_to_id }), i.code] as const] : []),
-  ]))), [datas]);
+  const codes = useMemo(() => codesOf(datas), [datas]);
   const by: Record<string, number> = {};
   const late: Record<string, number> = {};
   const lists: Record<string, QaItem[]> = {};

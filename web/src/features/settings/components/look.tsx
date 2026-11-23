@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Monitor, Moon, Pipette, RotateCcw, Sun } from "lucide-react";
+import { Check, Feather, Monitor, Moon, Palette, Pipette, RotateCcw, Sparkles, Sun, Type } from "lucide-react";
 import { useState } from "react";
 import { LookPreview } from "@/features/settings/components/look-preview";
 import { MascotRow } from "@/features/settings/components/mascot";
@@ -15,10 +15,12 @@ import { cn } from "@/shared/lib/utils";
 
 const THEMES = [["light", "Sáng", Sun], ["dark", "Tối", Moon], ["system", "Theo hệ thống", Monitor]] as const;
 
-const STYLES: { value: UiStyle; label: Key; hint: Key; pro?: boolean }[] = [
-  { value: "simple", label: "Đơn giản", hint: "Phẳng, màu dịu, không gradient, chuyển động nhanh gọn." },
-  { value: "default", label: "Mặc định", hint: "Cân bằng: nền ấm nhẹ, bóng mềm, màu nhấn rõ." },
-  { value: "vivid", label: "Rực rỡ", pro: true,
+/** The Cỡ chữ chips' "T", growing with the size it picks. */
+const TYPE_SIZES = ["size-3", "size-3.5", "size-4", "size-4.5"];
+const STYLES: { value: UiStyle; label: Key; hint: Key; icon: typeof Palette; pro?: boolean }[] = [
+  { value: "simple", label: "Đơn giản", icon: Feather, hint: "Phẳng, màu dịu, không gradient, chuyển động nhanh gọn." },
+  { value: "default", label: "Mặc định", icon: Palette, hint: "Cân bằng: nền ấm nhẹ, bóng mềm, màu nhấn rõ." },
+  { value: "vivid", label: "Rực rỡ", icon: Sparkles, pro: true,
     hint: "Màu đậm hơn, nền loang theo màu của bạn, nút phát sáng, chuyển động nảy; bật gradient thì màu chạy chậm." },
 ];
 const WHEEL = `linear-gradient(to right in oklch, ${Array.from({ length: 37 }, (_, i) => `oklch(66% 0.17 ${i * 10})`).join()})`;
@@ -43,7 +45,7 @@ export function LookSection() {
     </Row>
     <Row label={t("Phong cách")} desc={t(STYLES.find((o) => o.value === look.style)!.hint)} stack>
       <Segmented id="set-style" variant="card" label={t("Phong cách")} value={look.style} onChange={(style) => set({ style })}
-        items={STYLES.map((o) => ({ value: o.value, label: o.pro ? <>{t(o.label)} <span className="rounded-sm bg-hl-wash px-1 text-2xs font-bold text-hl-2">Pro</span></> : t(o.label) }))} />
+        items={STYLES.map((o) => ({ value: o.value, label: <><o.icon className="size-3.5" aria-hidden />{t(o.label)}{o.pro && <span className="rounded-sm bg-hl-wash px-1 text-2xs font-bold text-hl-2">Pro</span>}</> }))} />
     </Row>
     <Row label={t("Font chữ")} desc={t("Áp dụng cho cả Telegram và YouTrack trên trình duyệt này.")}>
       <Dropdown label={t("Font chữ")} className="w-48" value={look.font} onChange={(v) => set({ font: v as FontId })}
@@ -51,7 +53,7 @@ export function LookSection() {
     </Row>
     <Row label={t("Cỡ chữ")} desc={t("Phóng to / thu nhỏ chữ toàn app; khoảng cách giữ nguyên.")}>
       <Segmented id="set-font-size" variant="card" label={t("Cỡ chữ")} value={look.size} onChange={(size) => set({ size })}
-        items={FONT_SIZES.map((z) => ({ value: z.id, label: t(z.label) }))} />
+        items={FONT_SIZES.map((z, i) => ({ value: z.id, label: <><Type className={TYPE_SIZES[i]} aria-hidden />{t(z.label)}</> }))} />
     </Row>
   </Card>
   <Card title="Màu sắc">

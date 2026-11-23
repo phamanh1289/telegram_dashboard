@@ -9,7 +9,8 @@ import { AiQuota } from "@/shared/components/ai";
 import { Button, buttonVariants } from "@/shared/components/ui/button";
 import { errorText, updateStateQuery } from "@/shared/lib/api";
 import { saveLang, t as tPlain, useT } from "@/shared/lib/i18n";
-import { Told, useWaitingCount } from "@/features/telegram/lib/inbox";
+import { Told } from "@/features/telegram/lib/inbox";
+import { useWaitingCount } from "@/features/telegram/lib/qa";
 import { useNow } from "@/shared/hooks/use-now";
 import { toast, type ToastMsg } from "@/shared/lib/notifications";
 import { applyTheme, readTheme, useRole } from "@/shared/lib/prefs";
@@ -55,12 +56,6 @@ function useYtBadge(on: boolean) {
   return { fresh, risk };
 }
 
-/** Tags waiting on me ("Việc cần xử lý › Đang chờ"), for a red count on the Telegram switch while elsewhere. */
-function useTgBadge(on: boolean) {
-  const n = useWaitingCount();
-  return on ? n : 0;
-}
-
 const list = (xs: string[]) => `${xs.slice(0, 5).join(", ")}${xs.length > 5 ? "…" : ""}`;
 
 function SwitchBadge({ n, label, className }: { n: number; label: string; className?: string }) {
@@ -85,7 +80,7 @@ function useUpdateState() {
 export function TopBar({ module, children, onClose }: { module: Module; children?: React.ReactNode; onClose?: () => void }) {
   const t = useT();
   const { fresh, risk } = useYtBadge(module !== "youtrack");
-  const tg = useTgBadge(module !== "telegram");
+  const tg = useWaitingCount(module !== "telegram"); // tags waiting on me ("Việc cần xử lý › Đang chờ")
   // New tickets for me and new "Báo lại" items (queued by the server's watch), on every page.
   useWatchGlobal((id, text) => { toast({ text: `${id}: ${text}` }); note(id, text); });
   useWaitNudge(true); // Chờ bổ sung waiting over 3 days: once a day, on every page

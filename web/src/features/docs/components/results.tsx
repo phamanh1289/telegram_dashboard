@@ -44,7 +44,7 @@ export const SourceIcon = ({ doc }: { doc: Doc }) =>
 /** "#### Phần 2" → "Phần 2". */
 export const headingText = (h: string) => h.replace(/^#+\s*/, "");
 /** A heading that only repeats the document's name ("# VA-A-1 Quy trình" in "Quy trình", "# Ghi chú" in "ghi-chu.md"). */
-const same = (heading: string, title: string) => {
+export const same = (heading: string, title: string) => {
   const h = fold(headingText(heading)).replace(/[^a-z0-9]+/g, ""), d = fold(title.replace(/\.\w+$/, "")).replace(/[^a-z0-9]+/g, "");
   return !!d && (h === d || h.endsWith(d));
 };

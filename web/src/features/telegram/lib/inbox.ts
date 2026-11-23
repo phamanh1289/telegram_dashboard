@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { createContext, use, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { createContext, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api, errorText, type GroupInfo, type HandledAllResponse, type Message, type PendingItem, type RuleAdded, type Task } from "@/shared/lib/api";
 import { type Key, t } from "@/shared/lib/i18n";
 import { aboutMe, getPref, put, readAgentProject, readOverdueHours } from "@/shared/lib/prefs";
@@ -367,15 +367,6 @@ export const settled = (t: Task) => !t.running && !!t.result;
 
 /** A tag is "in progress" once it has any AI session (AI Agent, Đối chiếu BE, Trợ lý AI); pinned ones stay in to-do. */
 export const acted = (p: PendingItem, tasks: Map<string, Task[]>) => !p.message.pinned && !!tasks.get(msgKey(p.message))?.length;
-
-/** Tags on the "Đang chờ" tab (open, not left to Q&A, no AI session yet) over every day range: the Telegram switch's red count.
- *  ponytail: off the inbox there is no Q&A thread map (QaCodes), so a Q&A tag with no Q&A code in its text may count here too. */
-export function useWaitingCount() {
-  const codes = use(QaCodes);
-  const tasks = useTasks();
-  const rows = useQuery({ ...pendingQuery(""), refetchInterval: 60_000 }).data;
-  return useMemo(() => (rows ?? []).filter((p) => !inQaPage(codes, p.message) && !acted(p, tasks)).length, [rows, codes, tasks]);
-}
 
 export function useTasks() {
   const data = useQuery(taskListQuery).data;

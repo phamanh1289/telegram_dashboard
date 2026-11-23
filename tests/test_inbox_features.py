@@ -475,6 +475,61 @@ def test_headless_task_runs_and_resumes(tmp_path):
         assert "--permission-mode acceptEdits" in ev["items"][-1]["text"] and "--resume" in ev["items"][-1]["text"]
 
 
+def test_session_whose_first_turn_failed_starts_over_on_next_message(tmp_path, monkeypatch):
+    """A first turn that never reached the CLI (REF-70b200: a bad command) left nothing to resume: the next message
+    starts the session again with its job, this text and the frame, not `--resume` of a session the CLI never made."""
+    import shlex
+    import sys
+    import time
+
+    from conftest import FakeTransport, TestClient, create_app
+    from telegram_dashboard import tasks
+
+    real, calls = tasks.expand, []
+
+    async def first_fails(s, text, *a, **kw):
+        calls.append(text)
+        if len(calls) == 1:
+            raise TypeError("boom")
+        return await real(s, text, *a, **kw)
+
+    monkeypatch.setattr(tasks, "expand", first_fails)
+    fake = tmp_path / "fake_claude.py"
+    fake.write_text(
+        "import json, sys\nsys.stdin.read()\nargs = 'ARGS ' + ' '.join(sys.argv[1:])\n"
+        "print(json.dumps({'type': 'result', 'result': args, 'is_error': False}))\n"
+    )
+    (tmp_path / "web" / "out").mkdir(parents=True)
+    (tmp_path / "web" / "out" / "index.html").write_text("x")
+    cfg = Settings(root=app_root(tmp_path), ai_task_command=f"{shlex.quote(sys.executable)} {shlex.quote(str(fake))}")
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    with TestClient(create_app(cfg, transport=FakeTransport()), base_url=ORIGIN) as c:
+        c.app.state.store.add_project(str(proj), "proj")
+
+        def wait(tid):
+            for _ in range(100):
+                ev = c.get(f"/api/tasks/{tid}/events").json()
+                if not ev["running"] and ev["items"] and ev["items"][-1]["kind"] == "result":
+                    return ev
+                time.sleep(0.05)
+            raise AssertionError("task did not finish")
+
+        job = {"project": str(proj), "prompt": "làm A", "mode": "plan"}
+        tid = c.post("/api/tasks", json=job, headers=H).json()["id"]
+        assert [i["kind"] for i in wait(tid)["items"]] == ["result"]  # only its error: no turn reached the CLI
+        session = lambda: c.app.state.store.get_task(tid)["session_id"]  # noqa: E731
+        old = session()
+        assert c.post(f"/api/tasks/{tid}/message", json={"text": "tiếp", "role": "dev"}, headers=H).status_code == 204
+        ev = wait(tid)
+        assert [i["kind"] for i in ev["items"]] == ["user", "result"]  # the error log replaced
+        assert "làm A\n\ntiếp" in ev["items"][0]["text"] and "Cần hỏi" in ev["items"][0]["text"]  # job + frame
+        assert "--session-id" in ev["items"][-1]["text"] and "--resume" not in ev["items"][-1]["text"]
+        assert session() != old
+        assert c.post(f"/api/tasks/{tid}/message", json={"text": "nữa"}, headers=H).status_code == 204
+        assert "--resume" in wait(tid)["items"][-1]["text"]  # it ran now: later turns resume
+
+
 def test_new_session_answers_before_its_links_are_read(tmp_path, monkeypatch):
     """Đối chiếu BE / Giao AI Agent: the id comes back (session already running) while the prompt's links are read."""
     import asyncio
@@ -612,6 +667,15 @@ def test_deep_thinking_runs_as_a_read_only_agent_session(tmp_path):
         c.put("/api/qa/mark", json=mark, headers=H)
         c.put("/api/qa/mark", json=mark | {"state": None}, headers=H)
         assert not store.get_message(A, 980).handled and not store.get_message(A, 982).handled
+        # a question never stored (sent from the Q&A box): the page's message ids root the thread
+        reply(971, 970, "@me xem giúp")
+        mark = {"chat_id": A, "code": "#QA70", "state": "done"}
+        assert c.put("/api/qa/mark", json=mark, headers=H).status_code == 204
+        assert not store.get_message(A, 971).handled
+        c.put("/api/qa/mark", json=mark | {"state": None}, headers=H)
+        assert c.put("/api/qa/mark", json=mark | {"message_ids": ["970"]}, headers=H).status_code == 204
+        assert store.get_message(A, 971).handled
+        assert c.put("/api/qa/mark", json=mark | {"message_ids": ["x"]}, headers=H).status_code == 404
 
 
 def test_attached_ref_finds_its_qa_up_the_live_chain(tmp_path):
@@ -642,6 +706,37 @@ def test_attached_ref_finds_its_qa_up_the_live_chain(tmp_path):
     with st._conn() as c:
         assert [tuple(r) for r in c.execute("SELECT message_id, qa FROM task_refs ORDER BY message_id")] == [
             (2, "#QA42"), (3, "")]
+
+
+def test_new_tag_in_a_xong_qa_thread_closes(tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+
+    from telegram_dashboard.storage import Db, Store
+    from telegram_dashboard.tasks import close_in_done_qa
+
+    st = Store(tmp_path / "db.sqlite3")
+    # the questions were sent from the Q&A box (read live, never stored); #QA70 is Xong, #QA71 still open
+    live = {1: msg(A, 1, "@be hỏi field?\n#QA70"), 2: msg(A, 2, "@be hỏi khác?\n#QA71"), 3: msg(A, 3, "staging đâu?")}
+    # someone's question (3) I answered with Q&A (#QA72 sits only in my reply): Xong kept the thread's messages
+    tags = [msg(A, 10, "@me check thêm").model_copy(update={"reply_to_id": 1}),
+            msg(A, 11, "@me còn mở").model_copy(update={"reply_to_id": 2}), msg(A, 12, "@me tin rời"),
+            msg(A, 13, "@me hỏi thêm").model_copy(update={"reply_to_id": 3})]
+    st.store_mentions([("G", "group", m, False) for m in tags])
+    st.set_qa_mark(A, "#QA70", "done")
+    st.set_qa_mark(A, "#QA72", "done")
+    st.mark_qa_thread(A, "#QA72", True, ids=[3, 4])
+
+    async def fetch_ids(chat_id, ids):
+        return [live[i] for i in ids if i in live]
+
+    async def run():
+        db = Db(st, SimpleNamespace(notify=lambda: None))
+        s = SimpleNamespace(store=st, db=db, bridge=SimpleNamespace(fetch_ids=fetch_ids))
+        await close_in_done_qa(s, tags)
+
+    asyncio.run(run())
+    assert [st.get_message(A, i).handled for i in (10, 11, 12, 13)] == [True, False, False, True]
 
 
 def test_snooze_until_reply_or_ticket_wakes_early(tmp_path):
