@@ -320,7 +320,7 @@
     "tab": "settings",
     "area": "Cài đặt › Cập nhật",
     "title": "Cập nhật app và tự động cập nhật",
-    "what": "Kiểm tra và cài bản mới từ GitHub: bấm \"Cập nhật\" mở hộp xác nhận (bản đang dùng / mới nhất, mục \"Có gì mới\": bản cài từ gói có ghi chú phát hành từng bản (tính năng, sửa lỗi, khác), bản git là danh sách commit; lệnh sẽ chạy); bấm \"Cập nhật\" trong hộp thì AI kéo bản mới về, khởi động lại server và tải lại trang; có thể bật tự động cập nhật mỗi giờ (bỏ qua khi có task AI Agent).",
+    "what": "Kiểm tra và cài bản mới từ GitHub: bấm \"Cập nhật\" mở hộp xác nhận (bản đang dùng / mới nhất, mục \"Có gì mới\": bản cài từ gói có ghi chú phát hành từng bản (tính năng, sửa lỗi, khác), bản git là danh sách commit; lệnh sẽ chạy); bấm \"Cập nhật\" trong hộp thì AI kéo bản mới về, khởi động lại server và tải lại trang; có thể bật tự động cập nhật mỗi giờ (bỏ qua khi có task AI Agent): cài xong app hiện hộp hỏi khởi động lại server, xong trang tự tải lại; đóng hộp thì sau đó vào mục này bấm \"Khởi động lại server\".",
     "how": [
       {
         "t": "Chọn mục \"Cập nhật\"",
@@ -350,7 +350,7 @@
     "tab": "settings",
     "area": "Cài đặt › Liên hệ",
     "title": "Báo lỗi, đề xuất tính năng cho nhà phát triển",
-    "what": "Gửi lỗi, đề xuất tính năng, góp ý hay câu hỏi cho nhà phát triển: chọn loại và khu vực, viết tiêu đề và mô tả, kèm tối đa 5 ảnh (nút ảnh, dán ⌘V hoặc kéo thả vào ô mô tả; ảnh lớn tự thu nhỏ). \"Thông tin máy\" (bật sẵn) kèm phiên bản, hệ điều hành, trình duyệt, trạng thái Telegram / YouTrack; \"Log lỗi\" kèm cảnh báo / lỗi của app trong 24 giờ thành file log.txt. Bấm \"Xem trước\" (⌘Enter) để thấy đúng tin Telegram sẽ gửi, rồi bấm \"Gửi\" (⌘Enter). Gặp lỗi bất ngờ, toast lỗi có nút \"Báo lỗi này\" mở thẳng mục này với mã lỗi và màn đang mở điền sẵn. Đang dùng bản cũ thì mục này nhắc cập nhật trước. Chip \"AI\" trong khung soạn viết lại tiêu đề và mô tả cho rõ (bước tái hiện, kết quả, mong đợi; chỗ chưa rõ ghi \"(chưa rõ)\" để bạn điền), chữ hiện dần ngay trong ô, có nút dừng; xong thì toast cho \"Hoàn tác\".",
+    "what": "Gửi lỗi, đề xuất tính năng, góp ý hay câu hỏi cho nhà phát triển: bấm chip loại và khu vực (mỗi loại có gợi ý cần viết gì), viết tiêu đề (tối đa 120 ký tự) và mô tả (tối đa 3000 ký tự, khung mô tả lấp đầy màn và tự cuộn), kèm tối đa 5 ảnh (nút ảnh, dán ⌘V hoặc kéo thả vào ô mô tả; ảnh lớn tự thu nhỏ). \"Thông tin máy\" (bật sẵn) kèm phiên bản, hệ điều hành, trình duyệt, trạng thái Telegram / YouTrack; \"Log lỗi\" (chỉ ở loại Báo lỗi) kèm cảnh báo / lỗi của app trong 24 giờ thành file log.txt. Bấm \"Xem trước\" (⌘Enter) để thấy đúng tin Telegram sẽ gửi, rồi bấm \"Gửi\" (⌘Enter). Gặp lỗi bất ngờ, toast lỗi có nút \"Báo lỗi này\" mở thẳng mục này với mã lỗi và màn đang mở điền sẵn. Đang dùng bản cũ thì mục này nhắc cập nhật trước. Chip \"AI\" trong khung soạn viết lại tiêu đề và mô tả cho rõ (bước tái hiện, kết quả, mong đợi; chỗ chưa rõ ghi \"(chưa rõ)\" để bạn điền), chữ hiện dần ngay trong ô, có nút dừng; xong thì toast cho \"Hoàn tác\".",
     "how": [
       {
         "t": "Chọn mục \"Liên hệ\"",
@@ -358,7 +358,7 @@
       },
       {
         "t": "Chọn loại: Báo lỗi, Tính năng, Góp ý hoặc Câu hỏi",
-        "at": "css:section[data-card=\"Gửi cho nhà phát triển\"] [role=group]"
+        "at": "css:section[data-card=\"Gửi cho nhà phát triển\"] [role=radiogroup]"
       },
       {
         "t": "Viết tiêu đề và mô tả, dán ảnh chụp màn hình vào ô mô tả nếu có",

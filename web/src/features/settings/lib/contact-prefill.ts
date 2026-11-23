@@ -20,7 +20,7 @@ export function prefillReport(text: string, f: Failure) {
     "Đã làm gì ngay trước đó: ",
   ].join("\n");
   try {
-    sessionStorage.setItem(KEY, JSON.stringify({ kind: "bug", area, title: text.trim().slice(0, 200), text: body } satisfies ContactDraft));
+    sessionStorage.setItem(KEY, JSON.stringify({ kind: "bug", area, title: text.trim().slice(0, 120), text: body } satisfies ContactDraft));
   } catch { /* blocked storage: Liên hệ just opens empty */ }
 }
 

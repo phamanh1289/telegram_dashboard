@@ -21,13 +21,14 @@ export function useStatus() {
 /** A settings card: title (+ the long explanation behind the bulb), an optional action on the right, then its rows.
  *  `advanced`: rarely changed; folded to its title until opened (animated both ways), so the everyday settings come first;
  *  `badge` shows beside the title while folded (e.g. how many rules it holds). `title` (the key) is
- *  also the search's scroll anchor (`data-card`), the same in both languages. */
-export function Card({ title, info, action, advanced, badge, children }: { title: Key; info?: Key; action?: React.ReactNode; advanced?: boolean; badge?: React.ReactNode; children: React.ReactNode }) {
+ *  also the search's scroll anchor (`data-card`), the same in both languages. `fill`: the card takes its parent's height
+ *  and its one child the rest below the title (that child decides what scrolls). */
+export function Card({ title, info, action, advanced, badge, fill, children }: { title: Key; info?: Key; action?: React.ReactNode; advanced?: boolean; badge?: React.ReactNode; fill?: boolean; children: React.ReactNode }) {
   const t = useT();
   const [open, setOpen] = useState(!advanced);
-  const body = <div className="grid divide-y divide-rule px-4 pb-4 sm:px-5">{children}</div>;
+  const body = <div className={cn("grid divide-y divide-rule px-4 pb-4 sm:px-5", fill && "min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)]")}>{children}</div>;
   return (
-    <section aria-label={t(title)} data-card={title} className="grid scroll-mt-24 rounded-[var(--radius-card)] border border-rule bg-cotton shadow-stock outline-offset-2 data-flash:outline-2 data-flash:outline-hl">
+    <section aria-label={t(title)} data-card={title} className={cn("grid scroll-mt-24 rounded-[var(--radius-card)] border border-rule bg-cotton shadow-stock outline-offset-2 data-flash:outline-2 data-flash:outline-hl", fill && "h-full grid-cols-1 grid-rows-[auto_minmax(0,1fr)]")}>
       <header className="flex min-h-11 items-center gap-1.5 px-4 py-3 sm:px-5">
         {advanced ? (
           <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex items-center gap-1.5 rounded-sm text-sm font-bold text-ink">

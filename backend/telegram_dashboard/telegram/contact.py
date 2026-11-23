@@ -20,6 +20,7 @@ from .routes import S
 
 DEVELOPER = "phamanh1289"  # the Telegram @username every report goes to
 MAX_PHOTO = 5 * 1024 * 1024
+TITLE_MAX, TEXT_MAX = 120, 3000  # models.ContactRequest; the page counts against the same numbers
 KINDS = {"bug": "Lỗi", "feature": "Tính năng mới", "idea": "Góp ý", "question": "Câu hỏi"}
 AREAS = {"telegram": "Telegram", "youtrack": "YouTrack", "docs": "Tài liệu", "ai": "AI",
          "settings": "Cài đặt", "other": "Khác"}  # fmt: skip
@@ -55,7 +56,7 @@ def diag(s) -> list[str]:
     if updater.behind:
         lines.append(f"Đang chậm {updater.behind} bản so với GitHub")
     if updater.last_error:
-        lines.append(f"Lỗi cập nhật gần nhất: {updater.last_error}")
+        lines.append(f"Lỗi cập nhật gần nhất: {updater.last_error[:300]}")
     return lines
 
 
@@ -93,7 +94,8 @@ POLISH_PROMPT = (
     "invent steps, values or causes: a part the draft does not say becomes '(chưa rõ)' for the user to fill in. Keep "
     "error codes, IDs, screen names and the lines about the error ('Thông báo lỗi', 'Mã lỗi', 'Chi tiết', 'Màn') word "
     "for word. Write in the draft's language, plain text (no Markdown headings, no bold). Output exactly: line 1 the "
-    "title (one short line, at most 120 characters, no prefix), then a line with only ---, then the description."
+    "title (one short line, at most 120 characters, no prefix), then a line with only ---, then the description "
+    "(at most 3000 characters)."
 )
 
 
@@ -105,9 +107,9 @@ def parse_polish(out: str, body: ContactPolishRequest) -> ContactPolish:
     """'title / --- / description'; without the --- line the whole answer is the description."""
     head, sep, rest = out.strip().partition("\n---\n")
     if not sep:
-        return ContactPolish(title=body.title, text=out.strip()[:4000])
+        return ContactPolish(title=body.title, text=out.strip()[:TEXT_MAX])
     title = head.strip().splitlines()[-1].strip() if head.strip() else body.title
-    return ContactPolish(title=title[:200] or body.title, text=rest.strip()[:4000])
+    return ContactPolish(title=title[:TITLE_MAX] or body.title, text=rest.strip()[:TEXT_MAX])
 
 
 def build_router() -> APIRouter:

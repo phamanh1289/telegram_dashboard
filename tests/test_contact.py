@@ -35,6 +35,7 @@ def test_contact_sends_dm_with_photos(settings):
         r = c.post("/api/contact", json={**BODY, "photos": [base64.b64encode(b"GIF89a").decode()]})
         assert (r.status_code, r.json()["error"]["code"], len(fake.sent_to)) == (400, "bad_photo", n)
         assert c.post("/api/contact", json={**BODY, "title": "  "}).status_code == 422
+        assert c.post("/api/contact", json={**BODY, "text": "x" * 3001}).status_code == 422  # one Telegram message
 
         async def lost(peer, text, photos):
             raise ConnectionError

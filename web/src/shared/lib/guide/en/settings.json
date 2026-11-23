@@ -320,7 +320,7 @@
     "tab": "settings",
     "area": "Settings › Updates",
     "title": "Update the app and auto-update",
-    "what": "Checks for and installs new versions from GitHub: \"Update\" opens a confirm box (current / latest version, \"What's new\": an installed build shows each version's release notes (features, fixes, other), a git checkout its commits; the commands to run); clicking \"Update\" in the box has the AI pull the new version, restart the server and reload the page; you can turn on auto-update every hour (skipped while an AI Agent task runs).",
+    "what": "Checks for and installs new versions from GitHub: \"Update\" opens a confirm box (current / latest version, \"What's new\": an installed build shows each version's release notes (features, fixes, other), a git checkout its commits; the commands to run); clicking \"Update\" in the box has the AI pull the new version, restart the server and reload the page; you can turn on auto-update every hour (skipped while an AI Agent task runs): once installed, a box asks to restart the server and the page reloads after; close it and use \"Restart server\" here later.",
     "how": [
       {
         "t": "Choose the \"Updates\" section",
@@ -350,7 +350,7 @@
     "tab": "settings",
     "area": "Settings › Contact",
     "title": "Report a bug or request a feature from the developer",
-    "what": "Send a bug, a feature request, a suggestion or a question to the developer: pick the type and area, write a title and a description, attach up to 5 images (image button, paste ⌘V or drag into the description; big ones are shrunk). \"Machine info\" (on by default) adds the version, OS, browser and Telegram / YouTrack state; \"Error log\" attaches the app's warnings / errors from the last 24 hours as log.txt. Click \"Preview\" (⌘Enter) to see the exact Telegram message, then \"Send\" (⌘Enter). On an unexpected error, the error toast has \"Report it\", which opens this section with the error code and the current screen filled in. On an old version, it reminds you to update first. The \"AI\" chip in the composer rewrites the title and description clearly (steps, result, expected; anything missing becomes \"(chưa rõ)\" for you to fill in), streaming into the box with a stop button; a toast then offers \"Undo\".",
+    "what": "Send a bug, a feature request, a suggestion or a question to the developer: click the type and area chips (each type says what to write), write a title (up to 120 characters) and a description (up to 3000 characters; the description box fills the screen and scrolls), attach up to 5 images (image button, paste ⌘V or drag into the description; big ones are shrunk). \"Machine info\" (on by default) adds the version, OS, browser and Telegram / YouTrack state; \"Error log\" (Bug only) attaches the app's warnings / errors from the last 24 hours as log.txt. Click \"Preview\" (⌘Enter) to see the exact Telegram message, then \"Send\" (⌘Enter). On an unexpected error, the error toast has \"Report it\", which opens this section with the error code and the current screen filled in. On an old version, it reminds you to update first. The \"AI\" chip in the composer rewrites the title and description clearly (steps, result, expected; anything missing becomes \"(chưa rõ)\" for you to fill in), streaming into the box with a stop button; a toast then offers \"Undo\".",
     "how": [
       {
         "t": "Choose the \"Contact\" section",
@@ -358,7 +358,7 @@
       },
       {
         "t": "Pick the type: Bug, Feature, Suggestion or Question",
-        "at": "css:section[data-card=\"Gửi cho nhà phát triển\"] [role=group]"
+        "at": "css:section[data-card=\"Gửi cho nhà phát triển\"] [role=radiogroup]"
       },
       {
         "t": "Write a title and a description, paste screenshots into the description if any",

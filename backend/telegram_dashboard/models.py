@@ -152,10 +152,11 @@ class ChangesPage(BaseModel):
 class ContactRequest(BaseModel):
     """Cài đặt › Liên hệ: one message to the app's developer on Telegram."""
 
-    title: str = Field(min_length=1, max_length=200)
+    # One-line title; a description that keeps the whole message (with the machine lines) in one Telegram message (4096)
+    title: str = Field(min_length=1, max_length=120)
     kind: Literal["bug", "feature", "idea", "question"]
     area: Literal["telegram", "youtrack", "docs", "ai", "settings", "other"]
-    text: str = Field(min_length=1, max_length=4000)
+    text: str = Field(min_length=1, max_length=3000)
     diag: bool = True  # add the app / machine lines (contact.diag)
     logs: bool = False  # attach the server's recent warnings / errors as log.txt (log_buffer)
     client: str = Field("", max_length=300)  # browser, language, screen: what only the page knows
@@ -174,8 +175,8 @@ class ContactPolishRequest(BaseModel):
 
     kind: Literal["bug", "feature", "idea", "question"]
     area: Literal["telegram", "youtrack", "docs", "ai", "settings", "other"]
-    title: str = Field("", max_length=200)
-    text: str = Field(min_length=1, max_length=4000)
+    title: str = Field("", max_length=120)
+    text: str = Field(min_length=1, max_length=3000)
 
 
 class ContactPolish(BaseModel):

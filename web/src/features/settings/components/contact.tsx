@@ -3,23 +3,21 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Bug, Cpu, Eye, FileText, HelpCircle, ImagePlus, Lightbulb, Send, Sparkles, Square, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
-import { Card, linkCls, StatusLine, tMap, useStatus } from "@/features/settings/components/parts";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Card, linkCls, PickPill, picked, StatusLine, tMap, useStatus } from "@/features/settings/components/parts";
 import { clearPrefill, type ContactDraft, readPrefill } from "@/features/settings/lib/contact-prefill";
 import { AiAsk } from "@/features/youtrack/components/bits";
 import { AiWriting } from "@/shared/components/ai/chat";
 import type { components } from "@/shared/lib/api.generated";
 import { Button } from "@/shared/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/shared/components/ui/dialog";
-import { Dropdown } from "@/shared/components/ui/dropdown";
 import { Fold, FoldMore } from "@/shared/components/ui/fold";
 import { Hint } from "@/shared/components/ui/hint";
 import { Input } from "@/shared/components/ui/input";
-import { Segmented } from "@/shared/components/ui/segmented";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { Textarea } from "@/shared/components/ui/textarea";
 import { api, apiStream, errorText, updateStateQuery } from "@/shared/lib/api";
-import { type Key, useT } from "@/shared/lib/i18n";
+import { fmtNum, type Key, useT } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
 import { put, readJson } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
@@ -34,14 +32,30 @@ const DRAFT_KEY = "contact-draft";
 const MAX_PHOTOS = 5, MAX_BYTES = 5 * 1024 * 1024; // backend/telegram_dashboard/telegram/contact.py
 const TYPES = ["image/png", "image/jpeg", "image/webp"]; // sent as they are; anything else is redrawn as JPEG
 const MAX_SIDE = 2560;
-const KINDS: [Req["kind"], Key, typeof Bug][] = [["bug", "Báo lỗi", Bug], ["feature", "Tính năng", Sparkles], ["idea", "Góp ý", Lightbulb], ["question", "Câu hỏi", HelpCircle]];
+// Limits (backend ContactRequest too): a one-line title, and a description that keeps the whole message (with the
+// machine info, ~500 characters) inside one Telegram message (4096); more detail belongs in screenshots / log.txt.
+const TITLE_MAX = 120, TEXT_MAX = 3000;
+/** Per type: chip, what it is for (hover), what to write (the line under the chips) and the two placeholders. */
+const KINDS: { value: Req["kind"]; label: Key; icon: typeof Bug; hint: Key; guide: Key; title: Key; text: Key }[] = [
+  { value: "bug", label: "Báo lỗi", icon: Bug, hint: "App chạy sai, treo hoặc báo lỗi.",
+    guide: "Ghi các bước để gặp lỗi, kết quả thực tế và kết quả mong đợi. Ảnh chụp màn hình và Log lỗi giúp xử lý nhanh hơn.",
+    title: "Tóm tắt lỗi trong một câu, vd: Gửi ảnh trong nhóm bị treo",
+    text: "Các bước để gặp lỗi:\n1. Mở …\n2. Bấm …\n\nKết quả thực tế: thấy gì, thông báo lỗi nếu có\nKết quả mong đợi: đúng ra phải thế nào\nTần suất: lần nào cũng bị / thỉnh thoảng" },
+  { value: "feature", label: "Tính năng", icon: Sparkles, hint: "Việc app chưa làm được mà bạn cần.",
+    guide: "Nêu việc bạn cần làm được, dùng trong tình huống nào và thế nào là xong. Có cách làm tạm hiện tại thì ghi luôn.",
+    title: "Tính năng cần có, vd: Lọc tin theo người gửi",
+    text: "Cần làm được: …\nDùng khi: tình huống, ai dùng, bao lâu một lần\nHiện đang làm tạm thế nào: …\nThế nào là xong: kết quả bạn mong đợi" },
+  { value: "idea", label: "Góp ý", icon: Lightbulb, hint: "Cải thiện điều app đã có: dễ dùng hơn, nhanh hơn, rõ hơn.",
+    guide: "Chỉ rõ chỗ đang chưa ổn, đề xuất đổi thành gì và lợi ích mang lại.",
+    title: "Điều nên cải thiện, vd: Nút Gửi khó thấy trên màn hẹp",
+    text: "Hiện tại: đang thế nào, chỗ nào chưa ổn\nĐề xuất: nên đổi thành gì\nLý do: lợi ích cho bạn / team" },
+  { value: "question", label: "Câu hỏi", icon: HelpCircle, hint: "Hỏi cách dùng hoặc cách app hoạt động.",
+    guide: "Hỏi thẳng điều cần biết, kèm màn đang mở và điều bạn đã thử.",
+    title: "Câu hỏi ngắn, vd: Briefing tự chạy lúc mấy giờ?",
+    text: "Bạn muốn biết điều gì, đang ở màn nào, đã thử gì…" },
+];
 const AREAS: [Req["area"], Key][] = [["telegram", "Telegram"], ["youtrack", "YouTrack"], ["docs", "Tài liệu"], ["ai", "AI"], ["settings", "Cài đặt"], ["other", "Khác"]];
-const PLACEHOLDER: Record<Req["kind"], Key> = {
-  bug: "Đã làm gì, thấy gì, đúng ra phải thế nào…",
-  feature: "Cần làm được gì, dùng trong tình huống nào…",
-  idea: "Điều gì nên khác đi, vì sao…",
-  question: "Bạn muốn hỏi gì…",
-};
+const MIN_H = 460; // below this the page scrolls instead of squeezing the description
 const EMPTY: Draft = { kind: "bug", area: "telegram", title: "", text: "" };
 let seq = 0;
 
@@ -68,6 +82,53 @@ async function fit(f: File): Promise<Blob | null> {
   return null;
 }
 const dataUrl = (b: Blob) => new Promise<string>((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => no(r.error); r.readAsDataURL(b); });
+
+/** One pick-one row of chips (type, area), the picked one's highlight sliding between them. */
+function Chips<V extends string>({ id, label, value, onChange, items }: {
+  id: string; label: string; value: V; onChange: (v: V) => void; items: { value: V; label: string; icon?: typeof Bug; hint?: string }[];
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
+      {items.map((it) => {
+        const on = it.value === value;
+        const chip = (
+          <button key={it.value} type="button" role="radio" aria-checked={on} onClick={() => onChange(it.value)}
+            className={cn("flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs", picked(on), on ? "font-medium text-hl-2" : "text-ink-2")}>
+            <PickPill id={id} on={on} className="rounded-full" />
+            {it.icon && <it.icon className="size-3.5" aria-hidden />}{it.label}
+          </button>
+        );
+        return it.hint ? <Hint key={it.value} text={it.hint}>{chip}</Hint> : chip;
+      })}
+    </div>
+  );
+}
+
+/** The height that takes `ref` to the bottom of the window less the page's bottom padding, so the page itself does not
+ *  scroll; MIN_H at least (a short window scrolls the page rather than squeeze the form). null below the page's `md`
+ *  layout (the menu on top, chips wrapping): the form keeps its natural height there and the page scrolls. */
+function useFillHeight(ref: React.RefObject<HTMLElement | null>) {
+  const [h, setH] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const wide = matchMedia("(min-width: 48rem)");
+    const fit = () => {
+      if (!wide.matches) return setH(null);
+      const pad = parseFloat(getComputedStyle(el.closest("main")?.parentElement ?? el).paddingBottom) || 0;
+      setH(Math.max(MIN_H, Math.floor(innerHeight - (el.getBoundingClientRect().top + scrollY) - pad)));
+    };
+    fit();
+    // The window, and anything above that settles late (fonts, the header's wrap): `fit` never moves our own top, so
+    // the observer settles after one pass.
+    const ro = new ResizeObserver(fit);
+    ro.observe(document.body);
+    addEventListener("resize", fit);
+    wide.addEventListener("change", fit);
+    return () => { ro.disconnect(); removeEventListener("resize", fit); wide.removeEventListener("change", fit); };
+  }, [ref]);
+  return h;
+}
 
 /** One on / off chip in the composer's toolbar (what goes along with the message). */
 function Chip({ on, onChange, hint, icon: Icon, label }: { on: boolean; onChange: (v: boolean) => void; hint: string; icon: typeof Bug; label: string }) {
@@ -125,6 +186,10 @@ export function ContactGroup() {
   const polishErr = polish.isError && !(polish.error instanceof Error && polish.error.name === "AbortError")
     ? errorText(polish.error, {}, t("AI không viết lại được, thử lại.")) : "";
   const reduce = useReducedMotion();
+  const box = useRef<HTMLDivElement>(null);
+  const height = useFillHeight(box);
+  const kind = KINDS.find((k) => k.value === d.kind) ?? KINDS[0];
+  const bug = d.kind === "bug"; // Log lỗi and the "update first" notice are about bugs only
   useEffect(() => { put(DRAFT_KEY, d.title || d.text ? JSON.stringify(d) : null); }, [d]); // text survives a reload or a failed send
   const edit = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
 
@@ -141,14 +206,15 @@ export function ContactGroup() {
     setBad(imgs.length > room ? t("Tối đa {n} ảnh.", { n: MAX_PHOTOS }) : got.length < imgs.length ? t("Có ảnh không mở được, đã bỏ qua.") : "");
   };
   const ready = !!d.title.trim() && !!d.text.trim();
-  const preview = () => { setReq({ ...d, diag, logs, client: diag ? clientLine() : "", photos: photos.map((p) => p.b64) }); setOpen(true); };
+  const preview = () => { setReq({ ...d, diag, logs: logs && bug, client: diag ? clientLine() : "", photos: photos.map((p) => p.b64) }); setOpen(true); };
   const sent = () => { setOpen(false); setD(EMPTY); setPhotos([]); setBad(""); toast({ text: t("Đã gửi cho nhà phát triển qua Telegram") }); };
 
   return (
-    <Card title="Gửi cho nhà phát triển" info="Gửi bằng tài khoản Telegram đang đăng nhập trong app, thành tin nhắn riêng tới nhà phát triển; ảnh đi kèm thành một album. Câu trả lời sẽ về Telegram của bạn.">
-      <div className="grid grid-cols-1 gap-3 pt-1" onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && ready && !writing) { e.preventDefault(); preview(); } }}>
-        <div>{/* no grid gap around the folded notice */}
-        <Fold open={behind > 0}>
+    <div ref={box} className="min-w-0" style={height ? { height } : undefined}>
+    <Card fill title="Gửi cho nhà phát triển" info="Gửi bằng tài khoản Telegram đang đăng nhập trong app, thành tin nhắn riêng tới nhà phát triển; ảnh đi kèm thành một album. Câu trả lời sẽ về Telegram của bạn.">
+      <div className="flex min-h-0 flex-col gap-3 pt-1" onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && ready && !writing) { e.preventDefault(); preview(); } }}>
+        <div>{/* no flex gap around the folded notice */}
+        <Fold open={bug && behind > 0}>
           <div className="pb-3">
             <p className="flex flex-wrap items-center gap-x-2 rounded-md bg-signal-wash px-3 py-2 text-xs text-signal-2">
               <TriangleAlert aria-hidden className="size-3.5 shrink-0" />{t("Đang chậm {n} bản: lỗi có thể đã được sửa ở bản mới.", { n: behind })}
@@ -156,21 +222,22 @@ export function ContactGroup() {
             </p>
           </div>
         </Fold>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="min-w-0 max-w-full overflow-x-auto [scrollbar-width:none]">{/* narrow screens scroll the chips instead of widening the card */}
-          <Segmented id="contact-kind" label={t("Loại")} value={d.kind} onChange={(kind) => edit({ kind })}
-            items={KINDS.map(([value, k, Icon]) => ({ value, label: <span className="flex items-center gap-1.5"><Icon className="size-3.5" aria-hidden />{t(k)}</span> }))} />
-          </div>
-          <Dropdown label={t("Khu vực")} prefix={<span className="text-ink-3">{t("Khu vực")}</span>} className="w-48" value={d.area}
-            onChange={(v) => edit({ area: v as Req["area"] })} options={AREAS.map(([value, k]) => ({ value, label: t(k) }))} />
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
+          <span className="text-xs text-ink-3">{t("Loại")}</span>
+          <Chips id="contact-kind" label={t("Loại")} value={d.kind} onChange={(v) => edit({ kind: v })}
+            items={KINDS.map((k) => ({ value: k.value, label: t(k.label), icon: k.icon, hint: t(k.hint) }))} />
+          <span className="text-xs text-ink-3">{t("Khu vực")}</span>
+          <Chips id="contact-area" label={t("Khu vực")} value={d.area} onChange={(v) => edit({ area: v })}
+            items={AREAS.map(([value, k]) => ({ value, label: t(k) }))} />
         </div>
         </div>
-        <Input aria-label={t("Tiêu đề")} maxLength={200} value={live?.title ?? d.title} readOnly={writing} onChange={(e) => edit({ title: e.target.value })} placeholder={t("Tiêu đề: một câu ngắn")} />
-        <div className={cn("grid rounded-md border bg-cotton transition-colors duration-(--dur-micro) focus-within:border-hl", over ? "border-hl bg-hl-wash" : "border-rule-2 hover:border-ink-3", writing && "ai-ring")}
+        <p key={d.kind} className="text-xs leading-relaxed text-ink-3 animate-in fade-in-0 duration-(--dur-short) motion-reduce:animate-none">{t(kind.guide)}</p>
+        <Input aria-label={t("Tiêu đề")} maxLength={TITLE_MAX} value={live?.title ?? d.title} readOnly={writing} onChange={(e) => edit({ title: e.target.value })} placeholder={t(kind.title)} />
+        <div className={cn("flex min-h-0 flex-1 flex-col rounded-md border bg-cotton transition-colors duration-(--dur-micro) focus-within:border-hl", over ? "border-hl bg-hl-wash" : "border-rule-2 hover:border-ink-3", writing && "ai-ring")}
           onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false); }}
           onDrop={(e) => { e.preventDefault(); setOver(false); void add([...e.dataTransfer.files]); }}>
-          <Textarea ref={textBox} aria-label={t("Mô tả")} maxLength={4000} value={live?.text ?? d.text} readOnly={writing} aria-busy={writing} onChange={(e) => edit({ text: e.target.value })} placeholder={t(PLACEHOLDER[d.kind])}
-            className="min-h-28 border-0 bg-transparent hover:border-0 focus-visible:outline-none"
+          <Textarea ref={textBox} aria-label={t("Mô tả")} maxLength={TEXT_MAX} value={live?.text ?? d.text} readOnly={writing} aria-busy={writing} onChange={(e) => edit({ text: e.target.value })} placeholder={t(kind.text)}
+            className="min-h-48 flex-1 resize-none md:min-h-24 overflow-y-auto border-0 bg-transparent field-sizing-fixed hover:border-0 focus-visible:outline-none"
             onPaste={(e) => { const f = [...e.clipboardData.files]; if (f.length) { e.preventDefault(); void add(f); } }} />
           <Fold open={photos.length > 0}>
             <div className="grid gap-1.5 px-3 pb-2.5">
@@ -192,7 +259,7 @@ export function ContactGroup() {
               <span className="text-xs text-ink-3">{t("Ảnh chụp có thể lộ tin nhắn của khách hàng: kiểm tra trước khi gửi.")}</span>
             </div>
           </Fold>
-          <div className="flex items-center gap-1 border-t border-rule px-1.5 py-1.5">
+          <div className="flex flex-wrap items-center gap-1 border-t border-rule px-1.5 py-1.5">
             <Hint text={t("Thêm ảnh (tối đa 5, ảnh lớn tự thu nhỏ). Dán ⌘V hoặc kéo thả vào ô này cũng được.")}>
               <Button variant="ghost" size="xs" disabled={photos.length >= MAX_PHOTOS} onClick={() => file.current?.click()}>
                 <ImagePlus aria-hidden />{photos.length ? `${photos.length}/${MAX_PHOTOS}` : t("Ảnh")}
@@ -200,9 +267,18 @@ export function ContactGroup() {
             </Hint>
             <Chip on={diag} onChange={setDiag} icon={Cpu} label={t("Thông tin máy")}
               hint={t("Kèm phiên bản app, hệ điều hành, trình duyệt, trạng thái Telegram / YouTrack. Không gửi token, tin nhắn hay tên nhóm.")} />
-            <Chip on={logs} onChange={setLogs} icon={FileText} label={t("Log lỗi")}
-              hint={t("Kèm cảnh báo / lỗi của app trong 24 giờ qua thành file log.txt (đã ẩn SĐT / email); xem được trước khi gửi.")} />
+            <AnimatePresence initial={false}>
+              {bug && (
+                <motion.span key="logs" initial={reduce ? false : { opacity: 0, width: 0 }} animate={{ opacity: 1, width: "auto" }} exit={reduce ? { opacity: 0 } : { opacity: 0, width: 0 }} className="overflow-hidden">
+                  <Chip on={logs} onChange={setLogs} icon={FileText} label={t("Log lỗi")}
+                    hint={t("Kèm cảnh báo / lỗi của app trong 24 giờ qua thành file log.txt (đã ẩn SĐT / email); xem được trước khi gửi.")} />
+                </motion.span>
+              )}
+            </AnimatePresence>
             <span className="ml-auto flex items-center gap-2">
+              {d.text.length >= TEXT_MAX * 0.8 && (
+                <span className={cn("text-xs tabular-nums", d.text.length >= TEXT_MAX ? "text-warn" : "text-ink-3")} aria-live="polite">{fmtNum(d.text.length)}/{fmtNum(TEXT_MAX)}</span>
+              )}
               {writing ? <>
                 <AiWriting label={t("AI đang viết lại")} />
                 <Hint text={t("Dừng, giữ nguyên bản của bạn")}>
@@ -226,6 +302,7 @@ export function ContactGroup() {
       </div>
       {req && <PreviewDialog open={open} req={req} photos={photos} onClose={() => setOpen(false)} onSent={sent} />}
     </Card>
+    </div>
   );
 }
 
