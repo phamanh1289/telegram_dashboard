@@ -506,7 +506,8 @@ def create_app(
     @app.get("/api/projects")
     async def projects(request: Request) -> list[ProjectDTO]:
         s = S(request)
-        return [ProjectDTO(**p) for p in await s.db.read(s.store.list_projects)]
+        rows = await s.db.read(s.store.list_projects)  # one registered before the rule (the app, ~…): never offered
+        return [ProjectDTO(**p) for p in rows if not s.settings.forbids_project(p["path"])]
 
     async def _add_project(request: Request, raw: str) -> ProjectDTO:
         s = S(request)

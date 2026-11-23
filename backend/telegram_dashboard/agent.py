@@ -191,11 +191,12 @@ class AgentRunner:
                                      mcp=mcp, zeplin=zeplin, project=project)  # fmt: skip
             if index and mode == "plan":
                 await asyncio.to_thread(prime_codegraph, project)
+            env = {**child_env(), **provider_cmds.run_env(provider, zeplin, mcp and mode != "plan")}
             try:  # its own process group: a kill also reaches the shell commands it started
                 proc = await asyncio.create_subprocess_exec(
                     *cmd, cwd=project, stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                    limit=STREAM_LIMIT, env={**child_env(), **provider_cmds.mcp_env(zeplin)}, start_new_session=True,
+                    limit=STREAM_LIMIT, env=env, start_new_session=True,
                 )  # fmt: skip
             except OSError as e:
                 log.warning("agent for task %s not started: %s", task_id, e)

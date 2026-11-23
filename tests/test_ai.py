@@ -402,3 +402,18 @@ async def test_a_pos_draft_lays_out_the_options_from_the_kb(ai):
     assert "**Phương án:**" in p and "**Nên chọn:**" in p and "<kb>" in p and "VA-A-1" in p
     await svc.run("draft", A, ["1"], role="dev")
     assert "**Phương án:**" not in provider.calls[-1] and "<kb>" not in provider.calls[-1]
+
+
+def test_a_project_is_never_the_app_its_parent_or_home(client, settings, tmp_path):
+    """SCOPE_RULE: no AI run works in this app, a folder holding it or ~; one registered before the rule is hidden."""
+    from conftest import ORIGIN
+
+    hdr = {"Origin": ORIGIN}
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    for bad in (settings.root, settings.root / "web", settings.root.parent, Path.home()):
+        r = client.post("/api/projects", json={"path": str(bad)}, headers=hdr)
+        assert r.status_code == 422 and r.json()["error"]["code"] == "project_forbidden"
+    assert client.post("/api/projects", json={"path": str(proj)}, headers=hdr).status_code == 200
+    client.app.state.store.add_project(str(settings.root), "app")  # registered before the rule
+    assert [p["path"] for p in client.get("/api/projects", headers=hdr).json()] == [str(proj.resolve())]

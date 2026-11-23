@@ -91,13 +91,31 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     # an indexed project: its codegraph MCP, one read-only tool, no shell, telemetry off
     i = task_cmd(s, "claude", "plan", "sid", False, "", "", index=True)
     server = json.loads(i[i.index("--mcp-config") + 1])["mcpServers"]["codegraph"]
-    assert server["args"] == ["serve", "--mcp"] and server["env"] == {"DO_NOT_TRACK": "1"}
+    assert server["args"][-3:] == ["codegraph", "serve", "--mcp"] and server["env"] == {"DO_NOT_TRACK": "1"}
+    assert server["args"][:2] == ["-m", "telegram_dashboard.mcp_pin"]  # pinned to the project (projectPath)
     assert i[i.index("--allowedTools") + 1] == "Read,Grep,Glob,Skill,mcp__codegraph__codegraph_explore"
     assert "--strict-mcp-config" in i and i[i.index("--tools") + 1] == "Read,Grep,Glob,Skill"
-    # the user's own MCP servers / plugins: only an edit turn they ticked it for; Bash stays sandboxed
+    # the user's own MCP servers: only an edit turn they ticked it for, only OWN_MCP ones; Bash stays sandboxed
+    (tmp_path / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "lean-ctx": {"command": "lean-ctx"},
+                    "youtrack": {"type": "http", "url": "https://yt/mcp", "headers": {"Authorization": "Bearer t0k"}},
+                }
+            }
+        )
+    )
     m = task_cmd(s, "claude", "edit", "sid", True, "", "", mcp=True)
-    assert "--strict-mcp-config" not in m and m[m.index("--allowedTools") + 1].endswith(",mcp__*") and "--settings" in m
-    assert "mcp__lean-ctx" in " ".join(m) and "mcp__plugin_context-mode_context-mode" in " ".join(m)  # no shell MCP
+    loaded = json.loads(m[m.index("--mcp-config") + 1])["mcpServers"]
+    assert set(loaded) == {"youtrack"} and loaded["youtrack"]["headers"] == {
+        "Authorization": "${TD_MCP_YOUTRACK_AUTHORIZATION}"
+    }
+    assert m[m.index("--allowedTools") + 1] == "Bash,mcp__youtrack" and "--strict-mcp-config" in m
+    assert "t0k" not in " ".join(m) and "--setting-sources" in m  # the token by ${NAME}; no user CLAUDE.md / hooks
+    from telegram_dashboard.provider_cmds import run_env
+
+    assert run_env("claude", None, True) == {"TD_MCP_YOUTRACK_AUTHORIZATION": "Bearer t0k"}
     assert "--strict-mcp-config" in task_cmd(s, "claude", "plan", "sid", True, "", "", mcp=True)
     # a Zeplin link: the user's zeplin server only, its read-only tools, read-only turns too
     zs = {"type": "stdio", "command": "npx", "args": ["-y", "@zeplin/mcp-server"], "env": {"ZEPLIN_ACCESS_TOKEN": "x"}}
@@ -114,11 +132,15 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     assert 'mcp_servers.zeplin.default_tools_approval_mode="approve"' in c and '"x"' not in " ".join(c)
     (tmp_path / ".codex").mkdir(exist_ok=True)
     (tmp_path / ".codex" / "config.toml").write_text(
-        '[mcp_servers.lean-ctx]\ncommand = "lean-ctx"\n[mcp_servers.youtrack]\ncommand = "yt"\n'
+        '[mcp_servers.lean-ctx]\ncommand = "lean-ctx"\n'
+        '[mcp_servers.youtrack]\nurl = "https://yt/mcp"\nbearer_token_env_var = "YOUTRACK_TOKEN"\n'
     )
+    monkeypatch.setenv("YOUTRACK_TOKEN", "t0k")  # in this app's env, which child_env leaves out of runs
     own = " ".join(task_cmd(s, "codex", "edit", "codex:", False, "", "", mcp=True))
-    assert "--ignore-user-config" not in own and "mcp_servers.lean-ctx.enabled=false" in own  # no shell MCP
+    assert "--ignore-user-config" in own and "lean-ctx" not in own and "t0k" not in own  # OWN_MCP only, no token
+    assert 'mcp_servers.youtrack.bearer_token_env_var="TD_MCP_YOUTRACK_BEARER_TOKEN"' in own
     assert 'mcp_servers.youtrack.default_tools_approval_mode="approve"' in own
+    assert run_env("codex", None, True) == {"TD_MCP_YOUTRACK_BEARER_TOKEN": "t0k"}
     assert "--ignore-user-config" in task_cmd(s, "codex", "plan", "codex:", False, "", "", mcp=True)
     # Antigravity: an agent with the user's MCP servers, only the allowed tools; never a shell
     (tmp_path / ".gemini" / "config").mkdir(parents=True)
@@ -135,7 +157,9 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     assert "mcp(zeplin/get_screen)" not in perms["deny"]
     e = task_cmd(s, "antigravity", "edit", "agy:", False, "", "", mcp=True)
     perms = json.loads(e[e.index("--settings") + 1])["permissions"]
-    assert perms["allow"] == ["mcp(*)"] and "command(*)" in perms["deny"] and "mcp(lean-ctx/*)" in perms["deny"]
+    assert "mcp(youtrack/*)" in perms["allow"] and "mcp(zeplin/get_screen)" in perms["allow"]
+    assert "mcp(*)" not in perms["allow"] and "command(*)" in perms["deny"]  # OWN_MCP only, lean-ctx never allowed
+    assert "mcp(context_mode/ctx_execute)" in perms["deny"]  # a saved grant outside OWN_MCP: denied
     n = task_cmd(s, "antigravity", "plan", "agy:", False, "", "")  # no link, no MCP: none at all
     assert "mcp(*)" in json.loads(n[n.index("--settings") + 1])["permissions"]["deny"]
 
@@ -288,3 +312,22 @@ def test_no_ai_run_reads_the_apps_own_files(tmp_path, monkeypatch):
     assert f"write_file({web})" in e  # a project above the app: no writes into it (agy has no sandbox)
     assert f"Edit(/{web}/**)" in " ".join(task_cmd(s, "claude", "edit", "sid", False, "", "", project=str(tmp_path)))
     assert s.forbids_project(root / "web") and s.forbids_project(tmp_path) and not s.forbids_project(proj)
+
+
+def test_codegraph_answers_about_the_runs_own_project_only():
+    """codegraph_explore takes any indexed repo's path (this app's too): mcp_pin rewrites it to the run's project."""
+    import json
+
+    from telegram_dashboard.mcp_pin import pin
+
+    args = {"query": "q", "projectPath": "/the/app"}
+    call = {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {"name": "codegraph_explore", "arguments": args},
+    }
+    assert json.loads(pin(json.dumps(call).encode(), "/proj"))["params"]["arguments"]["projectPath"] == "/proj"
+    assert json.loads(pin(json.dumps([call]).encode(), "/proj"))[0]["params"]["arguments"]["projectPath"] == "/proj"
+    other = b'{"jsonrpc": "2.0", "id": 1, "method": "initialize"}\n'
+    assert json.loads(pin(other, "/proj")) == json.loads(other) and pin(b"not json\n", "/p") == b"not json\n"

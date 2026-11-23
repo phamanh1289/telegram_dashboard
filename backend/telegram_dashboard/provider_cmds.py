@@ -3,6 +3,7 @@ permissions and sandbox per run, and the user's zeplin MCP server when a run rea
 
 import contextlib
 import json
+import os
 import re
 import shlex
 import sys
@@ -23,7 +24,8 @@ from .providers import (
 
 # Antigravity runs as a custom agent with only these built-in tools (no web or browser; shell only in
 # task sessions), none of the user's skills/plugins (but with them, and their MCP servers, for a Zeplin link or
-# "Dùng MCP / plugin": _agy_agent inherit), and deny rules over the user's own allow rules.
+# "Dùng MCP / plugin": _agy_agent inherit; only OWN_MCP servers allowed), and deny rules over the user's own allow
+# rules.
 # No shell at all: agy has no sandbox, and its prompts carry text written by others (Telegram, tickets).
 AGY_TOOLS = {"none": [], "read": ["view_file", "list_dir", "grep_search", "find_by_name"]}
 AGY_TOOLS["edit"] = [*AGY_TOOLS["read"], "write_to_file", "replace_file_content", "multi_replace_file_content"]
@@ -40,23 +42,25 @@ PERMISSION = {"plan": "plan", "edit": "acceptEdits"}
 # registries (loopback too is out: injected text can't reach the dashboard's own API or exfiltrate).
 # ponytail: fixed registry list; add a host when a build needs another mirror.
 SANDBOX_DOMAINS = ["*.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org"]
-SANDBOX = json.dumps(
-    {
-        "sandbox": {
-            "enabled": True,
-            "failIfUnavailable": True,  # never a shell without it (Windows has none: SHELL_OK)
-            "autoAllowBashIfSandboxed": True,
-            "allowUnsandboxedCommands": False,  # the model can't opt a command out
-            "network": {"allowedDomains": SANDBOX_DOMAINS, "strictAllowlist": True},
-        }
+SANDBOX = {
+    "sandbox": {
+        "enabled": True,
+        "failIfUnavailable": True,  # never a shell without it (Windows has none: SHELL_OK)
+        "autoAllowBashIfSandboxed": True,
+        "allowUnsandboxedCommands": False,  # the model can't opt a command out
+        "network": {"allowedDomains": SANDBOX_DOMAINS, "strictAllowlist": True},
     }
-)
+}
 # Gradle always binds a loopback socket (FileLockContentionHandler) and Java ignores HTTPS_PROXY. Opening loopback
 # (allowLocalBinding) would let sandboxed code drive the user's own Gradle/Kotlin daemons outside the sandbox, so
 # JVM builds stay out: the model leaves them to the user instead of failing at them.
 NO_JVM = ("Sandbox chặn Gradle / Maven (gradlew, gradle, mvn): đừng chạy. Cuối câu trả lời ghi rõ lệnh build / "
           "test để người dùng tự chạy kiểm tra.")  # fmt: skip
-SANDBOXED = ["--settings", SANDBOX, "--append-system-prompt", NO_JVM]
+SANDBOXED = ["--append-system-prompt", NO_JVM]  # with _claude_settings(shell=True)
+# Claude runs load the project's settings only: the user's own CLAUDE.md, skills, plugins, hooks and permission rules
+# stay out (they told the AI to build / upload on "build dev"; hooks run outside the sandbox; SCOPE_RULE). Their env
+# and apiKeyHelper still come along (_claude_settings): a proxy or key helper the CLI needs to sign in.
+CLAUDE_SOURCES = ["--setting-sources", "project,local"]
 # Claude Code has no sandbox on Windows, and prompts carry others' text: no shell there. An edit turn still edits
 # files; build / test are left to the user.
 SHELL_OK = sys.platform != "win32"
@@ -67,7 +71,9 @@ ALLOW = {"plan": "Read,Grep,Glob,Skill", "edit": "Bash"}
 # A project indexed with codegraph (`.codegraph/`): Claude turns query it through its MCP server, one read-only tool
 # (codegraph_explore: no shell, no writes, no network), so a read-only turn finds code without grepping around.
 # DO_NOT_TRACK: no telemetry or update check from a run whose prompt carries others' text.
-CODEGRAPH = {"type": "stdio", "command": "codegraph", "args": ["serve", "--mcp"], "env": {"DO_NOT_TRACK": "1"}}
+# Through mcp_pin: codegraph_explore takes any indexed repo's path (this app's too), the pin keeps it on the project.
+CODEGRAPH = {"type": "stdio", "command": sys.executable, "env": {"DO_NOT_TRACK": "1"},
+             "args": ["-m", "telegram_dashboard.mcp_pin", "codegraph", "serve", "--mcp"]}  # fmt: skip
 CODEGRAPH_TOOL = "mcp__codegraph__codegraph_explore"
 ZEPLIN_READ = ("get_screen", "get_component", "get_design_tokens")
 ZEPLIN_TOOLS = ",".join(f"mcp__zeplin__{t}" for t in ZEPLIN_READ)
@@ -99,17 +105,74 @@ def zeplin_for(text: str, *, found: bool | None = None) -> tuple[dict | None, st
     return server, ZEPLIN_HINT if server else ""
 
 
-def mcp_env(server: dict | None) -> dict[str, str]:
-    """A server's environment (its token): given to the run's process, never put on its command line (any local
-    user could read it there); the command line names the variables only."""
-    env = (server or {}).get("env")
-    return {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else {}
+def _ref(name: str, key: str) -> str:
+    """The env variable carrying one secret of a server (an HTTP header, a bearer token) into the run."""
+    return re.sub(r"\W", "_", f"TD_MCP_{name}_{key}").upper()
 
 
-def _by_ref(server: dict) -> dict:
-    """The server for Claude's --mcp-config with each env value as ${NAME}: Claude expands it from its own env."""
+def _dict(v) -> dict:
+    return v if isinstance(v, dict) else {}
+
+
+def _heads(server: dict) -> dict[str, str]:
+    """A server's HTTP headers, values resolved: given (Claude `headers`, Codex `http_headers`, `${VAR}` expanded) or
+    read from the env variable Codex's `env_http_headers` names."""
+    got = {h: os.path.expandvars(str(v)) for h, v in _dict(server.get("headers") or server.get("http_headers")).items()}
+    return got | {h: os.environ[v] for h, v in _dict(server.get("env_http_headers")).items() if v in os.environ}
+
+
+def _bearer(server: dict) -> str:
+    """A Codex server's bearer token: given, or read from the env variable `bearer_token_env_var` names."""
+    return str(server.get("bearer_token") or os.environ.get(str(server.get("bearer_token_env_var") or ""), ""))
+
+
+def mcp_env(server: dict | None, name: str = "") -> dict[str, str]:
+    """A server's secrets (env, HTTP headers, bearer token), each under the variable the command line names
+    (TD_MCP_<SERVER>_<KEY>, or the server's own env names): given to the run's process, never put on its command line
+    (any local user could read it there). Read from this app's env too: child_env leaves YOUTRACK_* and the like out."""
+    s = server or {}
+    env = {str(k): os.path.expandvars(str(v)) for k, v in _dict(s.get("env")).items()}
+    env |= {v: os.environ[v] for v in s.get("env_vars") or [] if isinstance(v, str) and v in os.environ}
+    env |= {_ref(name, h): v for h, v in _heads(s).items()}
+    return env | ({_ref(name, "bearer_token"): token} if (token := _bearer(s)) else {})
+
+
+def _by_ref(server: dict, name: str = "zeplin") -> dict:
+    """The server for Claude's --mcp-config with each secret as ${NAME}: Claude expands it from its own env."""
+    if server.get("url"):  # HTTP / SSE
+        heads = _dict(server.get("headers"))
+        return {"type": server.get("type") or "http", "url": server["url"],
+                "headers": {h: f"${{{_ref(name, h)}}}" for h in heads}}  # fmt: skip
     return {"type": "stdio", "command": server["command"], "args": list(server.get("args") or []),
-            "env": {k: f"${{{k}}}" for k in mcp_env(server)}}  # fmt: skip
+            "env": {k: f"${{{k}}}" for k in _dict(server.get("env"))}}  # fmt: skip
+
+
+# The user's MCP servers "Dùng MCP / plugin" loads, by name: they run outside the sandbox with the user's logins, so
+# only ones that read no local file and run no command (SCOPE_RULE: files in the project only, never this app). Not
+# markitdown (it reads file:// URIs), lean-ctx, context-mode, serena…; codegraph comes pinned (CODEGRAPH) instead.
+# ponytail: a fixed list; add a server once it is known to stay off the disk.
+OWN_MCP = ("youtrack", "zeplin", "context7")
+
+
+def own_servers(p: str) -> dict[str, dict]:
+    """The user's OWN_MCP servers as their config for this CLI has them (Claude: ~/.claude.json; Codex: config.toml)."""
+    got: dict = {}
+    if p == "claude":
+        with contextlib.suppress(OSError, ValueError, AttributeError):
+            got = _dict(json.loads((Path.home() / ".claude.json").read_text()).get("mcpServers"))
+    elif p == "codex":
+        got = _dict(_codex_config().get("mcp_servers"))
+    return {n: v for n, v in got.items() if n in OWN_MCP and isinstance(v, dict) and (v.get("command") or v.get("url"))
+            and v.get("enabled", True) is not False}  # fmt: skip
+
+
+def run_env(p: str | None, zeplin: dict | None, own: bool = False) -> dict[str, str]:
+    """The secrets of the MCP servers a run loads (a Zeplin link's server, OWN_MCP), for its process env. Antigravity
+    runs its own servers."""
+    if p not in ("claude", "codex"):
+        return {}
+    servers = {**(own_servers(p) if own else {}), **({"zeplin": zeplin} if zeplin else {})}
+    return {k: v for n, srv in servers.items() for k, v in mcp_env(srv, n).items()}
 
 
 def _mcp_config(servers: dict) -> list[str]:
@@ -126,31 +189,33 @@ def _add_to(cmd: list[str], flag: str, tools: str) -> None:
         cmd += [flag, tools]
 
 
-def _codex_zeplin(server: dict) -> list[str]:
-    """-c flags adding the zeplin server to a Codex run that ignores the user's config: read tools only, approved
-    ahead (headless runs can't ask), its token passed through from the env (env_vars), not written on the line."""
-    keys = {"command": server["command"], "args": list(server.get("args") or []), "env_vars": list(mcp_env(server)),
-            "enabled_tools": list(ZEPLIN_READ), "default_tools_approval_mode": "approve"}  # fmt: skip
-    return [x for k, v in keys.items() for x in ("-c", f"mcp_servers.zeplin.{k}={json.dumps(v)}")]
+def _codex_mcp(servers: dict[str, dict]) -> list[str]:
+    """-c flags adding servers to a Codex run that ignores the user's config: approved ahead (headless runs can't ask;
+    zeplin: its read tools only), secrets passed through from the env, never written on the line."""
+    out = []
+    for name, srv in servers.items():
+        if srv.get("url"):  # HTTP: the token / headers from env variables (mcp_env)
+            token = {"bearer_token_env_var": _ref(name, "bearer_token")} if _bearer(srv) else {}
+            keys = {"url": srv["url"], **token, **{f"env_http_headers.{h}": _ref(name, h) for h in _heads(srv)}}
+        else:  # passed through from the run's env (run_env)
+            env_vars = [*_dict(srv.get("env")), *(v for v in srv.get("env_vars") or [] if isinstance(v, str))]
+            keys = {"command": srv["command"], "args": list(srv.get("args") or []), "env_vars": env_vars}
+        keys |= {"enabled_tools": list(ZEPLIN_READ)} if name == "zeplin" else {}
+        keys["default_tools_approval_mode"] = "approve"
+        out += [x for k, v in keys.items() for x in ("-c", f"mcp_servers.{name}.{k}={json.dumps(v)}")]
+    return out
 
 
-def _codex_own() -> list[str]:
-    """A Codex run with the user's config (its MCP servers, plugins): every enabled server's tools approved ahead."""
-    servers = _codex_config().get("mcp_servers") or {}
-    # a bare key only: Codex reads a quoted one ("x") as a new server named with the quotes, and refuses to start
-    names = [n for n, v in servers.items() if isinstance(v, dict) and v.get("enabled", True) is not False
-             and re.fullmatch(r"[A-Za-z0-9_-]+", n)]  # fmt: skip
-    return [x for n in names for x in ("-c", f"mcp_servers.{n}.enabled=false" if n in SHELL_MCP
-                                       else f'mcp_servers.{n}.default_tools_approval_mode="approve"')]  # fmt: skip
+def _claude_settings(shell: bool) -> list[str]:
+    """--settings for a Claude run: the sandbox when it may run commands, and the user's env / apiKeyHelper (their own
+    settings stay out: CLAUDE_SOURCES)."""
+    user: dict = {}
+    with contextlib.suppress(OSError, ValueError, AttributeError):
+        user = _dict(json.loads((Path.home() / ".claude" / "settings.json").read_text()))
+    cfg = {**{k: user[k] for k in ("env", "apiKeyHelper") if k in user}, **(SANDBOX if shell else {})}
+    return ["--settings", json.dumps(cfg)] if cfg else []
 
 
-MCP_TOOLS = "mcp__*"  # every tool of every MCP server loaded (task_cmd `mcp`)
-# The user's MCP servers that read / write any file or run commands: they run outside the sandbox, past every Read /
-# Edit rule, so "Dùng MCP / plugin" never loads them (SCOPE_RULE: files only in the project, never this app).
-# ponytail: a name list; a server not named here still runs with the user's logins. Add one when it shows up.
-SHELL_MCP = ("lean-ctx", "context-mode", "context_mode", "serena", "node_repl", "computer-use", "filesystem",
-             "desktop-commander", "terminal")  # fmt: skip
-SHELL_MCP_DENY = ",".join(f"mcp__{n},mcp__plugin_{n}_{n}" for n in SHELL_MCP)  # Claude: a server's tools, plugin too
 SHELL_TOOLS = "Read,Grep,Glob,Skill,Bash"  # an answer that may run commands, never Edit/Write
 # Project files no run writes, on every CLI: they run code later (on folder open, commit, cd, the dashboard's own git
 # calls: .git/config, hooks, a .gitmodules pointing elsewhere) or load tools into the next session.
@@ -173,10 +238,9 @@ CODEX_OFF = [x for f in ("apps", "plugins", "browser_use", "in_app_browser", "co
              for x in ("-c", f"features.{f}=false")]  # fmt: skip
 
 
-def _codex_base(settings, model: str, effort: str, own: bool = False) -> list[str]:
-    """The user's config stays out (its MCP servers, hooks, plugins); a routed model ("combo/gemini") takes
-    just the proxy's base URL and model catalog from it. `own` (an edit turn with "Dùng MCP / plugin"): the user's
-    config, plugins and MCP servers load, as when they run Codex; web search, the sandbox and the model stay ours."""
+def _codex_base(settings, model: str, effort: str) -> list[str]:
+    """The user's config stays out (its MCP servers, hooks, plugins): the servers a run may use come on the line
+    (_codex_mcp); a routed model ("combo/gemini") takes just the proxy's base URL and model catalog from it."""
     route = []
     if "/" in model and (proxy := _codex_proxy(cfg := _codex_config())):
         route = [
@@ -185,8 +249,8 @@ def _codex_base(settings, model: str, effort: str, own: bool = False) -> list[st
             "-c",
             f"model_catalog_json={json.dumps(str(_codex_catalog(cfg)))}",
         ]
-    return ["--json", "--skip-git-repo-check", *([] if own else ["--ignore-user-config"]),
-            "-c", 'web_search="disabled"', *route, *(_codex_own() if own else CODEX_OFF),
+    return ["--json", "--skip-git-repo-check", "--ignore-user-config",
+            "-c", 'web_search="disabled"', *route, *CODEX_OFF,
             *(["-m", model] if model else []),
             *(["-c", f'model_reasoning_effort="{effort}"'] if effort in CODEX_EFFORTS else [])]  # fmt: skip
 
@@ -224,9 +288,10 @@ def _agy_base(settings, kind: str, model: str, mcp: list[str] | None = None, pro
     # read_file(<dir>) covers the whole dir; headless agy auto-denies anything it would prompt for
     dirs = [*_secret_dirs(settings), *_app_dirs(settings)]
     reads = ["read_file(*)"] if kind == "none" else [f"read_file({d})" for d in dirs]
-    base = [x for x in _AGY_DENY if not (mcp and x == "mcp(*)")] + ([f"mcp({n}/*)" for n in SHELL_MCP] if mcp else [])
-    if mcp and "mcp(*)" not in mcp:  # some tools only: what agy was told to always allow would run too (a deny wins)
-        base += ["mcp(zeplin/download_layer_asset)", *(g for g in _agy_grants() if not g.startswith("mcp(zeplin/"))]
+    base = [x for x in _AGY_DENY if not (mcp and x == "mcp(*)")]
+    if mcp:  # what agy was told to always allow would run too, the allowed servers' aside (a deny wins)
+        ok = tuple(f"mcp({a[4:].split('/')[0]}/" for a in mcp)
+        base += ["mcp(zeplin/download_layer_asset)", *(g for g in _agy_grants() if not g.startswith(ok))]
     # edit: no writes into the app, the secrets or the project's PROTECTED_* files either (agy has no sandbox)
     mine = [str(Path(project) / x) for x in (*PROTECTED_DIRS, *PROTECTED_FILES)] if project else []
     writes = ["write_file(*)"] if kind != "edit" else [f"write_file({d})" for d in (*dirs, *mine)]
@@ -332,7 +397,8 @@ def ask_cmd(
         if is_claude(cmd):
             if "--strict-mcp-config" not in cmd:
                 cmd.append("--strict-mcp-config")  # the user's MCP servers would bring tools back
-            cmd += ["--output-format", "stream-json", "--verbose", *(["--include-partial-messages"] if stream else [])]
+            cmd += [*CLAUDE_SOURCES, *_claude_settings(shell), "--output-format", "stream-json", "--verbose",
+                    *(["--include-partial-messages"] if stream else [])]  # fmt: skip
             if tools:
                 cmd += ["--disallowedTools", *([DENY] if shell else []), _data_deny(settings)]
             if zeplin:  # MCP tools are not built-in tools: `--tools ""` leaves them; only the allowed ones run
@@ -348,7 +414,7 @@ def ask_cmd(
             *exe(settings, p),
             "exec",
             *_codex_base(settings, model, effort),
-            *(_codex_zeplin(zeplin) if zeplin else []),
+            *_codex_mcp({"zeplin": zeplin} if zeplin else {}),
             "--ephemeral",
             *_codex_sandbox(settings, shell),
             *off,
@@ -380,9 +446,9 @@ def task_cmd(
     `read_dir`: another folder it may read (link content saved by links.py; Codex reads anywhere but the secrets).
     Windows: no shell for Claude's `edit` (SHELL_OK), it only edits files.
     `index`: the project has a codegraph index; Claude gets its read-only tool (Codex runs the CLI in its sandbox).
-    `mcp` (`edit` only; "Dùng MCP / plugin"): the user's own MCP servers and plugins load and their tools are allowed,
-    on every CLI. They run OUTSIDE the sandbox with the user's logins, so text written by others in the prompt could
-    steer them. Antigravity still gets no shell (it has no sandbox).
+    `mcp` (`edit` only; "Dùng MCP / plugin"): the user's OWN_MCP servers load and their tools are allowed, on every
+    CLI (run_env carries their secrets). They run OUTSIDE the sandbox with the user's logins, so text written by others
+    in the prompt could steer them: none reads a local file or runs a command. Antigravity still gets no shell.
     `zeplin`: the user's zeplin MCP server (a Zeplin link in the session): its read-only tools in any mode, its token
     in the run's env (mcp_env). Claude's plan mode refuses them (they are not marked read-only), so such a plan turn
     runs in default mode: still no write tool or shell (`--tools`), and only the allowed tools run (headless).
@@ -391,27 +457,31 @@ def task_cmd(
     own = mcp and mode != "plan"
     if p == "claude":
         servers = {**({"codegraph": CODEGRAPH} if index else {}),
-                   **({"zeplin": _by_ref(zeplin)} if zeplin and not own else {})}  # fmt: skip
-        mcp = _mcp_config(servers)
+                   **({n: _by_ref(v, n) for n, v in own_servers(p).items()} if own else {}),
+                   **({"zeplin": _by_ref(zeplin)} if zeplin else {})}  # fmt: skip
         shell = mode != "plan" and SHELL_OK
-        allow = ALLOW[mode] if shell else ALLOW["plan"]
-        allow = f"{allow},{CODEGRAPH_TOOL}" if index else allow
-        allow = f"{allow},{MCP_TOOLS}" if own else f"{allow},{ZEPLIN_TOOLS}" if zeplin else allow
+        tools = [
+            *([CODEGRAPH_TOOL] if index else []),
+            *([ZEPLIN_TOOLS] if "zeplin" in servers else []),
+            *(f"mcp__{n}" for n in servers if n not in ("codegraph", "zeplin")),
+        ]  # a server's every tool
+        allow = ",".join([ALLOW[mode] if shell else ALLOW["plan"], *tools])
         plan = mode == "plan"
         box = SANDBOXED if shell else ["--tools", ALLOW["plan"]] if plan else ["--append-system-prompt", NO_SHELL]
         return [*exe(settings, p), "-p", *flags_for(model, effort), "--output-format", "stream-json", "--verbose",
                 "--permission-mode", "default" if plan and zeplin else PERMISSION[mode],
-                *([] if own else ["--strict-mcp-config"]), *mcp,
+                *CLAUDE_SOURCES, *_claude_settings(shell), "--strict-mcp-config", *_mcp_config(servers),
                 "--allowedTools", allow, *box,
                 "--disallowedTools", DENY if shell or plan else f"{DENY},Bash", _data_deny(settings),
-                *([ZEPLIN_DENY] if zeplin and not own else []), *([SHELL_MCP_DENY] if own else []), *add,
+                *([ZEPLIN_DENY] if "zeplin" in servers else []), *add,
                 *(["--resume", sid] if resume else ["--session-id", sid])]  # fmt: skip
     if p == "codex":
         sandbox = _codex_sandbox(settings, mode != "plan")
         head = [*exe(settings, p), "exec", *(["resume"] if resume else [])]
-        zep = _codex_zeplin(zeplin) if zeplin and not own else []
-        return [*head, *_codex_base(settings, model, effort, own), *zep, *sandbox, *([sid] if resume else []), "-"]
+        servers = {**(own_servers(p) if own else {}), **({"zeplin": zeplin} if zeplin else {})}
+        mcp_on = _codex_mcp(servers)
+        return [*head, *_codex_base(settings, model, effort), *mcp_on, *sandbox, *([sid] if resume else []), "-"]
     edit = ["--mode", "accept-edits"] if mode != "plan" else []
-    allow = ["mcp(*)"] if own else ZEPLIN_AGY if zeplin else None
+    allow = [*(f"mcp({n}/*)" for n in OWN_MCP if n != "zeplin"), *ZEPLIN_AGY] if own else ZEPLIN_AGY if zeplin else None
     return [*_agy_base(settings, "read" if mode == "plan" else "edit", model, allow, project), *edit,
             *add, *(["--conversation", sid] if resume else [])]  # fmt: skip

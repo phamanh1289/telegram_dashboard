@@ -538,7 +538,7 @@ class AiService:
         `session` (id, resume): the run starts that CLI session or carries it on (providers.keeps_session says
         where); such a run is not retried here, its id being taken by the first try.
         `zeplin`: the user's zeplin MCP server: the run may read the design with its read-only tools (the longer
-        timeout), its token in the run's env only (provider_cmds.mcp_env)."""
+        timeout), its token in the run's env only (provider_cmds.run_env)."""
         s = self.settings
         if project and s.forbids_project(project):
             raise ApiError(422, "project_forbidden")
@@ -555,7 +555,7 @@ class AiService:
         # Briefing / Digest parts read many messages, a Zeplin run reads designs: the longer timeout
         long = bool(project or heavy or brief or zeplin)
         # the token only where the command loads the zeplin server (Antigravity runs its own)
-        env = {**child_env(), **(provider_cmds.mcp_env(zeplin) if provider in ("claude", "codex") else {})}
+        env = {**child_env(), **provider_cmds.run_env(provider, zeplin)}
         try:
             return await self._run(cmd, cwd, prompt, long, on_text, feature, choice, provider, ref, env)
         except ApiError as e:  # a provider hiccup (overloaded, dropped connection): one more try, same prompt

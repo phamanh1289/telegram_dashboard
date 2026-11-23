@@ -37,9 +37,10 @@ async def test_long_output_line_and_locked_down_flags(tmp_path):
     assert not items[1]["error"] and not r.running("t1")
     assert read_task_result(r.settings, "t1").startswith("x" * 1000)
     text = items[1]["text"]  # the line was over asyncio's default 64 KiB limit
-    assert f"--permission-mode acceptEdits --strict-mcp-config --allowedTools {ALLOW['edit']} " in text
+    assert "--permission-mode acceptEdits --setting-sources project,local " in text  # not the user's own settings
+    assert f"--strict-mcp-config --allowedTools {ALLOW['edit']} " in text
     assert f"--disallowedTools {DENY}" in text
-    assert '--settings {"sandbox": {"enabled": true' in text  # edit turns: Bash in the sandbox
+    assert '"sandbox": {"enabled": true' in text.split("--settings ", 1)[1]  # edit turns: Bash in the sandbox
 
 
 async def test_one_turn_at_a_time_and_stop_waits_for_the_pump(tmp_path):

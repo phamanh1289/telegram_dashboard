@@ -137,3 +137,37 @@ def test_python_deps_pinned():
     deps = py["project"]["dependencies"] + [d for g in py.get("dependency-groups", {}).values() for d in g]
     assert [d for d in deps if not re.fullmatch(r"[\w.-]+==\d+\.\d+\.\d+", d)] == []
 
+
+def test_git_runs_only_through_the_hardened_helpers():
+    """The dashboard's git runs no repo hook / fsmonitor / textconv (an AI session may have planted one): every git /
+    gh call goes through gitops._git or updater._run, both with gitops.SAFE."""
+    import inspect
+
+    from telegram_dashboard import gitops, updater
+
+    files = [p for p in (ROOT / "backend").rglob("*.py") if p.name not in ("gitops.py", "updater.py")]
+    assert _hits(files, re.compile(r'[\[(]\s*"(git|gh)"\s*,')) == []
+    assert "SAFE" in inspect.getsource(gitops._git) and "SAFE" in inspect.getsource(updater._run)
+    assert "core.hooksPath=/dev/null" in gitops.SAFE and "core.fsmonitor=false" in gitops.SAFE
+
+
+def test_every_ai_run_keeps_its_scope(tmp_path, monkeypatch):
+    """SCOPE_RULE reaches every run (one-shot and AI Agent), and no Claude run loads the user's own CLAUDE.md, skills,
+    plugins or hooks (CLAUDE_SOURCES): they told the AI to build / upload, and hooks run outside the sandbox."""
+    import inspect
+
+    from telegram_dashboard import agent, ai, ai_prompts
+    from telegram_dashboard.config import Settings
+    from telegram_dashboard.provider_cmds import ask_cmd, task_cmd
+
+    assert "SCOPE_RULE" in inspect.getsource(ai.AiService.ask)
+    assert "SCOPE_RULE" in inspect.getsource(ai_prompts.session_rules)
+    assert "SCOPE_TURN" in inspect.getsource(agent.AgentRunner.start)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    s = Settings(root=tmp_path / "app")
+    ask = [dict(tools=t, read_dir=None, model="", effort="", shell=sh) for t in (False, True) for sh in (False, True)]
+    runs = [ask_cmd(s, "claude", **kw) for kw in ask]
+    runs += [task_cmd(s, "claude", m, "sid", False, "", "", mcp=o) for m in ("plan", "edit") for o in (False, True)]
+    for cmd in runs:
+        at = cmd.index("--setting-sources")
+        assert cmd[at + 1] == "project,local" and "--strict-mcp-config" in cmd
