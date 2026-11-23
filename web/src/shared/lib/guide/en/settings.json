@@ -320,7 +320,7 @@
     "tab": "settings",
     "area": "Settings › Updates",
     "title": "Update the app and auto-update",
-    "what": "Checks for and installs new versions from GitHub: \"Update\" opens a confirm box (current / latest version, list of changes, the commands to run); clicking \"Update\" in the box has the AI pull the new version, restart the server and reload the page; you can turn on auto-update every hour (skipped while an AI Agent task runs).",
+    "what": "Checks for and installs new versions from GitHub: \"Update\" opens a confirm box (current / latest version, \"What's new\": an installed build shows each version's release notes (features, fixes, other), a git checkout its commits; the commands to run); clicking \"Update\" in the box has the AI pull the new version, restart the server and reload the page; you can turn on auto-update every hour (skipped while an AI Agent task runs).",
     "how": [
       {
         "t": "Choose the \"Updates\" section",

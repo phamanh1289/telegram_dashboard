@@ -94,8 +94,10 @@ async def _check_release(root: Path) -> dict:
         "current": f"v{current}",
         "behind": behind,
         "dirty": False,
+        # notes: the Release body (Markdown from scripts/release-notes.sh), shown under "Có gì mới"
         "commits": [{"sha": x["tag_name"], "subject": x.get("name") or x["tag_name"],
-                     "when": (x.get("published_at") or "")[:10]} for x in newer],  # fmt: skip
+                     "when": (x.get("published_at") or "")[:10],
+                     "notes": x.get("body") or ""} for x in newer],  # fmt: skip
         "newer": newer,  # popped before replying
     }
 

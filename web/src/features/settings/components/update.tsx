@@ -5,6 +5,7 @@ import { ArrowRight, Check, Download, Lightbulb, Loader2, RotateCw, TriangleAler
 import { useEffect, useState } from "react";
 import { Row, StatusLine, Switch, waitRestart } from "@/features/settings/components/parts";
 import { AiFetching, UpdateHero } from "@/shared/components/ai/fetching";
+import { Markdown } from "@/shared/components/markdown";
 import { FoldMore } from "@/shared/components/ui/fold";
 import { Button } from "@/shared/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/shared/components/ui/dialog";
@@ -14,7 +15,7 @@ import { type Key, t as tPlain, tMaybe, useT } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
 import { cn } from "@/shared/lib/utils";
 
-type UpdateInfo = { branch: string; current: string; behind: number; dirty: boolean; auto: boolean; error?: string; updated?: boolean; commits: { sha: string; subject: string; when: string }[] };
+type UpdateInfo = { branch: string; current: string; behind: number; dirty: boolean; auto: boolean; error?: string; updated?: boolean; commits: { sha: string; subject: string; when: string; notes?: string }[] };
 
 /** git fetch on open; "Cập nhật" pulls, rebuilds, restarts the server, then reloads this page. */
 export function UpdateSection() {
@@ -173,12 +174,16 @@ function UpdateDialog({ open, onOpenChange, info: d, latest, release, phase, err
           {!!d.commits.length && (
             <FoldMore className="rounded-lg border border-rule" labelClassName="gap-2 rounded-lg px-3 py-2 text-sm font-normal hover:bg-paper-2"
               label={<>{t("Có gì mới")} <span className="text-ink-3">({d.commits.length})</span></>}>
-              <ul className="grid max-h-36 grid-cols-1 overflow-y-auto border-t border-rule py-1 text-xs">
+              <ul className={cn("grid grid-cols-1 overflow-y-auto border-t border-rule py-1 text-xs", d.commits.some((c) => c.notes) ? "max-h-60 divide-y divide-rule" : "max-h-36")}>
                 {d.commits.map((c, i) => (
-                  <li key={c.sha} className="flex items-center gap-2.5 px-3 py-1.5">
-                    <span className={cn("shrink-0 font-mono", i ? "text-ink-3" : "text-hl-2")}>{c.sha}</span>
-                    <span className="min-w-0 flex-1 truncate text-ink-2">{c.subject}</span>
-                    <span className="shrink-0 text-ink-3 tabular-nums">{c.when}</span>
+                  <li key={c.sha} className="grid grid-cols-1 gap-1 px-3 py-1.5">
+                    <div className="flex items-center gap-2.5">
+                      <span className={cn("shrink-0 font-mono", i ? "text-ink-3" : "text-hl-2")}>{c.sha}</span>
+                      <span className="min-w-0 flex-1 truncate text-ink-2">{c.subject}</span>
+                      <span className="shrink-0 text-ink-3 tabular-nums">{c.when}</span>
+                    </div>
+                    {/* release builds: the Release body (summary, then features / fixes / other) */}
+                    {c.notes && <Markdown text={c.notes} className="text-xs text-ink-2" />}
                   </li>
                 ))}
               </ul>
