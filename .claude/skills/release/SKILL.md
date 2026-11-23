@@ -1,6 +1,6 @@
 ---
 name: release
-description: Phát hành version mới của Telegram Dashboard — tăng version, tạo tag vX.Y.Z, để CI đóng gói macOS + Windows (zip + Setup.exe) lên GitHub Release; người dùng bản cài cũ cập nhật trong Cài đặt. Dùng khi user nói "release", "phát hành", "ra bản mới", "tạo tag", "đóng gói".
+description: Phát hành version mới của Telegram Dashboard — tăng version, tạo tag vX.Y.Z, để CI đóng gói macOS + Windows (zip + Setup.exe) lên GitHub Release và publish launcher npm `telegram-dashboard` (`npx telegram-dashboard`); người dùng bản cài cũ cập nhật trong Cài đặt. Dùng khi user nói "release", "phát hành", "ra bản mới", "tạo tag", "tạo release tag mới", "upgrade / nâng release tag", "tăng version", "bump version", "đóng gói", "publish npm", "build npm".
 ---
 
 # Release Telegram Dashboard
@@ -15,6 +15,10 @@ Tag `vX.Y.Z` được push → `.github/workflows/release.yml` build trên `wind
   tải Setup.exe bằng PowerShell nên SmartScreen không chặn; CI parse cú pháp file này trước khi phát hành
 - `install-macos.sh` — cách cài macOS cho người dùng (`curl -fsSL …/releases/latest/download/install-macos.sh | bash`);
   tải bằng curl nên không bị Gatekeeper chặn như zip tải bằng trình duyệt (app chưa notarize)
+
+Sau khi Release xong, job `npm` publish `packaging/npm` lên npm với version = tag: gói `telegram-dashboard`
+(launcher, chỉ chạy lại `install-macos.sh` / `install-windows.ps1` được copy vào lúc `prepack`). Không build gì thêm
+cho npm; không tự `npm publish` từ máy (version, provenance và secret do CI giữ).
 
 App đã cài đọc `releases` của repo `phamanh1289/telegram_dashboard` (`backend/telegram_dashboard/updater.py`,
 `REPO`): Cài đặt › Cập nhật hiện "Có N bản mới trên GitHub Releases" → bấm Cập nhật (hoặc bật tự động).
@@ -34,12 +38,34 @@ gh secret set RELEASE_SIGNING_KEY < ~/.config/telegram-dashboard/release_signing
 Mất khóa riêng → tạo cặp mới, commit `release_key.pem` mới, set lại secret; bản đã cài với khóa cũ phải cài lại
 bằng lệnh cài nhanh (updater của chúng từ chối gói ký bằng khóa khác).
 
+## Một lần duy nhất: secret npm (`npx telegram-dashboard`)
+
+Job `npm` (sau `release`) publish launcher `packaging/npm` lên npm với version = tag. Nó chỉ chạy lại
+`install.sh` / `install.ps1`, nên không cần build gì thêm. **User tự tạo** token loại *Automation* (hoặc *Granular*,
+quyền publish `telegram-dashboard`) trên npmjs.com rồi chạy `gh secret set NPM_TOKEN`. Thiếu secret → riêng job `npm` fail,
+GitHub Release vẫn đã phát hành; set secret rồi bấm *Re-run failed jobs*.
+
 ## Các bước
 
 1. **Kiểm tra sạch**: `git status` sạch, đang ở nhánh sẽ release (mặc định `master`; nhánh khác chỉ khi
-   user nói rõ). `git pull --ff-only`.
-2. **Test**: `uv run --no-sync pytest -q`, `npm run typecheck`, `npm run build`. Lỗi → dừng, báo user.
-   Kiểm tra secret đã có: `gh secret list | grep RELEASE_SIGNING_KEY` (chưa có → xem mục "Một lần duy nhất").
+   user nói rõ). `git pull --ff-only`. Đang ở nhánh feature: `git fetch origin` rồi
+   `git rev-list --left-right --count origin/master...HEAD`: `N 0` = master đã có hết → chuyển sang master theo skill
+   `push-gate`; số bên phải > 0 = nhánh có commit chưa vào master → dừng, hỏi user (mở / merge PR trước).
+   Không sạch → hỏi user commit / stash trước, không tự bỏ thay đổi.
+2. **Test**: `uv run --no-sync pytest -q`, `npm run typecheck`. Lỗi → dừng, báo user.
+   Build **không** chạy trong repo (không đè `web/out`), mà trên bản copy ở scratchpad (`S` = thư mục scratchpad của
+   phiên + `/e2e`). Luôn rsync lại ngay trước mỗi lần build / e2e: bản copy cũ từng cho test đỏ giả.
+   ```bash
+   S="<scratchpad>/e2e"; mkdir -p "$S"
+   rsync -a --delete --exclude node_modules --exclude .venv --exclude web/.next --exclude web/out --exclude data \
+     --exclude .git --exclude .codegraph ./ "$S/"
+   [ -d "$S/node_modules" ] || cp -cR node_modules "$S/node_modules"     # copy, không symlink: Turbopack từ chối
+   [ -d web/node_modules ] && [ ! -d "$S/web/node_modules" ] && cp -cR web/node_modules "$S/web/node_modules"
+   (cd "$S/web" && npx next build)
+   ```
+   E2E trên bản copy: `E2E_PORT=<cổng trống> E2E_CONTROL=<cổng trống> npx playwright test …` trong `$S/web`
+   (8766 / 8796 / 8798 / 8799 hay bị phiên khác chiếm: `lsof -iTCP -sTCP:LISTEN -nP | grep <cổng>`).
+   Kiểm tra secret đã có: `gh secret list | grep -E 'RELEASE_SIGNING_KEY|NPM_TOKEN'` (chưa có → xem mục "Một lần duy nhất").
 3. **Tính version mới**:
    ```bash
    git fetch --tags
@@ -57,23 +83,29 @@ bằng lệnh cài nhanh (updater của chúng từ chối gói ký bằng khóa
    git commit -m "chore(release): vX.Y.Z"
    git tag -a vX.Y.Z --cleanup=verbatim -F "${TMPDIR:-/tmp}/tag-msg.md"
    ```
-   **Release note**: CI lấy làm nội dung GitHub Release (`scripts/release-notes.sh`): phần thân message của tag,
-   rồi danh sách commit từ tag trước (nhóm Tính năng / Sửa lỗi / Khác). Trước khi tag, đọc
-   `git log --no-merges <tag trước>..HEAD` + diff chính, viết `tag-msg.md`: dòng 1 `vX.Y.Z`, dòng trống, rồi 3–8 gạch
-   đầu dòng tiếng Việt cho người dùng (thay đổi họ thấy, theo màn: Telegram / YouTrack / Tài liệu / Cài đặt; không tên
-   file, không code). Xem trước: `bash scripts/release-notes.sh vX.Y.Z` (sau khi tag).
-5. **Push** (hỏi user trước — đây là thao tác công khai): `git push origin HEAD` rồi `git push origin vX.Y.Z`.
+   `tag-msg.md` là release note song ngữ (Việt + Anh): viết theo skill `release-notes` **trước** lệnh tag, xem trước
+   bằng `bash scripts/release-notes.sh vX.Y.Z`.
+5. **Push**: `git push origin HEAD` (master, qua cổng c-tools theo skill `push-gate`) rồi `git push origin vX.Y.Z`
+   (tag, không qua cổng). Khi nào được push mà không hỏi lại: xem `push-gate` › Quy ước.
 6. **Theo dõi CI**: `gh run list --workflow release.yml -L 1`, `gh run watch <id>` (cần `gh auth login`;
    không có thì đưa user link `https://github.com/phamanh1289/telegram_dashboard/actions`).
 7. **Xác nhận**: `gh release view vX.Y.Z --json assets -q '.assets[].name'` phải có đủ 5 file ở trên
    và 2 file `.zip.sig`.
-   Báo user link release `https://github.com/phamanh1289/telegram_dashboard/releases/tag/vX.Y.Z`.
+   Kiểm body: `gh release view vX.Y.Z --json body -q .body | head` mở đầu `## Có gì mới`, có `## What's new`
+   (tag tạo theo skill `release-notes`; tag không có thân thì body chỉ có danh sách commit).
+   npm: job `npm` xanh và `npm view telegram-dashboard version` ra `X.Y.Z` (registry có thể trễ 1–2 phút).
+   Báo user link release `https://github.com/phamanh1289/telegram_dashboard/releases/tag/vX.Y.Z`
+   và `https://www.npmjs.com/package/telegram-dashboard`.
+8. **Đưa nhánh feature theo kịp**: commit `chore(release)` chỉ ở master → hỏi user có merge master vào nhánh đang
+   làm không (skill `push-gate`, mục merge).
 
 ## Khi CI lỗi
 
 - Sửa code → commit → **tag mới** (tăng patch tiếp). Không force-push/di chuyển tag đã push: máy người dùng
   có thể đã tải bản đó.
-- Release hỏng đã tạo: `gh release edit vX.Y.Z --draft` (updater bỏ qua draft/prerelease) rồi phát hành bản sau.
+- Chỉ job `npm` đỏ (thiếu / hết hạn `NPM_TOKEN`, npm lỗi): **không** tag mới. Sửa secret rồi
+  `gh run rerun <id> --failed`. Version npm đã publish không xóa / đè được: lỗi trong launcher thì sửa rồi ra tag mới.
+- Release hỏng đã tạo: hỏi user rồi `gh release edit vX.Y.Z --draft` (updater bỏ qua draft/prerelease) rồi phát hành bản sau.
 
 ## Thử gói trên máy (không bắt buộc)
 
@@ -83,6 +115,10 @@ npm run build && uv run --no-project --python 3.14 scripts/package.py v0.0.0
 Ra `dist/TelegramDashboard-0.0.0-<platform>.zip` cho đúng OS đang chạy (Windows build chỉ có trên CI
 hoặc máy Windows). `dist/` đã gitignore.
 
+Launcher npm: `cd packaging/npm && npm pack --dry-run` phải liệt kê `cli.mjs`, `install-macos.sh`,
+`install-windows.ps1`, `package.json`. Chạy thử không cài thật: `HOME=<thư mục tạm> node packaging/npm/cli.mjs open`
+→ báo "chưa được cài". Không chạy `start` / `update` trên máy dev (installer cài và mở app thật).
+
 ## Lưu ý thiết kế (đừng phá)
 
 - Bản cài: `<thư mục cài>/{Start Dashboard Telegram.bat|.command, current, versions/<ver>/{python,app}, data/}`.
@@ -90,4 +126,7 @@ hoặc máy Windows). `dist/` đã gitignore.
 - Cập nhật không ghi đè file đang chạy: tải vào `versions/<ver mới>`, đổi `current`, server thoát mã 75,
   launcher chạy lại bản mới; lần khởi động sau xóa bản cũ. **Launcher không bao giờ được cập nhật trong app**
   (Windows/bash đọc script khi đang chạy) → giữ launcher tối giản; đổi launcher = người dùng cài Setup mới.
-- Đổi tên repo/owner → sửa `REPO` trong `updater.py` trước khi release.
+- Launcher npm chỉ gọi installer / `myradar`: app và `data/` không bao giờ nằm trong `node_modules` (npm update
+  sẽ xóa). Đổi cách cài thì sửa `install.sh` / `install.ps1`, npm tự theo ở bản sau.
+- Đổi tên repo/owner → sửa `REPO` trong `updater.py`, `install.sh`, `install.ps1` và `repository` trong
+  `packaging/npm/package.json` (provenance kiểm khớp repo) trước khi release.

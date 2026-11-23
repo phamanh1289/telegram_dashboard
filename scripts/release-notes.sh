@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Release notes (Markdown) for tag $1 = vX.Y.Z, used by .github/workflows/release.yml as the GitHub Release body:
 # the tag message's body (the summary written when tagging, see .claude/skills/release), then the commits since the
-# previous v* tag grouped by type. Preview locally: bash scripts/release-notes.sh vX.Y.Z
+# previous v* tag grouped by type (headings in Vietnamese / English; the summary carries both languages). Preview locally: bash scripts/release-notes.sh vX.Y.Z
 set -euo pipefail
 tag=$1
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null || { echo "no tag $tag" >&2; exit 1; }
@@ -20,6 +20,6 @@ section() { # $1 heading, then grep args picking its subjects; "feat(docs): x" i
     printf '### %s\n%s\n\n' "$title" "$(sed -E 's/^/- /; s/^- [a-z]+\(([^)]*)\)!?: /- **\1**: /; s/^- [a-z]+!?: /- /' <<<"$lines")"
   fi
 }
-section "Tính năng" -E '^feat(\(|!|:)'
-section "Sửa lỗi" -E '^fix(\(|!|:)'
-section "Khác" -Ev '^(feat|fix)(\(|!|:)'
+section "Tính năng / Features" -E '^feat(\(|!|:)'
+section "Sửa lỗi / Fixes" -E '^fix(\(|!|:)'
+section "Khác / Other" -Ev '^(feat|fix)(\(|!|:)'

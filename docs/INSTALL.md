@@ -51,6 +51,16 @@ và chạy app: một cửa sổ Terminal mở (để nguyên, đóng = tắt ap
 > Privacy & Security**, kéo xuống bấm **Open Anyway** (hoặc chạy
 > `xattr -dr com.apple.quarantine "<thư mục Telegram Dashboard>"`) rồi mở lại.
 
+## Đã có Node.js (≥ 18): cài qua npm
+
+```bash
+npx telegram-dashboard
+```
+
+Gói npm chỉ là launcher: nó chạy đúng lệnh cài ở trên cho máy của bạn (cùng thư mục cài, cùng kiểm chữ ký / sha256),
+nên app và dữ liệu không nằm trong `node_modules`. Chưa cài thì cài rồi mở app, đã cài thì mở app (`myradar start`).
+`npx telegram-dashboard update` cài bản mới nhất, `npx telegram-dashboard open` mở lại trang khi app đang chạy.
+
 ## Cập nhật
 
 **Cài đặt › GitHub › Cập nhật**: app tự kiểm tra GitHub mỗi giờ; có bản mới thì hiện số bản → bấm **Cập nhật**

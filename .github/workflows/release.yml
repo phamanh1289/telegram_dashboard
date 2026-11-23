@@ -123,3 +123,26 @@ jobs:
               --data-binary @"$f" \
               "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$id/assets?name=$n" >/dev/null
           done
+
+  # `npx telegram-dashboard`: a launcher that runs the same install scripts (packaging/npm). After `release`, so the
+  # assets it downloads exist; failing here never un-publishes the GitHub release.
+  npm:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # npm --provenance
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
+        with:
+          node-version-file: .node-version
+          registry-url: https://registry.npmjs.org
+      - name: Publish the npm launcher
+        working-directory: packaging/npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          [ -n "$NODE_AUTH_TOKEN" ] || { echo "::error::Secret NPM_TOKEN is missing (see .claude/skills/release/SKILL.md)"; exit 1; }
+          npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
+          npm publish --provenance --access public

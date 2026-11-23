@@ -27,3 +27,9 @@ test-results/
 .hallmark/
 .codegraph/
 dist/
+
+# security audit (c-security): exploit scenarios for open findings, never in the public repo
+docs/security/
+# copied from packaging/{macos,windows} at npm prepack
+packaging/npm/install-*
+packaging/npm/*.tgz

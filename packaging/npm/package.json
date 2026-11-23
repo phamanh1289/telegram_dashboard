@@ -1,0 +1,19 @@
+{
+  "name": "telegram-dashboard",
+  "version": "0.0.0",
+  "description": "Radar: local web inbox for Telegram groups and YouTrack. `npx telegram-dashboard` installs (macOS arm64 / Windows x64) and starts it.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "bin": { "telegram-dashboard": "cli.mjs" },
+  "files": ["cli.mjs", "install-macos.sh", "install-windows.ps1"],
+  "os": ["darwin", "win32"],
+  "engines": { "node": ">=18" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phamanh1289/telegram_dashboard.git",
+    "directory": "packaging/npm"
+  },
+  "scripts": {
+    "prepack": "cp ../macos/install.sh install-macos.sh && cp ../windows/install.ps1 install-windows.ps1"
+  }
+}

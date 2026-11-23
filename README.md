@@ -99,6 +99,11 @@ Không cần cài Python, Node hay git: gói cài đã có sẵn tất cả. Ch�
 3. Lệnh cài vào `%LOCALAPPDATA%\Programs\Telegram Dashboard`, tạo shortcut **Radar** ở Start Menu và Desktop rồi mở app.
 4. Một cửa sổ đen hiện ra: đó là server, **để nguyên** (đóng cửa sổ = tắt app). Trình duyệt tự mở `http://127.0.0.1:8765`.
 
+### Đã có Node.js (≥ 18)
+
+`npx telegram-dashboard` chạy đúng lệnh cài ở trên (cùng thư mục, cùng kiểm chữ ký) rồi mở app. Lần sau gõ lại để mở;
+`npx telegram-dashboard update` để cập nhật, `npx telegram-dashboard open` để mở lại trang khi app đang chạy.
+
 <details>
 <summary><b>Tải bộ cài bằng tay (Setup.exe / zip)</b></summary>
 
