@@ -171,3 +171,16 @@ def test_every_ai_run_keeps_its_scope(tmp_path, monkeypatch):
     for cmd in runs:
         at = cmd.index("--setting-sources")
         assert cmd[at + 1] == "project,local" and "--strict-mcp-config" in cmd
+
+
+def test_the_macos_installer_checks_the_release_signature_with_the_apps_key():
+    """install.sh verifies <zip>.sig with the key the app checks its updates with (release_key.pem, as SPKI there):
+    a swapped release asset gets past GitHub's own digest, never past the signature."""
+    import rsa
+
+    script = (ROOT / "packaging" / "macos" / "install.sh").read_text()
+    pem = re.search(r"-----BEGIN PUBLIC KEY-----.*?-----END PUBLIC KEY-----", script, re.S)[0]
+    app = (ROOT / "backend" / "telegram_dashboard" / "release_key.pem").read_bytes()
+    assert rsa.PublicKey.load_pkcs1_openssl_pem(pem.encode()) == rsa.PublicKey.load_pkcs1(app)
+    assert "openssl dgst -sha256 -verify" in script and '$file.sig"' in script
+    assert "xattr -dr com.apple.quarantine \"$DEST\"" not in script  # only the verified version is cleared
