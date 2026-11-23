@@ -71,6 +71,12 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0 (for release_key.pem)
+        with:
+          fetch-depth: 0  # every tag and commit: the notes list the commits since the previous tag
+      - name: Release notes (the tag message's summary, then the commits since the previous tag)
+        run: |
+          git fetch -f origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"  # annotated, with its message
+          bash scripts/release-notes.sh "$GITHUB_REF_NAME" | tee "$RUNNER_TEMP/notes.md"
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
         with:
           path: dist
@@ -99,7 +105,8 @@ jobs:
       - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
           files: dist/*
-          generate_release_notes: true
+          body_path: ${{ runner.temp }}/notes.md
+          generate_release_notes: true  # appended: the PRs and the "Full Changelog" compare link
       - name: Ensure every file is attached (the action dropped one silently in v0.1.3)
         env:
           GH_TOKEN: ${{ github.token }}

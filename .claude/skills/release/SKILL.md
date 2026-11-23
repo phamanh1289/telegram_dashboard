@@ -55,8 +55,13 @@ bằng lệnh cài nhanh (updater của chúng từ chối gói ký bằng khóa
    uv lock
    git add pyproject.toml uv.lock
    git commit -m "chore(release): vX.Y.Z"
-   git tag -a vX.Y.Z -m "vX.Y.Z"
+   git tag -a vX.Y.Z -F "$TMPDIR/tag-msg.md"
    ```
+   **Release note**: CI lấy làm nội dung GitHub Release (`scripts/release-notes.sh`): phần thân message của tag,
+   rồi danh sách commit từ tag trước (nhóm Tính năng / Sửa lỗi / Khác). Trước khi tag, đọc
+   `git log --no-merges <tag trước>..HEAD` + diff chính, viết `tag-msg.md`: dòng 1 `vX.Y.Z`, dòng trống, rồi 3–8 gạch
+   đầu dòng tiếng Việt cho người dùng (thay đổi họ thấy, theo màn: Telegram / YouTrack / Tài liệu / Cài đặt; không tên
+   file, không code). Xem trước: `bash scripts/release-notes.sh vX.Y.Z` (sau khi tag).
 5. **Push** (hỏi user trước — đây là thao tác công khai): `git push origin HEAD` rồi `git push origin vX.Y.Z`.
 6. **Theo dõi CI**: `gh run list --workflow release.yml -L 1`, `gh run watch <id>` (cần `gh auth login`;
    không có thì đưa user link `https://github.com/phamanh1289/telegram_dashboard/actions`).
