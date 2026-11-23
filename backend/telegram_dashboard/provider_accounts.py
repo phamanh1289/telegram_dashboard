@@ -17,6 +17,7 @@ from .claude import USAGE_EVERY, login_failed, spawn
 from .config import _read_json, child_env, run_cli
 from .desktop import applescript_str, osascript
 from .errors import ApiError
+from .provider_cmds import _agy_agent, away_dir
 from .providers import INSTALL, _agy_home, _codex_home, exe, installed
 
 _login: dict = {"proc": None, "url": None}  # a dashboard-started `codex login`
@@ -127,8 +128,11 @@ async def codex_reset(settings, credit_id: str | None, *, request_id: str | None
 
 
 async def _agy_quota(settings) -> dict:
-    """Remaining share of each model group's 5-hour and weekly limit, from `agy -p /usage`."""
-    got = await run_cli([*exe(settings, "antigravity"), "-p", "/usage", "--output-format", "json"])
+    """Remaining share of each model group's 5-hour and weekly limit, from `agy -p /usage`. Through the dashboard's
+    no-tool agent (the default one loads every MCP server the user set up, codegraph included: SEC-107) and from the
+    app's own empty folder, not the temp dir an edit sandbox writes into."""
+    cmd = [*exe(settings, "antigravity"), "-p", "/usage", "--output-format", "json", "--agent", _agy_agent("none")]
+    got = await run_cli(cmd, cwd=str(away_dir()))
     try:
         data = json.loads(got[1] if got else b"")["command"]["data"]
     except ValueError, KeyError, TypeError:

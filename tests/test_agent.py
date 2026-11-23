@@ -237,22 +237,6 @@ async def test_git_changes_since_the_session_start_leave_earlier_edits_out(tmp_p
     assert (await gitops.open_pr(str(repo), "ai/y", "Sửa a", "", base, mixed_ok=True))["branch"] == "ai/y"
 
 
-def test_prime_codegraph_leaves_the_wal_files_a_read_only_sandbox_needs(tmp_path):
-    import sqlite3
-
-    from telegram_dashboard.agent import prime_codegraph
-
-    (tmp_path / ".codegraph").mkdir()
-    db = tmp_path / ".codegraph" / "codegraph.db"
-    c = sqlite3.connect(db)
-    c.execute("PRAGMA journal_mode=WAL")
-    c.execute("CREATE TABLE t (x)")
-    c.close()  # the last writer: -wal / -shm deleted, as with no codegraph daemon running
-    assert not (tmp_path / ".codegraph" / "codegraph.db-shm").exists()
-    prime_codegraph(str(tmp_path))
-    assert (tmp_path / ".codegraph" / "codegraph.db-shm").exists()
-    prime_codegraph(str(tmp_path / "no-index"))  # no index: nothing to do
-
 
 async def test_git_changes_see_edits_inside_a_submodule(tmp_path, monkeypatch):
     import subprocess
@@ -353,3 +337,100 @@ async def test_git_never_runs_what_a_session_planted_in_the_repo(tmp_path, monke
         await gitops.open_pr(str(repo), "ai/x", "Sửa a", "", base, mixed_ok=True)
     assert g(repo, "log", "-1", "--format=%s").stdout.decode().strip() == "Sửa a"  # committed, pre-commit not run
     assert list(pwned.iterdir()) == []
+
+
+async def test_git_never_runs_a_filter_from_a_submodule_gitdir_a_session_planted(tmp_path, monkeypatch):
+    """A session rewrote a submodule's `lib/.git` file to point at a gitdir it wrote (a clean filter in its config):
+    `git add --all` there would run it outside the sandbox. Only a gitdir under the repo's own .git/modules counts."""
+    import subprocess
+
+    from telegram_dashboard import gitops
+
+    for k in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.setenv(k, "t")
+    for k in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(k, "t@t")
+    repo, planted, pwned = tmp_path / "repo", tmp_path / "x", tmp_path / "pwned"
+    g = lambda d, *a: subprocess.run(["git", "-C", str(d), *a], check=True, capture_output=True)  # noqa: E731
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main", f"--separate-git-dir={planted}", str(repo / "lib")], check=True)
+    (repo / "lib" / "a.txt").write_text("1\n")
+    g(repo / "lib", "add", ".")
+    g(repo / "lib", "commit", "-qm", "init")
+    (repo / ".gitmodules").write_text('[submodule "lib"]\n\tpath = lib\n')
+    g(repo, "add", ".")
+    g(repo, "commit", "-qm", "init")
+    g(repo / "lib", "config", "filter.evil.clean", f"touch {pwned}; cat")
+    (repo / "lib" / ".gitattributes").write_text("* filter=evil\n")
+    (repo / "lib" / "a.txt").write_text("2\n")
+    base = await gitops.snapshot(str(repo))
+    (repo / "b.txt").write_text("b\n")
+    assert [f["path"] for f in (await gitops.changes(str(repo), base))["files"]] == ["b.txt"]
+    assert "b.txt" in {f["path"] for f in (await gitops.changes(str(repo), None))["files"]}  # git status path
+    with pytest.raises(ApiError):  # no remote: the push fails, after the commit
+        await gitops.open_pr(str(repo), "ai/x", "Sửa b", "", base, mixed_ok=True)
+    assert g(repo, "log", "-1", "--format=%s").stdout.decode().strip() == "Sửa b"
+    assert not pwned.exists()
+
+
+async def test_a_submodule_git_runs_on_the_gitdir_checked_not_a_swapped_one(tmp_path, monkeypatch):
+    """`lib/.git` re-pointed between the check (_subs) and the git calls (a sandboxed process swapping it in a loop):
+    every git call in the submodule runs on the gitdir that was checked, so the planted one never loads."""
+    import subprocess
+
+    from telegram_dashboard import gitops
+
+    for k in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.setenv(k, "t")
+    for k in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(k, "t@t")
+    sub, repo, planted, pwned = tmp_path / "sub", tmp_path / "repo", tmp_path / "x", tmp_path / "pwned"
+    g = lambda d, *a: subprocess.run(["git", "-C", str(d), *a], check=True, capture_output=True)  # noqa: E731
+    for d in (sub, repo):
+        subprocess.run(["git", "init", "-q", "-b", "main", str(d)], check=True)
+        (d / "a.txt").write_text("1\n")
+        g(d, "add", ".")
+        g(d, "commit", "-qm", "init")
+    g(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub), "lib")
+    g(repo, "commit", "-qm", "sub")
+    subprocess.run(["git", "init", "-q", "--bare", str(planted)], check=True)
+    g(planted, "config", "filter.evil.clean", f"touch {pwned}; cat")
+    pins = await gitops._subs(str(repo))
+    assert list(pins) == ["lib"]
+    (repo / "lib" / ".git").write_text(f"gitdir: {planted}\n")  # swapped after the check
+    (repo / "lib" / ".gitattributes").write_text("* filter=evil\n")
+    (repo / "lib" / "a.txt").write_text("2\n")
+    tree = await gitops._tree(str(repo / "lib"), pin=pins["lib"])
+    files, _ = await gitops._diff(str(repo / "lib"), "HEAD", tree, "lib/", pin=pins["lib"])
+    assert {f["path"] for f in files} == {"lib/a.txt", "lib/.gitattributes"} and not pwned.exists()
+
+
+async def test_a_pr_never_pushes_into_a_folder_named_origin(tmp_path, monkeypatch):
+    """No remote called origin: `git push origin` would push into ./origin, a bare repo a session made, and run its
+    hooks (a local push drops -c). And SAFE keeps push / diff out of submodules a session may have re-pointed."""
+    import subprocess
+
+    from telegram_dashboard import gitops
+
+    for k in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.setenv(k, "t")
+    for k in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(k, "t@t")
+    repo, pwned = tmp_path / "repo", tmp_path / "pwned"
+    g = lambda d, *a: subprocess.run(["git", "-C", str(d), *a], check=True, capture_output=True)  # noqa: E731
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    (repo / "a.txt").write_text("1\n")
+    g(repo, "add", ".")
+    g(repo, "commit", "-qm", "init")
+    base = await gitops.snapshot(str(repo))
+    subprocess.run(["git", "init", "-q", "--bare", str(repo / "origin")], check=True)
+    hook = repo / "origin" / "hooks" / "pre-receive"
+    hook.write_text(f"#!/bin/sh\ntouch {pwned}\n")
+    hook.chmod(0o755)
+    (repo / ".gitignore").write_text("origin/\n")
+    (repo / "a.txt").write_text("2\n")
+    with pytest.raises(ApiError) as e:
+        await gitops.open_pr(str(repo), "ai/x", "Sửa a", "", base, mixed_ok=True)
+    assert e.value.code == "git_push_failed" and not pwned.exists()
+    for c in ("push.recurseSubmodules=no", "submodule.recurse=false", "diff.submodule=short"):
+        assert c in gitops.SAFE

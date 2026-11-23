@@ -10,7 +10,6 @@ import asyncio
 import contextlib
 import json
 import logging
-import sqlite3
 import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -69,23 +68,6 @@ def delete_task_files(settings, task_id: str) -> None:
     delete_links(settings, task_id)
 
 
-def prime_codegraph(project: str) -> None:
-    """A read-only turn can't create the index's -wal / -shm files (the Codex sandbox denies writes), so its
-    `codegraph` fails with "unable to open database file" unless they exist (a running daemon keeps them). A
-    read-only connection opened here leaves them behind: it may not checkpoint, so its close deletes nothing."""
-    db = Path(project) / ".codegraph" / "codegraph.db"
-    if not db.is_file():
-        return
-    try:
-        c = sqlite3.connect(f"{db.as_uri()}?mode=ro", uri=True, timeout=2)
-        try:
-            c.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchall()
-        finally:
-            c.close()
-    except sqlite3.Error as e:  # the agent still runs; it falls back to grep
-        log.info("codegraph index not primed: %s", e)
-
-
 class AgentRunner:
     def __init__(self, settings):
         self.settings = settings
@@ -113,6 +95,16 @@ class AgentRunner:
 
     def log_path(self, task_id: str) -> Path:
         return tasks_dir(self.settings) / f"{task_id}.log.jsonl"
+
+    def ran(self, task_id: str) -> bool:
+        """Whether a turn of this session ever reached its CLI: start() logs the prompt only once the CLI has it. A
+        first turn that failed before (a bad command, a stopped start) leaves just its error: there is nothing to
+        resume. No log at all (an old session): taken as ran."""
+        p = self.log_path(task_id)
+        if not p.is_file():
+            return True
+        with p.open(errors="replace") as f:
+            return any('"kind": "user"' in line for line in f)
 
     def running(self, task_id: str) -> bool:
         return task_id in self.procs or task_id in self._starting or task_id in self.side
@@ -184,13 +176,10 @@ class AgentRunner:
                 choice = (choice[0], ai[1], choice[2])
             links = links_dir(self.settings, task_id)  # long link content saved for this task (links.py)
             read_dir = str(links) if links.is_dir() else None
-            index = (Path(project) / ".codegraph").is_dir() and on_path("codegraph")
             zeplin, hint = provider_cmds.zeplin_for(text, found=self._zeplin(task_id, text))
             text += hint
-            cmd = provider_cmds.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2], read_dir, index=index,
+            cmd = provider_cmds.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2], read_dir,
                                      mcp=mcp, zeplin=zeplin, project=project)  # fmt: skip
-            if index and mode == "plan":
-                await asyncio.to_thread(prime_codegraph, project)
             env = {**child_env(), **provider_cmds.run_env(provider, zeplin, mcp and mode != "plan")}
             try:  # its own process group: a kill also reaches the shell commands it started
                 proc = await asyncio.create_subprocess_exec(

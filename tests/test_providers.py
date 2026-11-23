@@ -91,14 +91,9 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     deny = p[p.index("--disallowedTools") + 2]
     assert f"Read(/{s.data_dir.resolve().as_posix()}/**)" in deny and "Read(~/.ssh/**)" in deny
     assert "--mcp-config" not in p  # no index: no MCP server at all
-    # an indexed project: its codegraph MCP, one read-only tool, no shell, telemetry off
-    i = task_cmd(s, "claude", "plan", "sid", False, "", "", index=True)
-    server = json.loads(i[i.index("--mcp-config") + 1])["mcpServers"]["codegraph"]
-    assert server["args"][-3:] == ["codegraph", "serve", "--mcp"] and server["env"]["DO_NOT_TRACK"] == "1"
-    # pinned to the project (projectPath); by path under -I: a json.py planted in the project (its cwd) never loads
-    assert [server["command"], *server["args"][:2]] == provider_cmds.PIN and server["args"][0] == "-I"
-    assert i[i.index("--allowedTools") + 1] == "Read,Grep,Glob,Skill,mcp__codegraph__codegraph_explore"
-    assert "--strict-mcp-config" in i and i[i.index("--tools") + 1] == "Read,Grep,Glob,Skill"
+    # an indexed project gets no codegraph MCP either (SEC-104: its server runs git outside the sandbox)
+    (tmp_path / ".codegraph").mkdir(exist_ok=True)
+    assert "--mcp-config" not in task_cmd(s, "claude", "plan", "sid", False, "", "")
     # the user's own MCP servers: only an edit turn they ticked it for, only OWN_MCP ones; Bash stays sandboxed
     (tmp_path / ".claude.json").write_text(
         json.dumps(
@@ -123,8 +118,8 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     assert "--strict-mcp-config" in task_cmd(s, "claude", "plan", "sid", True, "", "", mcp=True)
     # a Zeplin link: the user's zeplin server only, its read-only tools, read-only turns too
     zs = {"type": "stdio", "command": "npx", "args": ["-y", "@zeplin/mcp-server"], "env": {"ZEPLIN_ACCESS_TOKEN": "x"}}
-    z = task_cmd(s, "claude", "plan", "sid", True, "", "", index=True, zeplin=zs)
-    assert set(json.loads(z[z.index("--mcp-config") + 1])["mcpServers"]) == {"codegraph", "zeplin"}
+    z = task_cmd(s, "claude", "plan", "sid", True, "", "", zeplin=zs)
+    assert set(json.loads(z[z.index("--mcp-config") + 1])["mcpServers"]) == {"zeplin"}
     assert z[z.index("--allowedTools") + 1].endswith(",mcp__zeplin__get_design_tokens") and "--strict-mcp-config" in z
     assert "download_layer_asset" not in z[z.index("--allowedTools") + 1]
     assert "mcp__zeplin__download_layer_asset" in z[z.index("--disallowedTools") :]  # past a user's allow rule
@@ -252,11 +247,19 @@ def test_antigravity_quota_is_the_used_share_of_each_groups_windows(tmp_path, mo
         {"window": "weekly", "remaining_fraction": 0.98, "reset_time": "2026-11-05T02:19:33Z"},
         {"window": "5h", "remaining_fraction": 0.75, "reset_time": "2026-11-03T10:19:36Z"}]}]}  # fmt: skip
 
+    ran = []
+
     async def out(cmd, *a, **k):
+        ran.append((cmd, k.get("cwd")))
         return 0, json.dumps({"command": {"name": "usage", "data": data}}).encode(), b""
 
+    monkeypatch.setenv("HOME", str(tmp_path))  # agy's agent files
     monkeypatch.setattr(provider_accounts, "run_cli", out)
+    monkeypatch.setattr(provider_accounts, "away_dir", lambda: tmp_path / "away")
     got = asyncio.run(provider_accounts._agy_quota(Settings(root=tmp_path)))["usage"]
+    # not the default agent (it loads every MCP server the user set up) and not from the temp dir (SEC-107)
+    cmd, cwd = ran[0]
+    assert cmd[cmd.index("--agent") + 1] == "telegram-dashboard-none" and cwd == str(tmp_path / "away")
     assert got == [{"label": "5h · Gemini", "percent": 25.0, "resets_at": "2026-11-03T10:19:36Z"},
                    {"label": "1w · Gemini", "percent": 2.0, "resets_at": "2026-11-05T02:19:33Z"}]  # fmt: skip
 
@@ -326,25 +329,6 @@ def test_no_ai_run_reads_the_apps_own_files(tmp_path, monkeypatch):
     assert s.forbids_project(root / "web") and s.forbids_project(tmp_path) and not s.forbids_project(proj)
 
 
-def test_codegraph_answers_about_the_runs_own_project_only():
-    """codegraph_explore takes any indexed repo's path (this app's too): mcp_pin rewrites it to the run's project."""
-    import json
-
-    from telegram_dashboard.mcp_pin import pin
-
-    args = {"query": "q", "projectPath": "/the/app"}
-    call = {
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "tools/call",
-        "params": {"name": "codegraph_explore", "arguments": args},
-    }
-    assert json.loads(pin(json.dumps(call).encode(), "/proj"))["params"]["arguments"]["projectPath"] == "/proj"
-    assert json.loads(pin(json.dumps([call]).encode(), "/proj"))[0]["params"]["arguments"]["projectPath"] == "/proj"
-    other = b'{"jsonrpc": "2.0", "id": 1, "method": "initialize"}\n'
-    assert json.loads(pin(other, "/proj")) == json.loads(other) and pin(b"not json\n", "/p") == b"not json\n"
-
-
 def test_no_ai_run_reads_the_users_other_credentials(tmp_path, monkeypatch):
     """Injected text must not read a token file (MCP tokens in ~/.claude.json, npm / git / docker auth, browser
     history holding the ?t= sign-in link) on any CLI, nor from a script in the edit sandbox."""
@@ -354,6 +338,7 @@ def test_no_ai_run_reads_the_users_other_credentials(tmp_path, monkeypatch):
     s = Settings(root=tmp_path / "app")
     claude = task_cmd(s, "claude", "edit", "sid", False, "", "")
     deny = " ".join(claude[claude.index("--disallowedTools") + 1 : claude.index("--disallowedTools") + 3])
+    assert "Edit(.git)," in deny and "Edit(.git/**)," in deny  # `.git` is a file in a worktree: the name itself too
     for f in (".claude.json", ".npmrc", ".netrc", ".git-credentials", "Library/Application Support/Google/Chrome"):
         assert f"Read(~/{f})" in deny and f"Read(~/{f}/**)" in deny
     # the sandbox itself: a script that builds the path at run time is not bound by a Read() rule
@@ -376,27 +361,10 @@ def test_mcp_pin_starts_from_a_project_on_an_install_and_loads_nothing_from_it(t
     from telegram_dashboard import provider_cmds
 
     (tmp_path / "json.py").write_text("raise SystemExit(7)")
-    r = subprocess.run([*provider_cmds.PIN, sys.executable, "-c", "pass"], cwd=tmp_path, stdin=subprocess.DEVNULL,
-                       capture_output=True, env={"PATH": os.environ.get("PATH", "")}, timeout=30)  # fmt: skip
+    away = tmp_path / "away"
+    away.mkdir()
+    show_cwd = [sys.executable, "-c", "import os; print(os.getcwd())"]
+    r = subprocess.run([*provider_cmds.PIN, "--cwd", str(away), *show_cwd], cwd=tmp_path, stdin=subprocess.DEVNULL,
+                       capture_output=True, text=True, env={"PATH": os.environ["PATH"]}, timeout=30)  # fmt: skip
     assert r.returncode == 0, r.stderr
-
-
-def test_codegraph_runs_no_program_a_planted_nested_repo_names(tmp_path):
-    """codegraph (outside the sandbox, cwd = the project) runs git in nested repos: a `sub/.git` file pointing at a
-    config an edit turn wrote must not run its core.fsmonitor / hooks. The control run shows the plant works."""
-    import shutil
-    import subprocess
-
-    git = shutil.which("git")
-    sub, gitdir, mark = tmp_path / "sub", tmp_path / "x", tmp_path / "ran"
-    subprocess.run([git, "init", "-q", f"--separate-git-dir={gitdir}", str(sub)], check=True)
-    (sub / "a.txt").write_text("a")
-    hook = tmp_path / "hook.sh"
-    hook.write_text(f"#!/bin/sh\ntouch {mark}\n")
-    hook.chmod(0o755)
-    subprocess.run([git, "-C", str(sub), "config", "core.fsmonitor", str(hook)], check=True)
-    base = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path)}
-    subprocess.run([git, "-C", str(sub), "status"], env={**base, **provider_cmds.CODEGRAPH["env"]}, capture_output=True)
-    assert not mark.exists()
-    subprocess.run([git, "-C", str(sub), "status"], env=base, capture_output=True)
-    assert mark.exists()  # the plant is real
+    assert os.path.realpath(r.stdout.strip()) == os.path.realpath(away)  # the server starts away from the project

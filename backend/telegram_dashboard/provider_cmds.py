@@ -12,7 +12,6 @@ from pathlib import Path
 from .claude import flags_for
 from .config import RUN_DIR
 from .errors import ApiError
-from .gitops import safe_env
 from .providers import (
     CODEX_EFFORTS,
     ZEPLIN,
@@ -79,17 +78,13 @@ NO_SHELL = ("Máy này (Windows) không có sandbox nên phiên không chạy đ
             "trả lời ghi rõ lệnh build / test để người dùng tự chạy kiểm tra.")  # fmt: skip
 # Skill: the user's skills load as text; a skill's !`cmd` still needs Bash, so a read-only turn can't run it.
 ALLOW = {"plan": "Read,Grep,Glob,Skill", "edit": "Bash"}
-# A project indexed with codegraph (`.codegraph/`): Claude turns query it through its MCP server, one read-only tool
-# (codegraph_explore: no shell, no writes, no network), so a read-only turn finds code without grepping around.
-# DO_NOT_TRACK: no telemetry or update check from a run whose prompt carries others' text.
-# Through mcp_pin: codegraph_explore takes any indexed repo's path (this app's too), the pin keeps it on the project.
-# mcp_pin runs by its path under -I: cwd is the project, which an AI edit turn writes, so nothing may load from it (a
-# planted json.py, unsandboxed); an install finds telegram_dashboard from its app/ dir only, so `-m` fails there.
+# mcp_pin runs by its path under -I: a user's stdio server (_away) starts from the project's folder, which an AI edit
+# turn writes, so nothing may load from it (a planted json.py, unsandboxed); and an install finds telegram_dashboard
+# from its app/ dir only, so `-m` fails there.
+# No codegraph MCP in any run (SEC-104): its server runs git outside the sandbox in every repo under the project, and a
+# nested repo an edit turn planted (a `sub/.git` file) runs any program its config names (a clean filter). The AI's
+# own `codegraph sync` / CLI runs in the sandbox like any command.
 PIN = [sys.executable, "-I", str(Path(__file__).with_name("mcp_pin.py"))]
-# safe_env: it runs git in every repo under the project, a nested one an edit turn planted (fsmonitor, hooks) included
-CODEGRAPH = {"type": "stdio", "command": PIN[0], "env": {"DO_NOT_TRACK": "1", **safe_env()},
-             "args": [*PIN[1:], "codegraph", "serve", "--mcp"]}  # fmt: skip
-CODEGRAPH_TOOL = "mcp__codegraph__codegraph_explore"
 ZEPLIN_READ = ("get_screen", "get_component", "get_design_tokens")
 ZEPLIN_TOOLS = ",".join(f"mcp__zeplin__{t}" for t in ZEPLIN_READ)
 ZEPLIN_AGY = [f"mcp(zeplin/{t})" for t in ZEPLIN_READ]  # Antigravity's allow rules for them (_agy_base `mcp`)
@@ -163,18 +158,24 @@ def _by_ref(server: dict, name: str = "zeplin") -> dict:
     return {"type": "stdio", "command": command, "args": args, "env": env}
 
 
-def _away(command: str, args) -> tuple[str, list[str]]:
-    """A user's stdio server (npx …) starts outside the sandbox: from the project it would take the project's .npmrc /
-    node_modules (an edit turn may have written them) as its registry or its code. mcp_pin starts it in this app's own
-    empty folder instead (PIN: no module from the project dir either)."""
+def away_dir() -> Path:
+    """This app's own empty folder (0700): where a CLI started outside the sandbox runs instead of a folder an AI turn
+    writes into (the project: its .npmrc / node_modules / nested repos; the temp dir)."""
     home = RUN_DIR / "mcp"
     home.mkdir(parents=True, exist_ok=True, mode=0o700)
-    return PIN[0], [*PIN[1:], "--cwd", str(home), command, *(args or [])]
+    return home
+
+
+def _away(command: str, args) -> tuple[str, list[str]]:
+    """A user's stdio server (npx …) starts outside the sandbox: from the project it would take the project's .npmrc /
+    node_modules (an edit turn may have written them) as its registry or its code. mcp_pin starts it in away_dir()
+    instead (PIN: no module from the project dir either)."""
+    return PIN[0], [*PIN[1:], "--cwd", str(away_dir()), command, *(args or [])]
 
 
 # The user's MCP servers "Dùng MCP / plugin" loads, by name: they run outside the sandbox with the user's logins, so
 # only ones that read no local file and run no command (SCOPE_RULE: files in the project only, never this app). Not
-# markitdown (it reads file:// URIs), lean-ctx, context-mode, serena…; codegraph comes pinned (CODEGRAPH) instead.
+# markitdown (it reads file:// URIs), lean-ctx, context-mode, serena…, codegraph (git outside the sandbox: SEC-104).
 # ponytail: a fixed list; add a server once it is known to stay off the disk.
 OWN_MCP = ("youtrack", "zeplin", "context7")
 
@@ -256,7 +257,9 @@ PROTECTED_DIRS = (".claude", ".git", ".github", ".vscode", ".idea", ".husky")
 # .npmrc / .yarnrc: the registry and node options every npm / yarn in the project would take, the user's own too
 PROTECTED_FILES = (".gitmodules", ".envrc", ".mcp.json", ".npmrc", ".yarnrc", ".yarnrc.yml")
 DENY = ",".join(
-    ["WebFetch", "WebSearch", *(f"Edit({d}/**)" for d in PROTECTED_DIRS), *(f"Edit({f})" for f in PROTECTED_FILES),
+    # Edit(d) too: `.git` is a file in a worktree / submodule checkout, and `d/**` does not match the name itself
+    ["WebFetch", "WebSearch", *(f"Edit({d}{g})" for d in PROTECTED_DIRS for g in ("", "/**")),
+     *(f"Edit({f})" for f in PROTECTED_FILES),
      # the shell's casual ways out (prefix rules: weak, not a sandbox; see _data_deny)
      "Bash(curl:*)", "Bash(wget:*)", "Bash(nc:*)", "Bash(ncat:*)", "Bash(ssh:*)", "Bash(scp:*)"]
 )  # fmt: skip
@@ -473,7 +476,6 @@ def task_cmd(
     effort: str,
     read_dir: str | None = None,
     *,
-    index: bool = False,
     mcp: bool = False,
     zeplin: dict | None = None,
     project: str | None = None,
@@ -481,7 +483,6 @@ def task_cmd(
     """One task turn (prompt on stdin): `plan` reads files, `edit` may edit them and run shell commands.
     `read_dir`: another folder it may read (link content saved by links.py; Codex reads anywhere but the secrets).
     Windows: no shell for Claude's `edit` (SHELL_OK), it only edits files.
-    `index`: the project has a codegraph index; Claude gets its read-only tool (Codex runs the CLI in its sandbox).
     `mcp` (`edit` only; "Dùng MCP / plugin"): the user's OWN_MCP servers load and their tools are allowed, on every
     CLI (run_env carries their secrets). They run OUTSIDE the sandbox with the user's logins, so text written by others
     in the prompt could steer them: none reads a local file or runs a command. Antigravity still gets no shell.
@@ -492,14 +493,12 @@ def task_cmd(
     add = ["--add-dir", read_dir] if read_dir else []
     own = mcp and mode != "plan"
     if p == "claude":
-        servers = {**({"codegraph": CODEGRAPH} if index else {}),
-                   **({n: _by_ref(v, n) for n, v in own_servers(p).items()} if own else {}),
+        servers = {**({n: _by_ref(v, n) for n, v in own_servers(p).items()} if own else {}),
                    **({"zeplin": _by_ref(zeplin)} if zeplin else {})}  # fmt: skip
         shell = mode != "plan" and SHELL_OK
         tools = [
-            *([CODEGRAPH_TOOL] if index else []),
             *([ZEPLIN_TOOLS] if "zeplin" in servers else []),
-            *(f"mcp__{n}" for n in servers if n not in ("codegraph", "zeplin")),
+            *(f"mcp__{n}" for n in servers if n != "zeplin"),
         ]  # a server's every tool
         allow = ",".join([ALLOW[mode] if shell else ALLOW["plan"], *tools])
         plan = mode == "plan"

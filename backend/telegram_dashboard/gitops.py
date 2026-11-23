@@ -16,18 +16,12 @@ from .errors import ApiError
 # What a project's own repo could run when the dashboard runs git there, outside any AI sandbox: an AI session may have
 # planted it (.git/config, hooks), so none of it runs. Diffs also pass --no-textconv (a config-named program).
 SAFE = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never",
-        "-c", "log.showSignature=false", "-c", "safe.bareRepository=explicit")  # fmt: skip
-
-
-def safe_env() -> dict[str, str]:
-    """SAFE for a git this app does not call itself (codegraph's, run outside the sandbox in the project): git reads
-    GIT_CONFIG_COUNT/KEY/VALUE as `-c`, over any repo config an AI turn planted (a nested `sub/.git` too)."""
-    pairs = [SAFE[i + 1].split("=", 1) for i in range(0, len(SAFE), 2)]
-    env = {"GIT_CONFIG_COUNT": str(len(pairs))}
-    for i, (k, v) in enumerate(pairs):
-        env |= {f"GIT_CONFIG_KEY_{i}": k, f"GIT_CONFIG_VALUE_{i}": v}
-    return env
-
+        "-c", "log.showSignature=false", "-c", "safe.bareRepository=explicit",
+        # status / diff / commit run `git status` inside each submodule, whose gitdir a session may have re-pointed
+        # (a clean filter there runs): submodules are read on their own, and only trusted ones (_subs)
+        "-c", "diff.ignoreSubmodules=all", "-c", "diff.submodule=short",
+        # push / checkout never recurse into one either (a user's global submodule.recurse would)
+        "-c", "push.recurseSubmodules=no", "-c", "submodule.recurse=false")  # fmt: skip
 
 PATCH = ("--no-color", "--no-ext-diff", "--no-textconv")  # a patch for the page: no program from the repo's config
 MAX_DIFF = 200_000  # chars of patch text sent to the page
@@ -92,10 +86,11 @@ async def recent(project: str, days: int = 14, limit: int = 40) -> dict | None:
     return {"branch": branch.strip(), "commits": out.splitlines() if not code else []}
 
 
-async def _tree(project: str) -> str | None:
+async def _tree(project: str, *, pin: dict | None = None) -> str | None:
     """The whole working tree (tracked + untracked, .gitignore kept) as a git tree id, staged in a throwaway copy of
-    the index so the user's own staging is untouched. None when `project` is not a git repo."""
-    code, idx, _ = await _git(project, "rev-parse", "--path-format=absolute", "--git-path", "index")
+    the index so the user's own staging is untouched. None when `project` is not a git repo. `pin`: a submodule's
+    checked gitdir (_subs), used by every call here."""
+    code, idx, _ = await _git(project, "rev-parse", "--path-format=absolute", "--git-path", "index", env=pin)
     if code:
         return None
     with tempfile.TemporaryDirectory() as d:
@@ -104,8 +99,13 @@ async def _tree(project: str) -> str | None:
             # keeps the stat cache (only edited files get hashed) and the index mtime: a fresh one would hide a
             # same-size edit made in the same second as the last index write (git's racy-clean check)
             shutil.copy2(idx.strip(), tmp)
-        env = {"GIT_INDEX_FILE": tmp}
-        code, _, err = await _git(project, "add", "--all", env=env)
+        env = {**(pin or {}), "GIT_INDEX_FILE": tmp}
+        # `add` checks each gitlink with a `git status` inside it (diff.ignoreSubmodules does not reach add): leave
+        # them out; a submodule's own files come from its own _tree, when its gitdir is trusted (_subs)
+        _, staged, _ = await _git(project, "ls-files", "--stage", "-z", env=env)
+        links = [e.split("\t", 1)[1] for e in staged.split("\0") if e.startswith("160000 ")]
+        code, _, err = await _git(project, "add", "--all", "--", ".", *(f":(exclude,literal){p}" for p in links),
+                                  env=env)  # fmt: skip
         if code:
             raise ApiError(409, "git_failed", detail=err.strip()[-300:])
         code, tree, err = await _git(project, "write-tree", env=env)
@@ -114,13 +114,30 @@ async def _tree(project: str) -> str | None:
     return tree.strip()
 
 
-async def _subs(root: str) -> list[str]:
-    """Checked-out submodules of the repo at `root` (paths from it): edits inside one never reach the parent's tree."""
+async def _subs(root: str) -> dict[str, dict]:
+    """Checked-out submodules of the repo at `root` (paths from it): edits inside one never reach the parent's tree.
+    Each with the env that pins its git calls to the gitdir checked here (GIT_DIR / GIT_WORK_TREE): git would read
+    `<sub>/.git` again at every call, and a sandboxed process may swap it in between."""
     code, out, _ = await _git(root, "config", "--file", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$")
     paths = [ln.split(" ", 1)[1] for ln in out.splitlines() if " " in ln] if not code else []
     top = os.path.realpath(root)
     inside = [p for p in paths if os.path.realpath(os.path.join(top, p)).startswith(top + os.sep)]  # .gitmodules is
-    return [p for p in inside if os.path.exists(os.path.join(root, p, ".git"))]  # a plain file: never ../elsewhere
+    # a plain file: never ../elsewhere. Nor a gitdir a session wrote: its config could name a clean filter that a
+    # `git add` here runs, unsandboxed. Only the repo's own .git/modules/ (PROTECTED_DIRS keeps sessions out of it).
+    code, common, _ = await _git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    modules = os.path.join(os.path.realpath(common.strip()), "modules") + os.sep
+    dirs = {p: _gitdir(os.path.join(top, p)) for p in inside} if not code else {}
+    return {p: {"GIT_DIR": d, "GIT_WORK_TREE": os.path.join(top, p)} for p, d in dirs.items() if d.startswith(modules)}
+
+
+def _gitdir(path: str) -> str:
+    """Where the `.git` file of the worktree at `path` points (real path); "" for a `.git` dir or none."""
+    try:
+        with open(os.path.join(path, ".git"), encoding="utf-8") as f:
+            line = f.readline().strip()
+    except (OSError, UnicodeDecodeError):  # IsADirectoryError too: an old-layout submodule keeps its own .git
+        return ""
+    return os.path.realpath(os.path.join(path, line[8:])) if line.startswith("gitdir: ") else ""
 
 
 async def snapshot(project: str) -> str | None:
@@ -130,15 +147,15 @@ async def snapshot(project: str) -> str | None:
     if code:
         return None
     root = top.strip()
-    subs = {p: t for p in await _subs(root) if (t := await _tree(os.path.join(root, p)))}
+    subs = {p: t for p, pin in (await _subs(root)).items() if (t := await _tree(os.path.join(root, p), pin=pin))}
     tree = await _tree(root)
     return json.dumps({"": tree, **subs}) if subs and tree else tree
 
 
-async def _diff(cwd: str, a: str, b: str, prefix: str = "") -> tuple[list[dict], str]:
-    """Files and patch between two tree-ishes of the repo at `cwd`, paths under `prefix` (a submodule's place);
-    secret-looking files never read."""
-    _, names, _ = await _git(cwd, "diff", "--no-renames", "--name-status", "-z", a, b)
+async def _diff(cwd: str, a: str, b: str, prefix: str = "", *, pin: dict | None = None) -> tuple[list[dict], str]:
+    """Files and patch between two tree-ishes of the repo at `cwd`, paths under `prefix` (a submodule's place, `pin`
+    its checked gitdir); secret-looking files never read."""
+    _, names, _ = await _git(cwd, "diff", "--no-renames", "--name-status", "-z", a, b, env=pin)
     parts = names.split("\0")
     pairs = list(zip(parts[0:-1:2], parts[1::2], strict=True))  # "-z": status, path, ..., ""
     files = [{"path": prefix + p, "status": st, "secret": bool(SECRET_FILE.search(p))} for st, p in pairs]
@@ -147,7 +164,7 @@ async def _diff(cwd: str, a: str, b: str, prefix: str = "") -> tuple[list[dict],
         return files, ""
     opts = ("--no-renames", *PATCH, f"--src-prefix=a/{prefix}", f"--dst-prefix=b/{prefix}")
     git = ("--literal-pathspecs", "-c", "core.quotePath=false", "diff")
-    _, patch, _ = await _git(cwd, *git, *opts, a, b, "--", *shown)
+    _, patch, _ = await _git(cwd, *git, *opts, a, b, "--", *shown, env=pin)
     return files, patch
 
 
@@ -186,9 +203,9 @@ async def changes(project: str, base: str | None = None) -> dict:
     mixed = await _mixed(root, bases[""], [f["path"] for f in files]) if bases[""] else set()
     for f in files:
         f["mixed"] = f["path"] in mixed
-    for p in subs:
+    for p, pin in subs.items():
         cwd = os.path.join(root, p)
-        more, text = await _diff(cwd, bases.get(p) or "HEAD", await _tree(cwd), p + "/")
+        more, text = await _diff(cwd, bases.get(p) or "HEAD", await _tree(cwd, pin=pin), p + "/", pin=pin)
         files += more
         patch += text
     return {
@@ -247,7 +264,10 @@ async def open_pr(
         code, _, err = await _git(project, "--literal-pathspecs", *cmd)
         if code:
             raise ApiError(409, "git_failed", detail=err.strip()[-300:])
-    code, _, err = await _git(project, "push", "-u", "origin", cur, creds=True)
+    # a real remote only: without one, `origin` is the path ./origin (a bare repo a session made: its hooks run)
+    code, _, err = await _git(project, "remote", "get-url", "origin")
+    if not code:
+        code, _, err = await _git(project, "push", "-u", "origin", cur, creds=True)
     if code:
         raise ApiError(409, "git_push_failed", detail=err.strip()[-300:])
     try:
