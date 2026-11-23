@@ -79,6 +79,11 @@ class Transport(Protocol):
     # Raises SendRejected("retry_after") on a flood wait.
     async def send_reaction(self, chat_id: str, message_id: int, emoji: str | None) -> None: ...
     async def send_saved(self, text: str) -> None: ...  # to my own Saved Messages, in ≤4000-char parts
+    # text to a @username, then the (file name, bytes) photos as one album and `doc` as a file;
+    # SendRejected("forbidden") if unreachable
+    async def send_to(
+        self, peer: str, text: str, photos: list[tuple[str, bytes]], *, doc: tuple[str, bytes] | None = None
+    ) -> None: ...
     async def members(self, chat_id: str) -> list[Member]: ...  # people in the group, not me; 403 members_hidden
 
 
@@ -285,6 +290,22 @@ class TelegramBridge:
             raise ApiError(429, "flood_wait", retry_after=e.retry_after) from e
         except Exception as e:  # timeout, connection loss: some parts may already be in Saved Messages
             log.warning("saved send result unknown: %s", type(e).__name__)
+            raise ApiError(504, "delivery_unknown") from e
+
+    async def send_to(
+        self, peer: str, text: str, photos: list[tuple[str, bytes]], *, doc: tuple[str, bytes] | None = None
+    ) -> None:
+        """Liên hệ: outside the outbox and its lock (an upload would hold up replies). Each photo / file adds a
+        SEND_TIMEOUT to the wait; a timeout is `delivery_unknown` (the text may be there already)."""
+        t = self.ensure_connected()
+        try:
+            wait = SEND_TIMEOUT * (1 + len(photos) + (doc is not None))
+            await asyncio.wait_for(t.send_to(peer, text, photos, doc=doc), wait)
+        except SendRejected as e:
+            code = "flood_wait" if e.code == "retry_after" else e.code
+            raise ApiError(429 if code == "flood_wait" else 403, code, retry_after=e.retry_after) from e
+        except Exception as e:
+            log.warning("contact send result unknown: %s", type(e).__name__)
             raise ApiError(504, "delivery_unknown") from e
 
     async def send_direct(self, chat_id: str, reply_to: int | None, text: str) -> int:

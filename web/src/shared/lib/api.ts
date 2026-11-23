@@ -153,6 +153,12 @@ const COMMON: Record<string, (e: ApiError) => string> = {
   ai_scope_not_allowed: () => t("Tin này không còn được theo dõi hoặc đã bị xóa. "),
 };
 
+/** Newer versions on GitHub (the server checks hourly) and the running one; the shell's badge and Liên hệ share it. */
+export const updateStateQuery = {
+  queryKey: ["update-state"],
+  queryFn: ({ signal }: { signal: AbortSignal }) => api<{ version: string; behind: number }>("/update/state", { signal }),
+};
+
 /** The backend's status (Telegram, AI, YouTrack); one cache shared by the shell, Settings and the Digest actions. */
 export const statusQuery = {
   queryKey: ["status"],
@@ -166,5 +172,21 @@ const WITH_DETAIL = new Set(["ai_provider_error", "task_launch_failed", "claude_
 /** The message for an error's code; an AI run's failure also gets the CLI's own reason (`detail`). */
 export function errorText(e: unknown, map: Record<string, string>, fallback = t("Có lỗi xảy ra.")) {
   const text = (e instanceof ApiError && (map[e.code] || COMMON[e.code]?.(e))) || fallback;
-  return e instanceof ApiError && WITH_DETAIL.has(e.code) && e.detail ? `${text.trimEnd()} (${tMaybe(e.detail)}) ` : text;
+  const out = e instanceof ApiError && WITH_DETAIL.has(e.code) && e.detail ? `${text.trimEnd()} (${tMaybe(e.detail)}) ` : text;
+  lastFailure = reportable(e) ? { text: out, at: Date.now(), failure: failureOf(e) } : null;
+  return out;
 }
+
+/** What a bug report needs about one failed call (Liên hệ, from a toast's "Báo lỗi"). */
+export type Failure = { code: string; status: number | null; detail: string | null };
+// Errors the user can act on themselves (wait, reconnect, check the group, fix the input) are not bugs to report.
+const EXPECTED = new Set(["flood_wait", "delivery_unknown", "not_connected", "auth_required", "validation", "task_cancelled"]);
+const reportable = (e: unknown) =>
+  e instanceof ApiError ? (e.status >= 500 || e.code === "http_error") && !EXPECTED.has(e.code)
+    : !(e instanceof TypeError || (e instanceof Error && e.name === "AbortError")); // fetch's TypeError: the server is down, Liên hệ can't send either
+const failureOf = (e: unknown): Failure =>
+  e instanceof ApiError ? { code: e.code, status: e.status, detail: e.detail } : { code: e instanceof Error ? e.name : "error", status: null, detail: e instanceof Error ? e.message : String(e) };
+let lastFailure: { text: string; at: number; failure: Failure } | null = null;
+/** The failure behind a message errorText just wrote (toast() attaches it, so every error toast offers "Báo lỗi"
+ *  without each caller passing the error along); null for other text or an error the user can fix themselves. */
+export const failureFor = (text: string) => (lastFailure && lastFailure.text === text && Date.now() - lastFailure.at < 2000 ? lastFailure.failure : null);

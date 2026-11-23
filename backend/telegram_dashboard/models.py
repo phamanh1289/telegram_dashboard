@@ -149,6 +149,46 @@ class ChangesPage(BaseModel):
     reset: bool = False
 
 
+class ContactRequest(BaseModel):
+    """Cài đặt › Liên hệ: one message to the app's developer on Telegram."""
+
+    title: str = Field(min_length=1, max_length=200)
+    kind: Literal["bug", "feature", "idea", "question"]
+    area: Literal["telegram", "youtrack", "docs", "ai", "settings", "other"]
+    text: str = Field(min_length=1, max_length=4000)
+    diag: bool = True  # add the app / machine lines (contact.diag)
+    logs: bool = False  # attach the server's recent warnings / errors as log.txt (log_buffer)
+    client: str = Field("", max_length=300)  # browser, language, screen: what only the page knows
+    photos: list[str] = Field(default_factory=list, max_length=5)  # base64 PNG / JPEG / WebP, ≤ 5 MB each
+
+    @field_validator("title", "text")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("must not be blank")
+        return v.strip()
+
+
+class ContactPolishRequest(BaseModel):
+    """Liên hệ › AI viết lại: the draft as typed (not sent anywhere but the AI)."""
+
+    kind: Literal["bug", "feature", "idea", "question"]
+    area: Literal["telegram", "youtrack", "docs", "ai", "settings", "other"]
+    title: str = Field("", max_length=200)
+    text: str = Field(min_length=1, max_length=4000)
+
+
+class ContactPolish(BaseModel):
+    title: str  # the input's own title when the AI gave none
+    text: str
+
+
+class ContactPreview(BaseModel):
+    to: str  # the developer's @username
+    text: str  # the message exactly as POST /api/contact sends it (photos follow as an album)
+    log: str = ""  # log.txt as it would be attached ("" when not asked for or nothing logged)
+
+
 class StatusDTO(BaseModel):
     state: Literal["setup_required", "login_required", "connecting", "connected", "degraded", "stopped"]
     detail: str | None = None

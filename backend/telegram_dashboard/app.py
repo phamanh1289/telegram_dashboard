@@ -19,7 +19,7 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
 from telethon import errors as tg_errors
 
-from . import local_data, privacy, provider_accounts, providers, updater
+from . import local_data, log_buffer, privacy, provider_accounts, providers, updater
 from .agent import AgentRunner, session_ref
 from .ai import AiService, clean_svg, parse_ticket
 from .ai_jobs import stream_answer
@@ -78,6 +78,7 @@ from .storage import Db, Store, parse_cursor
 from .tasks import add_refs, assist_history, new_task_id, start_task
 from .tasks import build_router as build_task_router
 from .telegram.bridge import TelegramBridge, Transport, notify_mac
+from .telegram.contact import build_router as build_contact_router
 from .telegram.digest import DigestService
 from .telegram.follow import build_router as build_follow_router
 from .telegram.live_reads import TelegramReads
@@ -182,6 +183,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        log_buffer.install()  # Liên hệ attaches the recent warnings / errors
         settings.ensure_data_dir()
         await asyncio.to_thread(prune_media, settings)
         await asyncio.to_thread(prune_runs, settings)
@@ -714,6 +716,7 @@ def create_app(
 
     app.include_router(build_telegram_router(get_settings, set_settings, live_reads))
     app.include_router(build_digest_router(live_reads))
+    app.include_router(build_contact_router())
     app.include_router(build_youtrack_router(get_settings, set_settings, yt_dashboard))
 
     @app.api_route(

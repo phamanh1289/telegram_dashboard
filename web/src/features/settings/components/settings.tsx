@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowLeft, Database, GitBranch, Keyboard, Palette, Search, Send, SlidersHorizontal, Sparkles } from "lucide-react";
+import { ArrowLeft, Database, GitBranch, Keyboard, Mail, Palette, Search, Send, SlidersHorizontal, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Toaster, TopBar } from "@/app/_components/shell";
 import { AiGroup } from "@/features/settings/components/ai";
 import { BotSection } from "@/features/settings/components/bot";
+import { ContactGroup } from "@/features/settings/components/contact";
 import { DataGroup } from "@/features/settings/components/data";
 import { GeneralGroup } from "@/features/settings/components/general";
 import { LookSection } from "@/features/settings/components/look";
@@ -21,7 +22,7 @@ import { YtLogo } from "@/shared/components/yt-logo";
 import { type Key, tr, useT } from "@/shared/lib/i18n";
 import { cn, fold } from "@/shared/lib/utils";
 
-type GroupId = "general" | "look" | "bot" | "telegram" | "youtrack" | "ai" | "data" | "shortcuts" | "github";
+type GroupId = "general" | "look" | "bot" | "telegram" | "youtrack" | "ai" | "data" | "shortcuts" | "github" | "contact";
 type Section = "me" | "services" | "system";
 const SECTIONS: [Section, Key][] = [["me", "Cá nhân"], ["services", "Dịch vụ"], ["system", "Hệ thống"]];
 /** id, name, icon, the nav's one-liner, the page's lead, the nav section. Chung holds only what every module reads. */
@@ -35,6 +36,7 @@ const GROUPS: [GroupId, Key, React.ComponentType<{ className?: string }>, Key, K
   ["data", "Dữ liệu", Database, "Dung lượng, dọn dẹp", "Những gì app lưu trên máy này và trình duyệt này: mỗi phần chiếm bao nhiêu, xóa từng phần khi cần.", "system"],
   ["shortcuts", "Phím tắt", Keyboard, "Inbox và YouTrack", "Phím một chữ không chạy khi đang gõ trong ô nhập. Bấm ? trong Inbox để mở nhanh.", "system"],
   ["github", "Cập nhật", GitBranch, "Bản mới từ GitHub", "Lấy bản mới từ GitHub rồi khởi động lại server.", "system"],
+  ["contact", "Liên hệ", Mail, "Báo lỗi, đề xuất tính năng", "Gửi lỗi, đề xuất tính năng hay câu hỏi kèm ảnh cho nhà phát triển qua Telegram.", "system"],
 ];
 
 /** The settings page (/settings/#group): every module's settings, one group at a time. */
@@ -132,6 +134,7 @@ export function SettingsPage() {
           {tab === "github" && <Card title="Cập nhật app" info="Bản cài: tải gói mới từ GitHub Releases. Bản git: git pull, build lại giao diện (cần quyền đọc repo)."><UpdateSection /></Card>}
           {tab === "data" && <DataGroup />}
           {tab === "shortcuts" && <ShortcutsGroup />}
+          {tab === "contact" && <ContactGroup />}
         </main>
       </div>
       <Toaster />
@@ -183,6 +186,7 @@ const ENTRIES: Entry[] = [
   { t: "Xóa tin cũ, phiên AI đã xong, ảnh, log", g: "data", card: "Dọn trong database", k: "don dep clear clean xoa tin cu anh log lich su phien" },
   { t: "Dung lượng tin theo từng nhóm", g: "data", card: "Tin theo nhóm", k: "xoa du lieu nhom group purge" },
   { t: "Phím tắt Telegram Inbox và YouTrack", g: "shortcuts", k: "keyboard shortcut" },
+  { t: "Báo lỗi, đề xuất tính năng cho nhà phát triển", g: "contact", card: "Gửi cho nhà phát triển", k: "lien he contact feedback gop y bug loi yeu cau tinh nang cau hoi anh" },
 ];
 const GROUP_NAME = Object.fromEntries(GROUPS.map(([id, name]) => [id, name])) as Record<GroupId, Key>;
 // Both languages are searchable whichever one is on: the Vietnamese key and its English text.

@@ -41,6 +41,7 @@ class FakeTransport:
     send_calls: list[dict] = field(default_factory=list)
     reactions: list[tuple] = field(default_factory=list)
     saved: list[str] = field(default_factory=list)
+    sent_to: list[tuple] = field(default_factory=list)  # Liên hệ: (peer, text, photos)
     send_impl: object = None
     connect_impl: object = None
     bridge: object = None
@@ -123,6 +124,9 @@ class FakeTransport:
 
     async def send_saved(self, text):
         self.saved.append(text)
+
+    async def send_to(self, peer, text, photos, *, doc=None):
+        self.sent_to.append((peer, text, photos, doc))
 
 
 class Env:

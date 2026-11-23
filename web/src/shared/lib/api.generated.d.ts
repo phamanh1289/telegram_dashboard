@@ -2191,6 +2191,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/contact/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview
+         * @description What Gửi would send (works offline too); the page sends no photos here, it shows its own.
+         */
+        post: operations["preview_api_contact_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/contact/polish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Polish
+         * @description AI viết lại: one tool-less run over the draft; the page shows it for the user to keep or undo.
+         */
+        post: operations["polish_api_contact_polish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/contact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send */
+        post: operations["send_api_contact_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/youtrack/auth": {
         parameters: {
             query?: never;
@@ -3220,6 +3277,85 @@ export interface components {
             percent: number;
             /** Resets At */
             resets_at?: string | null;
+        };
+        /** ContactPolish */
+        ContactPolish: {
+            /** Title */
+            title: string;
+            /** Text */
+            text: string;
+        };
+        /**
+         * ContactPolishRequest
+         * @description Liên hệ › AI viết lại: the draft as typed (not sent anywhere but the AI).
+         */
+        ContactPolishRequest: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "bug" | "feature" | "idea" | "question";
+            /**
+             * Area
+             * @enum {string}
+             */
+            area: "telegram" | "youtrack" | "docs" | "ai" | "settings" | "other";
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /** Text */
+            text: string;
+        };
+        /** ContactPreview */
+        ContactPreview: {
+            /** To */
+            to: string;
+            /** Text */
+            text: string;
+            /**
+             * Log
+             * @default
+             */
+            log: string;
+        };
+        /**
+         * ContactRequest
+         * @description Cài đặt › Liên hệ: one message to the app's developer on Telegram.
+         */
+        ContactRequest: {
+            /** Title */
+            title: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "bug" | "feature" | "idea" | "question";
+            /**
+             * Area
+             * @enum {string}
+             */
+            area: "telegram" | "youtrack" | "docs" | "ai" | "settings" | "other";
+            /** Text */
+            text: string;
+            /**
+             * Diag
+             * @default true
+             */
+            diag: boolean;
+            /**
+             * Logs
+             * @default false
+             */
+            logs: boolean;
+            /**
+             * Client
+             * @default
+             */
+            client: string;
+            /** Photos */
+            photos?: string[];
         };
         /** DataChat */
         DataChat: {
@@ -8914,6 +9050,103 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DigestResult"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_api_contact_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContactRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    polish_api_contact_polish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContactPolishRequest"];
+            };
+        };
+        responses: {
+            /** @description NDJSON: delta / reset lines, then {done: ContactPolish} */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactPolish"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_api_contact_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContactRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -1,5 +1,6 @@
 import ai from "./ai";
 import common from "./common";
+import contact from "./contact";
 import docs from "./docs";
 import guide from "./guide";
 import flow from "./flow";
@@ -10,4 +11,4 @@ import yt from "./yt";
 import ytViews from "./yt-views";
 
 // English for every UI string, one file per area (each owned by one area's components); keys are the Vietnamese source.
-export const EN = { ...common, ...settings, ...inbox, ...pages, ...ai, ...yt, ...ytViews, ...guide, ...flow, ...docs };
+export const EN = { ...common, ...settings, ...inbox, ...pages, ...ai, ...yt, ...ytViews, ...guide, ...flow, ...docs, ...contact };

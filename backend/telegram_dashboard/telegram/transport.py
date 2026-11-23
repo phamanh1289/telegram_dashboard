@@ -440,6 +440,42 @@ class TelethonTransport:
         except errors.FloodWaitError as e:
             raise SendRejected("retry_after", int(e.seconds)) from e
 
+    async def send_to(
+        self, peer: str, text: str, photos: list[tuple[str, bytes]], *, doc: tuple[str, bytes] | None = None
+    ) -> None:
+        """Plain text to a @username (Liên hệ), then its photos as one album and `doc` as a file, both
+        replying to the first part."""
+        import io
+
+        from telethon import errors
+
+        try:
+            to = await self.client.get_input_entity(peer)
+        except (ValueError, errors.UsernameInvalidError, errors.UsernameNotOccupiedError) as e:
+            raise SendRejected("forbidden") from e  # nothing sent yet: a plain failure, not "unknown"
+        except errors.FloodWaitError as e:
+            raise SendRejected("retry_after", int(e.seconds)) from e
+        try:
+            first = None
+            for part in chunks(text):
+                m = await self.client.send_message(to, part, parse_mode=None, link_preview=False)
+                first = first or m
+            if photos:
+                files = []
+                for name, data in photos:
+                    f = io.BytesIO(data)
+                    f.name = name  # Telethon tells a photo from a document by the extension
+                    files.append(f)
+                await self.client.send_file(to, files, reply_to=first.id if first else None)
+            if doc:
+                f = io.BytesIO(doc[1])
+                f.name = doc[0]
+                await self.client.send_file(to, f, force_document=True, reply_to=first.id if first else None)
+        except errors.FloodWaitError as e:
+            raise SendRejected("retry_after", int(e.seconds)) from e
+        except (errors.UserIsBlockedError, errors.PrivacyRestrictedError, errors.ChatWriteForbiddenError) as e:
+            raise SendRejected("forbidden") from e
+
     async def _entities(self, tags: list[tuple[int, int, int | str]]) -> list:
         from telethon import utils
         from telethon.tl import types

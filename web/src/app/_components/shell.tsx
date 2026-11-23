@@ -1,13 +1,13 @@
 "use client";
 
-import { BookOpenText, ExternalLink, Moon, Send, Settings, Sun } from "lucide-react";
+import { BookOpenText, Bug, ExternalLink, Moon, Send, Settings, Sun } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, ViewTransition } from "react";
 import { AiQuota } from "@/shared/components/ai";
 import { Button, buttonVariants } from "@/shared/components/ui/button";
-import { api, errorText } from "@/shared/lib/api";
+import { errorText, updateStateQuery } from "@/shared/lib/api";
 import { saveLang, t as tPlain, useT } from "@/shared/lib/i18n";
 import { Told, useWaitingCount } from "@/features/telegram/lib/inbox";
 import { useNow } from "@/shared/hooks/use-now";
@@ -20,6 +20,7 @@ import { useDone } from "@/features/telegram/lib/follow";
 import { useAsked } from "@/features/youtrack/lib/trace";
 import { Pill } from "@/shared/components/ui/segmented";
 import { Hint } from "@/shared/components/ui/hint";
+import { prefillReport } from "@/features/settings/lib/contact-prefill";
 import { GuideBot, type Module } from "@/app/_components/guide";
 import { YtLogo } from "@/shared/components/yt-logo";
 import { note } from "@/features/youtrack/components/watch";
@@ -67,10 +68,7 @@ function SwitchBadge({ n, label, className }: { n: number; label: string; classN
 
 /** New commits on GitHub (server checks hourly), and a reload once the server restarted on a new version. */
 function useUpdateState() {
-  const q = useQuery({
-    queryKey: ["update-state"], refetchInterval: 60_000, retry: false,
-    queryFn: ({ signal }) => api<{ version: string; behind: number }>("/update/state", { signal }),
-  });
+  const q = useQuery({ ...updateStateQuery, refetchInterval: 60_000, retry: false });
   const first = useRef<string | null>(null);
   const v = q.data?.version;
   useEffect(() => {
@@ -160,6 +158,7 @@ export function NavPill() {
  *  an action and an undo, the action gets the button and the undo stays on z (said in the text). */
 export function Toaster() {
   const t = useT();
+  const router = useRouter();
   const [flash, setFlash] = useState<(ToastMsg & { id: number }) | null>(null);
   useEffect(() => {
     const onToast = (e: Event) => setFlash({ ...(e as CustomEvent<ToastMsg>).detail, id: Date.now() });
@@ -168,7 +167,7 @@ export function Toaster() {
   }, []);
   useEffect(() => {
     if (!flash) return;
-    const timer = setTimeout(() => setFlash(null), flash.undo || flash.action ? 6000 : 3000);
+    const timer = setTimeout(() => setFlash(null), flash.undo || flash.action || flash.failure ? 6000 : 3000);
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (e.key !== "z" || !flash.undo || e.metaKey || e.ctrlKey || e.altKey || el?.closest("input, textarea, select, [contenteditable], [role=dialog]")) return;
@@ -186,7 +185,7 @@ export function Toaster() {
   }
   if (!flash) return null;
   return (
-    <div key={flash.id} role="status" className={cn("fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-[60] flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-md bg-board py-1.5 pr-1.5 pl-4 text-sm font-medium text-board-type shadow-pop animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short) ease-(--ease-out)", !flash.undo && !flash.action && "pr-4")}>
+    <div key={flash.id} role="status" className={cn("fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-[60] flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-md bg-board py-1.5 pr-1.5 pl-4 text-sm font-medium text-board-type shadow-pop animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short) ease-(--ease-out)", !flash.undo && !flash.action && !flash.failure && "pr-4")}>
       <span className="py-1">{flash.text}{flash.undo && flash.action && <span className="font-normal opacity-80"> {t("(z: hoàn tác)")}</span>}</span>
       {flash.undo && !flash.action && (
         <button type="button" onClick={undo} aria-keyshortcuts="z"
@@ -198,6 +197,16 @@ export function Toaster() {
         <button type="button" onClick={() => { setFlash(null); flash.action!.run(); }}
           className="flex items-center gap-1 rounded-[var(--radius-input)] px-2.5 py-1 font-bold underline decoration-board-type/40 underline-offset-4 transition-colors duration-(--dur-micro) hover:bg-board-type/15 hover:decoration-board-type">
           <ExternalLink className="size-3.5" aria-hidden /> {flash.action.label}
+        </button>
+      )}
+      {flash.failure && !flash.undo && !flash.action && (
+        <button type="button" onClick={() => {
+          prefillReport(flash.text, flash.failure!);
+          setFlash(null);
+          if (location.pathname.startsWith("/settings")) location.hash = "contact"; // the page follows hashchange
+          else router.push("/settings/#contact");
+        }} className="flex items-center gap-1 rounded-[var(--radius-input)] px-2.5 py-1 font-bold underline decoration-board-type/40 underline-offset-4 transition-colors duration-(--dur-micro) hover:bg-board-type/15 hover:decoration-board-type">
+          <Bug className="size-3.5" aria-hidden /> {t("Báo lỗi này")}
         </button>
       )}
     </div>

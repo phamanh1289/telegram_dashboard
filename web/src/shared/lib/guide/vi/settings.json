@@ -346,6 +346,36 @@
     "keys": "cap nhat update github tu dong cap nhat auto update phien ban moi"
   },
   {
+    "id": "settings-contact",
+    "tab": "settings",
+    "area": "Cài đặt › Liên hệ",
+    "title": "Báo lỗi, đề xuất tính năng cho nhà phát triển",
+    "what": "Gửi lỗi, đề xuất tính năng, góp ý hay câu hỏi cho nhà phát triển: chọn loại và khu vực, viết tiêu đề và mô tả, kèm tối đa 5 ảnh (nút ảnh, dán ⌘V hoặc kéo thả vào ô mô tả; ảnh lớn tự thu nhỏ). \"Thông tin máy\" (bật sẵn) kèm phiên bản, hệ điều hành, trình duyệt, trạng thái Telegram / YouTrack; \"Log lỗi\" kèm cảnh báo / lỗi của app trong 24 giờ thành file log.txt. Bấm \"Xem trước\" (⌘Enter) để thấy đúng tin Telegram sẽ gửi, rồi bấm \"Gửi\" (⌘Enter). Gặp lỗi bất ngờ, toast lỗi có nút \"Báo lỗi này\" mở thẳng mục này với mã lỗi và màn đang mở điền sẵn. Đang dùng bản cũ thì mục này nhắc cập nhật trước. Chip \"AI\" trong khung soạn viết lại tiêu đề và mô tả cho rõ (bước tái hiện, kết quả, mong đợi; chỗ chưa rõ ghi \"(chưa rõ)\" để bạn điền), chữ hiện dần ngay trong ô, có nút dừng; xong thì toast cho \"Hoàn tác\".",
+    "how": [
+      {
+        "t": "Chọn mục \"Liên hệ\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#contact\"]"
+      },
+      {
+        "t": "Chọn loại: Báo lỗi, Tính năng, Góp ý hoặc Câu hỏi",
+        "at": "css:section[data-card=\"Gửi cho nhà phát triển\"] [role=group]"
+      },
+      {
+        "t": "Viết tiêu đề và mô tả, dán ảnh chụp màn hình vào ô mô tả nếu có",
+        "at": "css:section[data-card=\"Gửi cho nhà phát triển\"] textarea"
+      },
+      {
+        "t": "Bấm chip \"AI\" để AI viết lại mô tả cho rõ (không ưng thì Hoàn tác)",
+        "at": "css:section[data-card=\"Gửi cho nhà phát triển\"] .ai-chip"
+      },
+      {
+        "t": "Bấm \"Xem trước\", kiểm tra tin rồi bấm \"Gửi\"",
+        "at": "Xem trước"
+      }
+    ],
+    "keys": "lien he contact feedback gop y bao loi bug yeu cau tinh nang cau hoi anh chup man hinh nha phat trien dev log loi bao loi nay toast ai viet lai mo ta"
+  },
+  {
     "id": "settings-youtrack",
     "tab": "settings",
     "area": "Cài đặt › YouTrack",
