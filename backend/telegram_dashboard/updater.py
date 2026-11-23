@@ -248,7 +248,8 @@ async def apply(root: Path) -> dict:
             if any(f.startswith("web/") or f == "package-lock.json" for f in changed):
                 await _run(root, "npm", "run", "build")
         except ApiError as e:  # deps / UI didn't build: back to the running code, so disk matches memory
-            await _run(root, "git", "reset", "--hard", "--quiet", before)  # clean tree checked above
+            # --keep, not --hard: edits made while deps/UI built survive (aborts if one touches a pulled file)
+            await _run(root, "git", "reset", "--keep", "--quiet", before)
             detail = f"Cập nhật lỗi, đã quay về bản đang chạy (thử lại sau): {e.detail}"
             raise ApiError(e.status, e.code, detail=detail) from None
         return {**info, "updated": True}
