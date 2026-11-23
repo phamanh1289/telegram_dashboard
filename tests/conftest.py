@@ -149,9 +149,14 @@ class Env:
 def _own_home(tmp_path, monkeypatch):
     """An empty home: the developer's ~/.claude/settings.json, ~/.claude.json, Codex config never reach the commands a
     test builds. Beside tmp_path, not tmp_path: ~ is no project (Settings.forbids_project). A test may set its own."""
+    import telegram_dashboard.config as config
+    import telegram_dashboard.provider_cmds as provider_cmds
+
     home = tmp_path.with_name(f"{tmp_path.name}-home")
     home.mkdir(exist_ok=True)
     monkeypatch.setenv("HOME", str(home))
+    for mod in (config, provider_cmds):  # read from HOME at import: its api_token, mcp dir, server lock
+        monkeypatch.setattr(mod, "RUN_DIR", home / ".telegram_dashboard")
 
 
 @pytest.fixture(autouse=True)
