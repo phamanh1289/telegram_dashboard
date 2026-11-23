@@ -148,26 +148,17 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     assert 'mcp_servers.youtrack.default_tools_approval_mode="approve"' in own
     assert run_env("codex", None, True) == {"TD_MCP_YOUTRACK_BEARER_TOKEN": "t0k"}
     assert "--ignore-user-config" in task_cmd(s, "codex", "plan", "codex:", False, "", "", mcp=True)
-    # Antigravity: an agent with the user's MCP servers, only the allowed tools; never a shell
-    (tmp_path / ".gemini" / "config").mkdir(parents=True)
-    grants = '{"allow": ["mcp(context_mode/ctx_execute)", "mcp(zeplin/get_screen)"]}'
-    (tmp_path / ".gemini" / "config" / "config.json").write_text(grants)
-    a = task_cmd(s, "antigravity", "plan", "agy:", False, "", "", zeplin=zs)
-    perms = json.loads(a[a.index("--settings") + 1])["permissions"]
-    assert perms["allow"] == ["mcp(zeplin/get_screen)", "mcp(zeplin/get_component)", "mcp(zeplin/get_design_tokens)"]
-    assert (
-        "mcp(*)" not in perms["deny"] and "command(*)" in perms["deny"] and a[a.index("--agent") + 1].endswith("-mcp")
-    )
-    # the user's saved "always allow" grants would run too (a deny wins): denied, all but the read tools
-    assert "mcp(context_mode/ctx_execute)" in perms["deny"] and "mcp(zeplin/download_layer_asset)" in perms["deny"]
-    assert "mcp(zeplin/get_screen)" not in perms["deny"]
-    e = task_cmd(s, "antigravity", "edit", "agy:", False, "", "", mcp=True)
-    perms = json.loads(e[e.index("--settings") + 1])["permissions"]
-    assert "mcp(youtrack/*)" in perms["allow"] and "mcp(zeplin/get_screen)" in perms["allow"]
-    assert "mcp(*)" not in perms["allow"] and "command(*)" in perms["deny"]  # OWN_MCP only, lean-ctx never allowed
-    assert "mcp(context_mode/ctx_execute)" in perms["deny"]  # a saved grant outside OWN_MCP: denied
-    n = task_cmd(s, "antigravity", "plan", "agy:", False, "", "")  # no link, no MCP: none at all
-    assert "mcp(*)" in json.loads(n[n.index("--settings") + 1])["permissions"]["deny"]
+    # Antigravity: never an MCP server (SEC-105: it could only load the user's whole MCP config, codegraph included)
+    from telegram_dashboard.provider_cmds import zeplin_for
+
+    for c in (task_cmd(s, "antigravity", "plan", "agy:", False, "", "", zeplin=zs),
+              task_cmd(s, "antigravity", "edit", "agy:", False, "", "", mcp=True)):  # fmt: skip
+        perms = json.loads(c[c.index("--settings") + 1])["permissions"]
+        assert "allow" not in perms and "mcp(*)" in perms["deny"] and "command(*)" in perms["deny"]
+        agent = c[c.index("--agent") + 1]
+        assert "inheritCustomizations: false" in (tmp_path / f".gemini/antigravity-cli/agents/{agent}.md").read_text()
+    assert run_env("antigravity", zs, True) == {}
+    assert zeplin_for("https://zpl.io/aB3", provider="antigravity") == (None, "")  # no "read it with Zeplin" either
 
 
 def test_an_answer_runs_commands_only_in_the_sandbox_and_never_edits(tmp_path, monkeypatch):
@@ -299,9 +290,8 @@ def test_ask_cmd_zeplin_for_codex_and_antigravity(settings, tmp_path, monkeypatc
     assert any("mcp_servers.zeplin.command" in x for x in c) and "s3cret" not in " ".join(c)
     assert "shell_tool" in c  # still no shell
     g = provider_cmds.ask_cmd(settings, "antigravity", tools=False, read_dir=None, model="m", effort="low", zeplin=ZEP)
-    assert "mcp(zeplin/get_screen)" in " ".join(g)
-    deny = json.loads(g[g.index("--settings") + 1])["permissions"]["deny"]
-    assert "read_file(*)" in deny and "command(*)" in deny and "mcp(zeplin/download_layer_asset)" in deny
+    perms = json.loads(g[g.index("--settings") + 1])["permissions"]  # agy: no MCP at all (SEC-105)
+    assert "allow" not in perms and {"read_file(*)", "command(*)", "mcp(*)"} <= set(perms["deny"])
 
 
 def test_no_ai_run_reads_the_apps_own_files(tmp_path, monkeypatch):
@@ -339,6 +329,7 @@ def test_no_ai_run_reads_the_users_other_credentials(tmp_path, monkeypatch):
     claude = task_cmd(s, "claude", "edit", "sid", False, "", "")
     deny = " ".join(claude[claude.index("--disallowedTools") + 1 : claude.index("--disallowedTools") + 3])
     assert "Edit(.git)," in deny and "Edit(.git/**)," in deny  # `.git` is a file in a worktree: the name itself too
+    assert "Edit(.agents/**)," in deny and "Edit(.gemini/**)," in deny  # agy loads hooks / MCP from them
     for f in (".claude.json", ".npmrc", ".netrc", ".git-credentials", "Library/Application Support/Google/Chrome"):
         assert f"Read(~/{f})" in deny and f"Read(~/{f}/**)" in deny
     # the sandbox itself: a script that builds the path at run time is not bound by a Read() rule

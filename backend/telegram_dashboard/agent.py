@@ -176,7 +176,7 @@ class AgentRunner:
                 choice = (choice[0], ai[1], choice[2])
             links = links_dir(self.settings, task_id)  # long link content saved for this task (links.py)
             read_dir = str(links) if links.is_dir() else None
-            zeplin, hint = provider_cmds.zeplin_for(text, found=self._zeplin(task_id, text))
+            zeplin, hint = provider_cmds.zeplin_for(text, found=self._zeplin(task_id, text), provider=provider)
             text += hint
             cmd = provider_cmds.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2], read_dir,
                                      mcp=mcp, zeplin=zeplin, project=project)  # fmt: skip

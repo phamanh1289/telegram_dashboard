@@ -23,10 +23,10 @@ from .providers import (
     is_claude,
 )
 
-# Antigravity runs as a custom agent with only these built-in tools (no web or browser; shell only in
-# task sessions), none of the user's skills/plugins (but with them, and their MCP servers, for a Zeplin link or
-# "Dùng MCP / plugin": _agy_agent inherit; only OWN_MCP servers allowed), and deny rules over the user's own allow
-# rules.
+# Antigravity runs as a custom agent with only these built-in tools (no web or browser), none of the user's skills,
+# plugins or MCP servers, and deny rules over the user's own allow rules. No MCP at all (SEC-105): agy can only load
+# the user's whole MCP config (codegraph, markitdown… start outside any sandbox, a deny rule stops a tool call, not
+# the server), so a Zeplin link or "Dùng MCP / plugin" gives it nothing; Claude / Codex load only OWN_MCP.
 # No shell at all: agy has no sandbox, and its prompts carry text written by others (Telegram, tickets).
 AGY_TOOLS = {"none": [], "read": ["view_file", "list_dir", "grep_search", "find_by_name"]}
 AGY_TOOLS["edit"] = [*AGY_TOOLS["read"], "write_to_file", "replace_file_content", "multi_replace_file_content"]
@@ -87,7 +87,6 @@ ALLOW = {"plan": "Read,Grep,Glob,Skill", "edit": "Bash"}
 PIN = [sys.executable, "-I", str(Path(__file__).with_name("mcp_pin.py"))]
 ZEPLIN_READ = ("get_screen", "get_component", "get_design_tokens")
 ZEPLIN_TOOLS = ",".join(f"mcp__zeplin__{t}" for t in ZEPLIN_READ)
-ZEPLIN_AGY = [f"mcp(zeplin/{t})" for t in ZEPLIN_READ]  # Antigravity's allow rules for them (_agy_base `mcp`)
 # denied outright wherever we load the zeplin server: a user's "always allow" for mcp__zeplin__* must not reach it
 ZEPLIN_DENY = "mcp__zeplin__download_layer_asset"
 ZEPLIN_HINT = (
@@ -108,10 +107,12 @@ def zeplin_server() -> dict | None:
     return got if isinstance(got, dict) and got.get("command") else None
 
 
-def zeplin_for(text: str, *, found: bool | None = None) -> tuple[dict | None, str]:
+def zeplin_for(text: str, *, found: bool | None = None, provider: str = "") -> tuple[dict | None, str]:
     """(zeplin server, ZEPLIN_HINT) for a run whose text has a Zeplin link (`found`: decided by the caller, e.g. an
-    earlier turn of the session had one); (None, "") when there is none or the server is not set up."""
-    server = zeplin_server() if (ZEPLIN.search(text) if found is None else found) else None
+    earlier turn of the session had one); (None, "") when there is none, the server is not set up, or the run is
+    Antigravity's (no MCP: SEC-105)."""
+    link = ZEPLIN.search(text) if found is None else found
+    server = zeplin_server() if link and provider != "antigravity" else None
     return server, ZEPLIN_HINT if server else ""
 
 
@@ -194,7 +195,7 @@ def own_servers(p: str) -> dict[str, dict]:
 
 def run_env(p: str | None, zeplin: dict | None, own: bool = False) -> dict[str, str]:
     """The secrets of the MCP servers a run loads (a Zeplin link's server, OWN_MCP), for its process env. Antigravity
-    runs its own servers."""
+    loads none (SEC-105)."""
     if p not in ("claude", "codex"):
         return {}
     servers = {**(own_servers(p) if own else {}), **({"zeplin": zeplin} if zeplin else {})}
@@ -253,7 +254,10 @@ def _sandbox(settings) -> dict:
 SHELL_TOOLS = "Read,Grep,Glob,Skill,Bash"  # an answer that may run commands, never Edit/Write
 # Project files no run writes, on every CLI: they run code later (on folder open, commit, cd, the dashboard's own git
 # calls: .git/config, hooks, a .gitmodules pointing elsewhere) or load tools into the next session.
-PROTECTED_DIRS = (".claude", ".git", ".github", ".vscode", ".idea", ".husky")
+# .agents / .agent / _agents / _agent / .gemini: Antigravity's workspace customizations (hooks.json runs commands,
+# plugins bring MCP servers) load from them on its next run, outside any sandbox.
+PROTECTED_DIRS = (".claude", ".git", ".github", ".vscode", ".idea", ".husky", ".agents", ".agent", "_agents", "_agent",
+                  ".gemini")
 # .npmrc / .yarnrc: the registry and node options every npm / yarn in the project would take, the user's own too
 PROTECTED_FILES = (".gitmodules", ".envrc", ".mcp.json", ".npmrc", ".yarnrc", ".yarnrc.yml")
 DENY = ",".join(
@@ -292,26 +296,15 @@ def _codex_base(settings, model: str, effort: str) -> list[str]:
             *(["-c", f'model_reasoning_effort="{effort}"'] if effort in CODEX_EFFORTS else [])]  # fmt: skip
 
 
-def _agy_grants() -> list[str]:
-    """The MCP tools the user told Antigravity to always allow ("mcp(context_mode/ctx_execute)": it runs code)."""
-    with contextlib.suppress(OSError):
-        return sorted(
-            set(re.findall(r'"(mcp\([^"()]+\))"', (Path.home() / ".gemini" / "config" / "config.json").read_text()))
-        )
-    return []
-
-
-def _agy_agent(kind: str, inherit: bool = False) -> str:
-    """The custom agent a run uses, written where agy looks agents up by name: `none`, `read` or `edit`. `inherit`:
-    with the user's customizations, which bring their MCP servers (call_mcp_tool), skills and plugins; the
-    permissions say which MCP tools may run."""
-    name = f"telegram-dashboard-{kind}{'-mcp' if inherit else ''}"
+def _agy_agent(kind: str) -> str:
+    """The custom agent a run uses, written where agy looks agents up by name: `none`, `read` or `edit`; never with
+    the user's customizations (they bring every MCP server they set up)."""
+    name = f"telegram-dashboard-{kind}"
     path = _agy_home() / "agents" / f"{name}.md"
     tools = AGY_TOOLS[kind]
-    alone = "use any tool but the MCP tools allowed to you" if inherit else "use any tool: answer from the prompt alone"
-    cannot = alone if not tools else "run commands or browse"
+    cannot = "use any tool: answer from the prompt alone" if not tools else "run commands or browse"
     text = (f"---\nname: {name}\ndescription: Radar run ({kind})\n"
-            f"tools: [{', '.join(tools)}]\ninheritCustomizations: {str(inherit).lower()}\n---\n"
+            f"tools: [{', '.join(tools)}]\ninheritCustomizations: false\n---\n"
             f"Work only through the tools you have; you cannot {cannot}.\n")  # fmt: skip
     if not path.is_file() or path.read_text() != text:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -319,24 +312,18 @@ def _agy_agent(kind: str, inherit: bool = False) -> str:
     return name
 
 
-def _agy_base(settings, kind: str, model: str, mcp: list[str] | None = None, project: str | None = None) -> list[str]:
-    """`mcp`: MCP tools the run may call ("mcp(*)": all, "mcp(zeplin/get_screen)": one), through an agent that loads
-    the user's MCP servers; None: no MCP."""
+def _agy_base(settings, kind: str, model: str, project: str | None = None) -> list[str]:
+    """One Antigravity run: the no-MCP agent of `kind`, deny rules over the user's own allow rules."""
     # read_file(<dir>) covers the whole dir; headless agy auto-denies anything it would prompt for
     dirs = [*_secret_dirs(settings), *_app_dirs(settings)]
     reads = ["read_file(*)"] if kind == "none" else [f"read_file({d})" for d in dirs]
-    base = [x for x in _AGY_DENY if not (mcp and x == "mcp(*)")]
-    if mcp:  # what agy was told to always allow would run too, the allowed servers' aside (a deny wins)
-        ok = tuple(f"mcp({a[4:].split('/')[0]}/" for a in mcp)
-        base += ["mcp(zeplin/download_layer_asset)", *(g for g in _agy_grants() if not g.startswith(ok))]
     # edit: no writes into the app, the secrets or the project's PROTECTED_* files either (agy has no sandbox)
-    # node_modules too: agy starts its own MCP servers (npx) from the project and has no shell to npm install with
+    # node_modules too: no shell to npm install with, so nothing but a planted package would go there
     mine = [str(Path(project) / x) for x in (*PROTECTED_DIRS, *PROTECTED_FILES, "node_modules")] if project else []
     writes = ["write_file(*)"] if kind != "edit" else [f"write_file({d})" for d in (*dirs, *mine)]
-    deny = [*base, *reads, *writes]
-    perms = json.dumps({"permissions": {"deny": deny, **({"allow": mcp} if mcp else {})}})
+    perms = json.dumps({"permissions": {"deny": [*_AGY_DENY, *reads, *writes]}})
     return [*exe(settings, "antigravity"), "-p", "", "--input-format", "stream-json", "--output-format", "stream-json",
-            "--disable-slash-commands", "--agent", _agy_agent(kind, bool(mcp)),
+            "--disable-slash-commands", "--agent", _agy_agent(kind),
             "--settings", perms, *(["--model", model] if model else [])]  # fmt: skip
 
 
@@ -461,7 +448,7 @@ def ask_cmd(
         ]
     kind = "read" if tools or read_dir else "none"  # no tools asked: none at all, not just "no project"
     return [
-        *_agy_base(settings, kind, model, ZEPLIN_AGY if zeplin else None, project),
+        *_agy_base(settings, kind, model, project),
         *(["--add-dir", read_dir] if read_dir else []),
     ]
 
@@ -483,9 +470,10 @@ def task_cmd(
     """One task turn (prompt on stdin): `plan` reads files, `edit` may edit them and run shell commands.
     `read_dir`: another folder it may read (link content saved by links.py; Codex reads anywhere but the secrets).
     Windows: no shell for Claude's `edit` (SHELL_OK), it only edits files.
-    `mcp` (`edit` only; "Dùng MCP / plugin"): the user's OWN_MCP servers load and their tools are allowed, on every
-    CLI (run_env carries their secrets). They run OUTSIDE the sandbox with the user's logins, so text written by others
-    in the prompt could steer them: none reads a local file or runs a command. Antigravity still gets no shell.
+    `mcp` (`edit` only; "Dùng MCP / plugin"): the user's OWN_MCP servers load and their tools are allowed, on Claude
+    and Codex (run_env carries their secrets). They run OUTSIDE the sandbox with the user's logins, so text written by
+    others in the prompt could steer them: none reads a local file or runs a command. Antigravity gets no MCP and no
+    shell (SEC-105).
     `zeplin`: the user's zeplin MCP server (a Zeplin link in the session): its read-only tools in any mode, its token
     in the run's env (mcp_env). Claude's plan mode refuses them (they are not marked read-only), so such a plan turn
     runs in default mode: still no write tool or shell (`--tools`), and only the allowed tools run (headless).
@@ -517,6 +505,5 @@ def task_cmd(
         mcp_on = _codex_mcp(servers)
         return [*head, *_codex_base(settings, model, effort), *mcp_on, *sandbox, *([sid] if resume else []), "-"]
     edit = ["--mode", "accept-edits"] if mode != "plan" else []
-    allow = [*(f"mcp({n}/*)" for n in OWN_MCP if n != "zeplin"), *ZEPLIN_AGY] if own else ZEPLIN_AGY if zeplin else None
-    return [*_agy_base(settings, "read" if mode == "plan" else "edit", model, allow, project), *edit,
+    return [*_agy_base(settings, "read" if mode == "plan" else "edit", model, project), *edit,
             *add, *(["--conversation", sid] if resume else [])]  # fmt: skip

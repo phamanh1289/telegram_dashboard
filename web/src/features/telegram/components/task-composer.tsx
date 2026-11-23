@@ -101,7 +101,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut, redo }: {
   const tick = (v: boolean) => { setEdit(v); setText((cur) => (v ? (cur.trim() ? cur : approve) : cur === approve ? "" : cur)); };
   // An edit turn uses the user's own MCP servers / plugins (outside the sandbox), on every CLI: on until unticked, remembered.
   const mcpOn = useAgentMcp();
-  const canMcp = !assist && (task.mode === "edit" || (plan && edit));
+  const canMcp = !assist && task.provider !== "antigravity" && (task.mode === "edit" || (plan && edit)); // agy: no MCP
   const mcp = canMcp && mcpOn;
   // Messages pasted (ID / t.me link) or sent here from a message row: quoted under the typed text on send.
   const refs = useRefs(id);
@@ -232,7 +232,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut, redo }: {
           </Hint>
         )}
         {canMcp && ( // an edit turn only: it shows once "Cho sửa code" is ticked
-          <Hint text={t("Lượt sửa code dùng cả MCP server và plugin bạn đã cài cho CLI của phiên (Claude, Codex, Antigravity: YouTrack, markitdown, Zeplin…), như tự chạy CLI đó. Chúng chạy ngoài sandbox bằng đăng nhập của bạn; bỏ tick để tắt, app nhớ lựa chọn.")} side="bottom">
+          <Hint text={t("Lượt sửa code dùng cả MCP server YouTrack, Zeplin, context7 bạn đã cài cho CLI của phiên (Claude, Codex). Chúng chạy ngoài sandbox bằng đăng nhập của bạn; bỏ tick để tắt, app nhớ lựa chọn.")} side="bottom">
             <label className="flex items-center gap-1.5 animate-in fade-in-0 duration-(--dur-short)">
               <Checkbox checked={mcp} onCheckedChange={(v) => setPref("agentMcp", v ? null : "0")} disabled={running} />
               {t("Dùng MCP / plugin")}
