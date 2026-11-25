@@ -2,6 +2,7 @@
 permissions and sandbox per run, and the user's zeplin MCP server when a run reads a design."""
 
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -10,7 +11,7 @@ import sys
 from pathlib import Path
 
 from .claude import flags_for
-from .config import RUN_DIR
+from .config import away_dir, write_private_json
 from .errors import ApiError
 from .providers import (
     CODEX_EFFORTS,
@@ -41,7 +42,9 @@ SECRET_HOME = (".ssh", ".codex", ".aws", ".config/gh", ".gnupg", ".telegram_dash
                "Library/Application Support/BraveSoftware", "Library/Application Support/Arc",
                "Library/Application Support/Firefox", "Library/Safari", "Library/Cookies", "Library/Keychains",
                "AppData/Local/Google/Chrome", "AppData/Local/Microsoft/Edge", "AppData/Roaming/Mozilla",
-               ".gemini/oauth_creds.json")  # fmt: skip  # the token alone: Antigravity's working files stay readable
+               ".gemini/oauth_creds.json", ".gradle/gradle.properties", ".m2/settings.xml",
+               ".config/configstore", ".cargo/credentials", ".cargo/credentials.toml", ".zsh_history",
+               ".bash_history")  # fmt: skip  # .gemini: the token alone, Antigravity's working files stay readable
 # Claude task turns, enforced here, not left to ~/.claude settings: shell only in `edit` (plan prompts
 # carry Telegram text written by others, e.g. deep thinking, so a read-only run must not reach a
 # shell), no web, no MCP servers, no reads of this app's data dir (Telegram session, tokens), and no
@@ -137,14 +140,19 @@ def _bearer(server: dict) -> str:
     return str(server.get("bearer_token") or os.environ.get(str(server.get("bearer_token_env_var") or ""), ""))
 
 
+def _stdio_env(server: dict) -> dict[str, str]:
+    """A stdio server's own env (`env`, `${VAR}` expanded; Codex `env_vars` read from this app's env, which child_env
+    leaves YOUTRACK_* and the like out of)."""
+    env = {str(k): os.path.expandvars(str(v)) for k, v in _dict(server.get("env")).items()}
+    return env | {v: os.environ[v] for v in server.get("env_vars") or [] if isinstance(v, str) and v in os.environ}
+
+
 def mcp_env(server: dict | None, name: str = "") -> dict[str, str]:
     """A server's secrets (env, HTTP headers, bearer token), each under the variable the command line names
-    (TD_MCP_<SERVER>_<KEY>, or the server's own env names): given to the run's process, never put on its command line
-    (any local user could read it there). Read from this app's env too: child_env leaves YOUTRACK_* and the like out."""
+    (TD_MCP_<SERVER>_<KEY>, or the server's own env names): never put on a command line (any local user could read
+    it there)."""
     s = server or {}
-    env = {str(k): os.path.expandvars(str(v)) for k, v in _dict(s.get("env")).items()}
-    env |= {v: os.environ[v] for v in s.get("env_vars") or [] if isinstance(v, str) and v in os.environ}
-    env |= {_ref(name, h): v for h, v in _heads(s).items()}
+    env = _stdio_env(s) | {_ref(name, h): v for h, v in _heads(s).items()}
     return env | ({_ref(name, "bearer_token"): token} if (token := _bearer(s)) else {})
 
 
@@ -154,24 +162,21 @@ def _by_ref(server: dict, name: str = "zeplin") -> dict:
         heads = _dict(server.get("headers"))
         return {"type": server.get("type") or "http", "url": server["url"],
                 "headers": {h: f"${{{_ref(name, h)}}}" for h in heads}}  # fmt: skip
-    command, args = _away(server["command"], server.get("args"))
-    env = {k: f"${{{k}}}" for k in _dict(server.get("env"))}
-    return {"type": "stdio", "command": command, "args": args, "env": env}
+    command, args = _away(server["command"], server.get("args"), _stdio_env(server))
+    return {"type": "stdio", "command": command, "args": args}
 
 
-def away_dir() -> Path:
-    """This app's own empty folder (0700): where a CLI started outside the sandbox runs instead of a folder an AI turn
-    writes into (the project: its .npmrc / node_modules / nested repos; the temp dir)."""
-    home = RUN_DIR / "mcp"
-    home.mkdir(parents=True, exist_ok=True, mode=0o700)
-    return home
-
-
-def _away(command: str, args) -> tuple[str, list[str]]:
+def _away(command: str, args, env: dict[str, str] | None = None) -> tuple[str, list[str]]:
     """A user's stdio server (npx …) starts outside the sandbox: from the project it would take the project's .npmrc /
     node_modules (an edit turn may have written them) as its registry or its code. mcp_pin starts it in away_dir()
-    instead (PIN: no module from the project dir either)."""
-    return PIN[0], [*PIN[1:], "--cwd", str(away_dir()), command, *(args or [])]
+    instead (PIN: no module from the project dir either). Its secrets (`env`) go in a 0600 file there that mcp_pin
+    hands to the server alone: in the CLI's env, every command the AI runs in the sandbox would read them (`env`)."""
+    extra: list[str] = []
+    if env:
+        key = hashlib.sha256(json.dumps(env, sort_keys=True).encode()).hexdigest()[:16]
+        write_private_json(path := away_dir() / f"env-{key}.json", env)
+        extra = ["--env", str(path)]
+    return PIN[0], [*PIN[1:], "--cwd", str(away_dir()), *extra, command, *(args or [])]
 
 
 # The user's MCP servers "Dùng MCP / plugin" loads, by name: they run outside the sandbox with the user's logins, so
@@ -194,14 +199,15 @@ def own_servers(p: str) -> dict[str, dict]:
 
 
 def run_env(p: str | None, zeplin: dict | None, own: bool = False) -> dict[str, str]:
-    """The secrets of the MCP servers a run loads (a Zeplin link's server, OWN_MCP), for its process env. Antigravity
-    loads none (SEC-105)."""
+    """The secrets of the HTTP MCP servers a run loads (OWN_MCP), for its process env. Antigravity loads none
+    (SEC-105)."""
     if p not in ("claude", "codex"):
         return {}
     servers = {**(own_servers(p) if own else {}), **({"zeplin": zeplin} if zeplin else {})}
     # Claude: the env of the user's settings.json (a proxy, a token) here, never on the line (_claude_settings)
     user = {k: v for k, v in _dict(_user_claude().get("env")).items() if isinstance(v, str)} if p == "claude" else {}
-    return {**user, **{k: v for n, srv in servers.items() for k, v in mcp_env(srv, n).items()}}
+    # HTTP servers only: the CLI itself sends their headers. A stdio server's secrets reach it alone (_away).
+    return {**user, **{k: v for n, srv in servers.items() if srv.get("url") for k, v in mcp_env(srv, n).items()}}
 
 
 def _mcp_config(servers: dict) -> list[str]:
@@ -226,10 +232,9 @@ def _codex_mcp(servers: dict[str, dict]) -> list[str]:
         if srv.get("url"):  # HTTP: the token / headers from env variables (mcp_env)
             token = {"bearer_token_env_var": _ref(name, "bearer_token")} if _bearer(srv) else {}
             keys = {"url": srv["url"], **token, **{f"env_http_headers.{h}": _ref(name, h) for h in _heads(srv)}}
-        else:  # passed through from the run's env (run_env)
-            env_vars = [*_dict(srv.get("env")), *(v for v in srv.get("env_vars") or [] if isinstance(v, str))]
-            command, args = _away(srv["command"], srv.get("args"))
-            keys = {"command": command, "args": args, "env_vars": env_vars}
+        else:  # its secrets through mcp_pin's file, never the CLI's env (_away)
+            command, args = _away(srv["command"], srv.get("args"), _stdio_env(srv))
+            keys = {"command": command, "args": args}
         keys |= {"enabled_tools": list(ZEPLIN_READ)} if name == "zeplin" else {}
         keys["default_tools_approval_mode"] = "approve"
         out += [x for k, v in keys.items() for x in ("-c", f"mcp_servers.{name}.{k}={json.dumps(v)}")]
@@ -280,10 +285,12 @@ DENY = ",".join(
 
 
 # Built in, so --ignore-user-config keeps them: ChatGPT apps (codex_apps MCP: web_run "open", upload from URL, …),
-# plugins, browsers, computer use, image generation. Every run's prompt may carry others' text: no way out but the
-# sandbox.
-CODEX_OFF = [x for f in ("apps", "plugins", "browser_use", "in_app_browser", "computer_use", "image_generation")
-             for x in ("-c", f"features.{f}=false")]  # fmt: skip
+# plugins, browsers, computer use, image generation, memories (injected text would carry into the user's own later
+# Codex sessions). Every run's prompt may carry others' text: no way out but the sandbox.
+CODEX_OFF = [x for f in ("apps", "plugins", "browser_use", "in_app_browser", "computer_use", "image_generation",
+                         "memories") for x in ("-c", f"features.{f}=false")]  # fmt: skip
+# A "no tool" answer has none at all: no shell, and no built-in that reads a local file (view_image) or starts agents.
+CODEX_NO_TOOLS = [x for f in ("shell_tool", "unified_exec", "view_image", "multi_agent") for x in ("--disable", f)]
 
 
 def _codex_base(settings, model: str, effort: str) -> list[str]:
@@ -442,7 +449,7 @@ def ask_cmd(
                 cmd += ["--resume" if session[1] else "--session-id", session[0]]
         return [*cmd, *(["--add-dir", read_dir] if read_dir else [])]
     if p == "codex":
-        off = [] if tools else ["--disable", "shell_tool", "--disable", "unified_exec"]
+        off = [] if tools else CODEX_NO_TOOLS
         return [
             *exe(settings, p),
             "exec",

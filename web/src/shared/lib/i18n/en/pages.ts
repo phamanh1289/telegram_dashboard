@@ -71,6 +71,8 @@ export default {
   "Có trả lời mới": "New reply",
   "Người phải trả lời đã nhắn sau câu hỏi nhưng không bấm reply: có thể là câu trả lời. Tóm tắt lại để AI chốt.": "The person who should answer wrote after the question without using reply: it may be the answer. Summarize again to let the AI settle it.",
   "Có thể đã trả lời": "Maybe answered",
+  "Không đọc được": "Could not read",
+  "Chưa đọc được nhóm trên Telegram nên chưa biết đã có trả lời chưa.": "The group could not be read on Telegram, so it is not known yet whether anyone answered.",
   "Chờ trả lời": "Awaiting reply",
   "Chưa gửi AI": "Not sent to AI",
   "Còn tin của người khác (trả lời, hoặc câu hỏi chưa ai trả lời) chưa gửi kèm vào phiên AI Agent / Đối chiếu BE / Trợ lý AI nào; chưa đánh dấu xong":

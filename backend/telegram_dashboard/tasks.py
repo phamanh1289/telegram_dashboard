@@ -33,7 +33,7 @@ async def _ref_qa(s, chat_id: str, mid: int) -> str:
 
     async def fetch(ids: list[int]):
         kept, _ = await s.db.read(s.store.get_messages_by_ids, chat_id, ids)
-        return kept or await s.bridge.fetch_ids(chat_id, ids)
+        return kept or await s.live_reads.click(s.bridge.fetch_ids(chat_id, ids))
 
     try:
         return await chain_code(fetch, mid) or ""
@@ -308,21 +308,6 @@ def build_router(settings) -> APIRouter:
         """Which messages were sent along to which sessions (Q&A's "Đã gửi AI")."""
         s = request.app.state
         return await s.db.read(s.store.sent_refs)
-
-    @r.post("/{task_id}/reopen", status_code=204)
-    async def reopen_task(task_id: str, request: Request) -> None:
-        """Run the same task again in a fresh session on the CLI that ran it (its model/effort picks
-        belong to that CLI); the old result goes once it runs."""
-        s = request.app.state
-        row = await _task(s, task_id, headless=True)
-        if not row["prompt"]:
-            raise ApiError(404, "task_not_found")
-        await s.agent.stop(task_id)
-        ai = (row["model"], row["effort"])
-        fresh = s.agent.new_session(split_session(row["session_id"] or "")[0])
-        text = lambda: expand(s, row["prompt"], task_id, chat_id=row["chat_id"])  # noqa: E731
-        session = await s.agent.start(task_id, row["project"], text, row["mode"], fresh, False, ai)
-        await s.db.write(s.store.set_task_session, task_id, session)
 
     @r.get("/{task_id}/events")
     async def task_events(task_id: str, request: Request, after: int = 0) -> dict:

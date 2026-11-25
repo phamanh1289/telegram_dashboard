@@ -245,7 +245,7 @@ def _add_routes(r: APIRouter) -> None:
         if s.bridge.state != "connected":
             raise ApiError(503, "doc_tg_offline")
         try:
-            doc_id = await s.docs.add_tg_file(s.bridge, m)
+            doc_id = await s.live_reads.click(s.docs.add_tg_file(s.bridge, m))  # the download under the shared cap
         except LookupError:
             raise ApiError(404, "doc_tg_no_file") from None
         except ValueError as e:  # unsupported / too_big / read_text's codes

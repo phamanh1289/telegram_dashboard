@@ -14,8 +14,9 @@ from datetime import UTC, datetime, timedelta, timezone
 from ..ai import AiService, data_json, json_object, who
 from ..ai_prompts import PLATFORM_FOCUS, PLATFORM_OTHERS, about_user, role_angle
 from ..errors import ApiError
-from ..models import BeReply, DigestRequest, DigestResult, StoredMessage
+from ..models import StoredMessage
 from ..storage import Db, Store, _dt
+from .models_digest import BeReplies, BeReply, DigestRequest, DigestResult
 
 MAX_MESSAGES = 250  # per AI call
 MAX_CHARS = 40_000  # per AI call: smaller parts finish well inside the timeout
@@ -359,30 +360,37 @@ class DigestService:
     async def answered(self) -> dict[str, list[str]]:
         """Per consented group: the ids its latest digest cites under "Cần confirm" / "Việc cần làm"
         that I have since replied to on Telegram (a reply_to from me, sent here or in Telegram)."""
-        return {chat: mine for chat, (mine, _) in (await self._scan()).items()}
+        return {chat: mine for chat, (mine, _) in (await self._scan())[0].items()}
 
-    async def be_replies(self) -> dict[str, list[BeReply]]:
+    async def be_replies(self) -> BeReplies:
         """Per consented group: messages from others replying to a question its latest digest still has open
-        with BE, newest last. BE answered before the next summary: Với BE says so instead of "Chờ trả lời"."""
-        return {chat: hits for chat, (_, hits) in (await self._scan()).items() if hits}
+        with BE, newest last. BE answered before the next summary: Với BE says so instead of "Chờ trả lời".
+        `failed`: groups not read (offline, an error), said instead of "Chờ trả lời"."""
+        out, failed = await self._scan()
+        return BeReplies(replies={chat: hits for chat, (_, hits) in out.items() if hits}, failed=failed)
 
-    async def _scan(self) -> dict[str, tuple[list[str], list[BeReply]]]:
+    async def _scan(self) -> tuple[dict[str, tuple[list[str], list[BeReply]]], list[str]]:
         """One live read of every summarized group since its digest, shared by answered / be_replies and reused
-        for SCAN_TTL (Briefing asks both on every refresh); the lock keeps two refreshes from reading twice."""
+        for SCAN_TTL (Briefing asks both on every refresh); the lock keeps two refreshes from reading twice.
+        Also the groups it could not read; a scan with any is not reused (the next refresh tries again)."""
         async with self._scan_lock:
             if self._scan_hit and time.monotonic() - self._scan_hit[0] < SCAN_TTL:
                 return self._scan_hit[1]
+            rows = [r for r in await self.db.read(self.store.briefing_rows) if r["consent"] and r["digest"]]
             if self.bridge.state != "connected":
-                return {}
-            out = await self._read_all()
-            self._scan_hit = (time.monotonic(), out)
-            return out
+                return {}, sorted(r["chat_id"] for r in rows)
+            got = await self._read_all(rows)
+            out = {chat: res for chat, res in got if res is not None}
+            failed = sorted(chat for chat, res in got if res is None)
+            if not failed:
+                self._scan_hit = (time.monotonic(), (out, failed))
+            return out, failed
 
-    async def _read_all(self) -> dict[str, tuple[list[str], list[BeReply]]]:
+    async def _read_all(self, rows: list[dict]) -> list[tuple[str, tuple[list[str], list[BeReply]] | None]]:
         now = datetime.now(UTC)
         skip = await self._ignored()
 
-        async def one(r: dict) -> tuple[str, tuple[list[str], list[BeReply]]]:
+        async def one(r: dict) -> tuple[str, tuple[list[str], list[BeReply]] | None]:
             res = DigestResult.model_validate_json(r["digest"]["result"])
             items = [it for k in OPEN for it in getattr(res, k)]
             cited = {i for it in items for i in it.message_ids}
@@ -393,9 +401,9 @@ class DigestService:
             try:
                 async with self._live:
                     msgs = await self.bridge.fetch_range(r["chat_id"], since, now, MAX_MESSAGES)
-            except Exception as e:  # one unreachable group must not hide the others
+            except Exception as e:  # one unreachable group must not hide the others; None: said "not read"
                 log.warning("answered: %s unread: %r", r["chat_id"], e)
-                return r["chat_id"], ([], [])
+                return r["chat_id"], None
             mine = {str(m.reply_to_id) for m in msgs if m.outgoing and m.reply_to_id}
             # since the digest, not part of the discussion it read
             new = sorted((m for m in msgs if not m.outgoing and not m.deleted and str(m.message_id) not in cited
@@ -413,5 +421,4 @@ class DigestService:
                                  date=m.date, direct=m in direct) for m in direct + guess]  # fmt: skip
             return r["chat_id"], (sorted(mine & cited), hits)
 
-        rows = [r for r in await self.db.read(self.store.briefing_rows) if r["consent"] and r["digest"]]
-        return dict(await asyncio.gather(*(one(r) for r in rows)))
+        return list(await asyncio.gather(*(one(r) for r in rows)))

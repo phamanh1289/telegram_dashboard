@@ -83,6 +83,10 @@ def test_search_tracked_folds_and_skips_untracked_and_deleted(env):
     env.store.apply_deletion(A, ["3"])
     assert [r["message_id"] for r in env.store.search_tracked("dieu kien giai")] == [1]
     assert env.store.search_tracked("") == []
+    env.store.apply_message(msg(A, 2, "đã đổi", edit=5))  # message_fts follows an edit: the old words are gone
+    assert env.store.search_tracked("xong") == [] and [r["message_id"] for r in env.store.search_tracked("doi")] == [2]
+    env.store.compact()  # rebuilt after VACUUM
+    assert [r["message_id"] for r in env.store.search_tracked("dieu kien")] == [1]
 
 
 def test_parts_of_the_first_docs_schema_survive_the_move_to_doc_ranges(tmp_path):

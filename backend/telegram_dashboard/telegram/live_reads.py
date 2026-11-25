@@ -34,9 +34,12 @@ class _Memo[K, V]:
                 # A write may invalidate this read while Telegram is still answering.
                 if self.pending.get(key) is asyncio.current_task():
                     self.values.pop(key, None)
+                    now = monotonic()  # values are in insertion order: the expired ones are at the front
+                    while self.values and now - next(iter(self.values.values()))[0] >= self.ttl:
+                        self.values.pop(next(iter(self.values)))
                     if len(self.values) >= self.capacity:
                         self.values.pop(next(iter(self.values)))
-                    self.values[key] = (monotonic(), value)
+                    self.values[key] = (now, value)
                 return value
 
             task = asyncio.create_task(load())

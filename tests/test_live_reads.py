@@ -104,6 +104,7 @@ async def test_ttl_expiry_and_independent_chat_keys(monkeypatch):
     now += live_reads.MEMBERS_TTL
     await reads.members(bridge, "a")
     assert bridge.members.await_count == 3
+    assert list(reads._members.values) == ["a"]  # the expired "b" is dropped on insert, not kept till capacity
     await reads.aclose()
 
 

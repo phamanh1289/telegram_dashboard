@@ -156,3 +156,15 @@ def test_be_answers_go_on_in_their_session_and_agent_rule_opens_one(tmp_path, mo
         assert log.is_file()
         assert c.delete(f"/api/chats/{A}/data", headers=H).status_code == 204
         assert tasks() == [] and not log.exists() and not list(log.parent.glob(f"{t['id']}*"))
+
+
+def test_live_tags_reach_vong_be(client, monkeypatch):
+    """The lifespan wires bridge.on_tags to AutoBe; a later task must not rebind the name the closure reads."""
+    seen = []
+
+    async def on_tags(msgs):
+        seen.append(msgs)
+
+    monkeypatch.setattr(client.app.state.autobe, "on_tags", on_tags)
+    client.portal.call(client.app.state.bridge.on_tags, [])
+    assert seen == [[]]

@@ -176,7 +176,9 @@ async def _apply_release(root: Path, h: Path) -> dict:
         raise ApiError(502, "update_failed", detail=f"Giải nén gói lỗi: {type(e).__name__}: {e}") from None
     finally:
         tmp.unlink(missing_ok=True)
-    (h / "current").write_text(name)
+    cur = h / "current.tmp"  # atomic: a crash mid-write must not leave the launchers an empty pointer
+    cur.write_text(name)
+    cur.replace(h / "current")
     return {**info, "updated": True}
 
 
@@ -244,9 +246,11 @@ async def apply(root: Path) -> dict:
             return {**info, "updated": False}
         before = await _run(root, "git", "rev-parse", "HEAD")
         await _run(root, "git", "pull", "--ff-only", "--quiet", timeout=120)
+        synced = False
         try:
             changed = (await _run(root, "git", "diff", "--name-only", before, "HEAD")).splitlines()
-            if any(f in ("uv.lock", "pyproject.toml") for f in changed):
+            synced = any(f in ("uv.lock", "pyproject.toml") for f in changed)
+            if synced:
                 await _run(root, "uv", "sync", "--locked")
             if any(f.endswith(("package-lock.json", "package.json")) for f in changed):
                 await _run(root, "npm", "ci")
@@ -256,6 +260,11 @@ async def apply(root: Path) -> dict:
             # --keep, not --hard: edits made while deps/UI built survive (aborts if one touches a pulled file)
             await _run(root, "git", "reset", "--keep", "--quiet", before)
             detail = f"Cập nhật lỗi, đã quay về bản đang chạy (thử lại sau): {e.detail}"
+            if synced:  # .venv took the new lock: back to the running code's, or old code runs on new deps
+                try:
+                    await _run(root, "uv", "sync", "--locked")
+                except ApiError as back:
+                    detail += f" · Chưa đưa được thư viện Python về bản cũ ({back.detail}): chạy `uv sync` trong app."
             raise ApiError(e.status, e.code, detail=detail) from None
         return {**info, "updated": True}
 

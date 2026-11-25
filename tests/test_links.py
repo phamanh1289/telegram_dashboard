@@ -9,6 +9,7 @@ from telegram_dashboard.docs.parts import MAX_CHARS
 from telegram_dashboard.links import INLINE_CHARS, delete_links, expand, link_block, links_dir
 from telegram_dashboard.models import StoredMessage
 from telegram_dashboard.storage import Db, Store
+from telegram_dashboard.telegram.live_reads import TelegramReads
 
 URLS = (
     "xem https://works.citics.vn/articles/VA-A-134 và https://t.me/c/1234/273/39671 https://other.host/articles/X-A-1"
@@ -58,6 +59,7 @@ def state(tmp_path, content: str, tracked: bool = True, summary=None):
             doc_list=store.doc_list,
         ),
         bridge=NS(fetch_ids=fetch_ids),
+        live_reads=TelegramReads(),  # a live read goes through the shared cap
     )
 
 
@@ -67,7 +69,7 @@ async def test_expand_saves_long_article_and_inlines_telegram_message(tmp_path):
     saved = next(links_dir(s.settings, "t1").iterdir())  # the long article: whole, in a file the agent may read
     assert "Bước 1 " * 3000 in saved.read_text(encoding="utf-8") and str(saved) in out
     assert saved.stat().st_mode & 0o777 == 0o600 and saved.parent.parent.stat().st_mode & 0o777 == 0o700
-    assert "An (2026-11-05 00:00):\ncần hỗ trợ" in out and "<untrusted_link_content>" in out
+    assert "An (2026-11-05 00:00):\ncần hỗ trợ" in out and re.search(r"<untrusted-[0-9a-f]{8}>", out)
     assert out.count("dashboard không đọc được") == 1  # the other YouTrack never gets our token
     delete_links(s.settings, "t1")
     assert not links_dir(s.settings, "t1").exists()
@@ -122,7 +124,7 @@ async def test_long_text_without_headings_gets_summary(tmp_path):
     s = state(tmp_path, "z " * 20000, summary=ask)
     out = await expand(s, URLS, "t1")
     assert "Tóm tắt (AI" in out and "- ý chính" in out and len(asked) == 1
-    assert "<untrusted_link_content>" in asked[0][0] and asked[0][1]["feature"] == "docs"
+    assert re.match(r"<untrusted-[0-9a-f]{8}>", asked[0][0]) and asked[0][1]["feature"] == "docs"
     await expand(s, URLS, "t2", summarize=False)
     assert len(asked) == 1
 
@@ -243,7 +245,8 @@ async def test_two_sessions_share_one_download_and_one_summary(tmp_path):
     assert s.calls["yt"] == 3 and len(asked) == 1  # first: updated-check + download; second: updated-check only
     assert "- ý chính" in a and "- ý chính" in b
     files = [next(links_dir(s.settings, k).iterdir()).read_text() for k in "ab"]
-    assert files[0] == files[1]
+    fenced = re.compile(r"untrusted-[0-9a-f]{8}")  # each save fences with its own random name
+    assert fenced.sub("", files[0]) == fenced.sub("", files[1])
 
 
 async def test_summary_prompt_no_longer_carries_the_task(tmp_path):

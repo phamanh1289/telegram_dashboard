@@ -56,6 +56,6 @@ def test_log_poll_keeps_running_when_turn_finishes_during_snapshot(client, monke
     assert [item["kind"] for item in last["items"]] == ["result"]
     assert last["items"][0]["error"] is (outcome != "success")
     assert last["running"] is False
-    assert last["next"] == last["total"] == 2
+    assert last["next"] == last["total"] > first["next"] > 0  # byte offsets into the log
     if outcome == "success":
         assert last["items"][0]["text"] == "final answer"

@@ -189,7 +189,9 @@ class AutoBe:
             if ids == [m.message_id]:
                 return [m]
             kept, _ = await s.db.read(s.store.get_messages_by_ids, m.chat_id, ids)
-            return kept or (await s.bridge.fetch_ids(m.chat_id, ids) if s.bridge.state == "connected" else [])
+            if kept or s.bridge.state != "connected":
+                return kept
+            return await s.live_reads.scan(s.bridge.fetch_ids(m.chat_id, ids))  # under the shared cap
 
         async for x in chain_walk(fetch, m.message_id, CHAIN_MAX):
             chain.append(x)

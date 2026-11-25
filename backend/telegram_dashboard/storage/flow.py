@@ -2,6 +2,8 @@
 
 import json
 
+LISTED = 20  # jobs a list (one ticket's) returns, newest first
+
 
 class FlowJobs:
     def flow_job_create(self, scope, job, issue="", base=None, request=None):
@@ -13,15 +15,16 @@ class FlowJobs:
 
     def flow_job_get(self, scope, job=None, issue=None):
         with self._conn() as c:
-            rows = c.execute("SELECT *, (SELECT COALESCE(MAX(cursor),0) FROM flow_job_events e "
+            # never the checkpoint (a whole flow); a list is the newest LISTED only: the page wants the newest open one
+            rows = c.execute("SELECT id,issue,status,stage,base,request,result,error,processed,created_at,updated_at,"
+                             "(SELECT COALESCE(MAX(cursor),0) FROM flow_job_events e "
                              "WHERE e.scope=f.scope AND e.job=f.id) cursor FROM flow_jobs f "
                              "WHERE scope=? AND (? IS NULL OR id=?) AND (? IS NULL OR issue=?) "
-                             "ORDER BY created_at DESC, rowid DESC", (scope, job, job, issue, issue)).fetchall()
+                             "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                             (scope, job, job, issue, issue, LISTED)).fetchall()
             result = []
             for row in rows:
                 data = dict(row)
-                data.pop("scope")
-                data.pop("checkpoint")
                 for key in ("result", "error", "request"):
                     data[key] = json.loads(data[key]) if data[key] else None
                 data["processed"] = bool(data["processed"])
@@ -67,7 +70,9 @@ class FlowJobs:
 
     def flow_jobs_recover(self):
         with self._conn(write=True) as c:
-            c.execute("DELETE FROM flow_jobs WHERE processed=1 AND updated_at<unixepoch()-2592000 "
+            # every ended job after 30 days, applied or not (the page drops an unapplied render after a day), with
+            # its events (ON DELETE CASCADE, foreign_keys=ON in Store._connect)
+            c.execute("DELETE FROM flow_jobs WHERE updated_at<unixepoch()-2592000 "
                       "AND status NOT IN ('queued','running','cancel_requested')")
             rows = c.execute("SELECT scope,id,status,checkpoint,result FROM flow_jobs "
                              "WHERE status IN ('queued','running','cancel_requested')").fetchall()

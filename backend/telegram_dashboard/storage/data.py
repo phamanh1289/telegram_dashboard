@@ -173,6 +173,7 @@ class Data:
         c = sqlite3.connect(self.path, timeout=5, isolation_level=None)
         try:
             c.execute("VACUUM")
+            c.execute("INSERT INTO message_fts(message_fts) VALUES ('rebuild')")  # VACUUM may renumber rowids
             c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         finally:
             c.close()

@@ -184,3 +184,10 @@ def test_the_macos_installer_checks_the_release_signature_with_the_apps_key():
     assert rsa.PublicKey.load_pkcs1_openssl_pem(pem.encode()) == rsa.PublicKey.load_pkcs1(app)
     assert "openssl dgst -sha256 -verify" in script and '$file.sig"' in script
     assert "xattr -dr com.apple.quarantine \"$DEST\"" not in script  # only the verified version is cleared
+
+
+def test_no_cli_runs_in_the_temp_dir():
+    """A CLI with no project runs in config.away_dir(), never the temp dir: a Codex edit turn writes there, and Claude
+    would load hooks from <cwd>/.claude/settings.json."""
+    files = list((ROOT / "backend").rglob("*.py"))
+    assert _hits(files, re.compile(r"cwd=[^,)]*gettempdir")) == []

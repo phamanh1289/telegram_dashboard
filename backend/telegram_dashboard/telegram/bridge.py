@@ -13,7 +13,7 @@ from ..ai import role_tags, with_tags
 from ..config import run_cli
 from ..desktop import applescript_str as _applescript_str
 from ..errors import ApiError
-from ..models import FileInfo, GroupInfo, Member, OutboxDTO, ReplyRequest, SentMessage, StoredMessage
+from ..models import FileInfo, GroupInfo, Member, OutboxDTO, ReplyRequest, SentMessage, StoredMessage, utf16_len
 from ..storage import Db, Store
 
 log = logging.getLogger("telegram_dashboard.telegram")
@@ -33,11 +33,12 @@ class LoginRequired(Exception):
 
 
 class PartialBackfill(Exception):
-    """The mention scan stopped early (flood wait): `found` is what it read before."""
+    """The mention scan stopped early (flood wait): `found` is what it read before, `done` the dialog ids
+    it read in full (the retry skips them)."""
 
-    def __init__(self, found: list, wait: int = 0):
+    def __init__(self, found: list, wait: int = 0, done: set[str] | None = None):
         super().__init__(len(found))
-        self.found, self.wait = found, wait
+        self.found, self.wait, self.done = found, wait, done or set()
 
 
 class SendRejected(Exception):
@@ -55,10 +56,10 @@ class Transport(Protocol):
     async def disconnect(self) -> None: ...
     def is_connected(self) -> bool: ...
     async def list_groups(self) -> list[GroupInfo]: ...
-    # (title, kind, message, we_replied) for tags/replies to us since `cutoff`, read or not;
-    # raises PartialBackfill when cut short
+    # (title, kind, message, we_replied) for tags/replies to us since `cutoff`, read or not, in groups
+    # not in `skip`; raises PartialBackfill when cut short
     async def fetch_mentions(
-        self, cutoff: datetime
+        self, cutoff: datetime, *, skip: frozenset[str] = frozenset()
     ) -> list[tuple[str, str, StoredMessage, bool]]: ...
     async def latest_id(self, chat_id: str) -> int: ...
     # `limit` messages older than `before` (None: the newest), oldest first, in one request
@@ -109,6 +110,7 @@ class TelegramBridge:
         self.me_name = ""  # its display name (the know-it-all bot calls the user by it)
         self.on_tags = None  # async (new pending tags) -> None: autobe.AutoBe.on_tags, set by the app
         self._backfilled_at = datetime.fromtimestamp(0, UTC)  # last backfill that read everything
+        self._partial: tuple[datetime, datetime, frozenset[str]] | None = None  # cut-short pass: cutoff, start, done
         if transport is not None:
             transport.attach(self)
 
@@ -121,6 +123,11 @@ class TelegramBridge:
     async def start(self) -> None:
         if self.transport is not None and (self._main is None or self._main.done()):
             self._main = asyncio.create_task(self._run())
+
+    def forget_account(self) -> None:
+        """Another account signs in: its name is read again on connect and its first backfill looks back in full."""
+        self.me = self.me_name = ""
+        self._backfilled_at, self._partial = datetime.fromtimestamp(0, UTC), None
 
     async def set_transport(self, transport: Transport) -> None:
         """Swap in a transport built from new API credentials (Settings) and connect it."""
@@ -205,19 +212,22 @@ class TelegramBridge:
         Cut short / failed: the monotonic time `_run` retries it at (status detail says so meanwhile)."""
         started = datetime.now(UTC)
         cutoff = max(started - timedelta(days=BACKFILL_DAYS), self._backfilled_at - BACKFILL_MARGIN)
+        skip: frozenset[str] = frozenset()
+        if self._partial:  # finishing a cut-short pass: as far back, without the groups it read in full
+            cutoff, started, skip = self._partial
         retry = None
         try:
             try:
-                found = await self.ensure_connected().fetch_mentions(cutoff)
+                found = await self.ensure_connected().fetch_mentions(cutoff, skip=skip)
             except PartialBackfill as e:  # keep what it read; the retry looks back as far again
                 log.warning("mention backfill cut short after %d tags", len(e.found))
                 found, retry = e.found, e.wait + 5
+                self._partial = (cutoff, started, skip | e.done)
             fresh = set(await self.db.write(self.store.store_mentions, found))
-            # ponytail: ids only (store_mentions' shape); the same id fresh in two groups at once is not told apart
             if fresh and self.on_tags:
-                self._spawn(self.on_tags([m for _, _, m, _ in found if m.message_id in fresh]))
+                self._spawn(self.on_tags([m for _, _, m, _ in found if (m.chat_id, m.message_id) in fresh]))
             if retry is None:
-                self._backfilled_at = started
+                self._backfilled_at, self._partial = started, None
         except Exception as e:
             log.warning("mention backfill failed: %s: %s", type(e).__name__, e)
             retry = BACKFILL_RETRY
@@ -308,15 +318,16 @@ class TelegramBridge:
             log.warning("contact send result unknown: %s", type(e).__name__)
             raise ApiError(504, "delivery_unknown") from e
 
-    async def send_direct(self, chat_id: str, reply_to: int | None, text: str) -> int:
+    async def send_direct(self, chat_id: str, reply_to: int | None, text: str, *, random_id: int | None = None) -> int:
         """Post to any group the account is in, tracked or not, outside the outbox (Q&A); the new message's id.
+        `random_id` from the caller's request id: Telegram refuses a second post with it (delivery_unknown).
         ponytail: no retry bookkeeping like the outbox; a timeout surfaces as `delivery_unknown` (it may have
         posted) so the user checks the group before resending."""
         t = self.ensure_connected()
         try:
             async with self._send_lock:
                 sent = await asyncio.wait_for(
-                    t.send_reply(chat_id, reply_to, text, secrets.randbits(63), None), SEND_TIMEOUT
+                    t.send_reply(chat_id, reply_to, text, random_id or secrets.randbits(63), None), SEND_TIMEOUT
                 )
         except SendRejected as e:
             code = "flood_wait" if e.code == "retry_after" else e.code
@@ -342,10 +353,10 @@ class TelegramBridge:
     async def _react(
         self, t: Transport, chat_id: str, message_ids: list[int], emoji: str | None
     ) -> None:
-        mine = [m.message_id for m in (await self.db.read(self.store.get_messages_by_ids, chat_id, message_ids))[0]
-                if m.outgoing]  # our own messages never get the Done reaction (nor its removal)
-        message_ids = [mid for mid in message_ids if mid not in mine]
-        async with self._react_lock:  # in commit order, so a quick undo ends with no reaction
+        async with self._react_lock:  # in commit order (the read too), so a quick undo ends with no reaction
+            mine = [m.message_id for m in (await self.db.read(self.store.get_messages_by_ids, chat_id, message_ids))[0]
+                    if m.outgoing]  # our own messages never get the Done reaction (nor its removal)
+            message_ids = [mid for mid in message_ids if mid not in mine]
             for n, mid in enumerate(message_ids):
                 try:
                     await asyncio.wait_for(t.send_reaction(chat_id, mid, emoji), SEND_TIMEOUT)
@@ -436,23 +447,19 @@ _FORMAT = re.compile(
 )
 
 
-def _u16(s: str) -> int:
-    return len(s.encode("utf-16-le")) // 2
-
-
 def split_format(text: str) -> tuple[str, list[tuple[int, int, int | str]]]:
     """Markdown code spans, name tags and links -> plain text plus (offset, length, user_id | "code" | "pre" | url)
     per span, in UTF-16 units as Telegram entities count."""
     out, ents, at = [], [], 0
     for m in _FORMAT.finditer(text):
         out.append(text[at : m.start()])
-        off = _u16("".join(out))
+        off = utf16_len("".join(out))
         body, kind = (
             (m[1], "pre") if m[1] is not None else (m[2], "code") if m[2] is not None
             else (m[3], int(m[4])) if m[3] is not None else (m[5], m[6])
         )  # fmt: skip
         out.append(body)
-        ents.append((off, _u16(body), kind))
+        ents.append((off, utf16_len(body), kind))
         at = m.end()
     out.append(text[at:])
     return "".join(out), ents

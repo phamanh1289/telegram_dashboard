@@ -139,7 +139,7 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
   const inTabOf = (t: Tab) => t === "wait" ? [] : shown.filter((x) => (t === "mine" ? x.mine : t === "be" ? x.be : x.kind === t));
   // "Với BE": topics still waiting on BE (as its "N chờ trả lời"); what is settled stays listed for the code check, uncounted.
   const left = (t: Tab) => t === "wait" ? waits.length : t === "be"
-    ? new Set(inTabOf(t).filter((x) => x.kind === "confirmations" && !isClosed(x) && !isAnswered(x, beReplies?.[x.chat.chat_id])).map((x) => `${x.chat.chat_id}:${x.topic || x.text}`)).size
+    ? new Set(inTabOf(t).filter((x) => x.kind === "confirmations" && !isClosed(x) && !isAnswered(x, beReplies?.replies?.[x.chat.chat_id])).map((x) => `${x.chat.chat_id}:${x.topic || x.text}`)).size
     : inTabOf(t).filter((x) => !isClosed(x)).length;
   const cur = tabs.find(([t]) => t === tab)?.[0] ?? tabs.find(([t]) => left(t))?.[0] ?? "confirmations";
   const inTab = inTabOf(cur);

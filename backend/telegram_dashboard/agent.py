@@ -20,14 +20,13 @@ from .ai import at_usernames
 from .ai_prompts import LANG_TURN, SCOPE_TURN
 from .ai_run import cli_reason
 from .claude import note_run
-from .config import child_env, kill_tree, on_path
+from .config import child_env, kill_tree, on_path, reap_after_exit
 from .errors import ApiError
 from .links import delete_links, links_dir
 
 log = logging.getLogger("telegram_dashboard.agent")
 
 STREAM_LIMIT = 32 * 1024 * 1024  # one stream-json line can carry a whole file read
-EXIT_GRACE = 10  # seconds after the CLI exits before what it left holding its pipes is killed
 # After a result the CLI can linger (background agents, hooks): quiet this long = the turn is over.
 AFTER_RESULT_IDLE = 20.0
 
@@ -76,6 +75,7 @@ class AgentRunner:
         # Reserved before the first await (no double turn), with its process once spawned.
         self._starting: dict[str, asyncio.subprocess.Process | None] = {}
         self._cancel: set[str] = set()  # stopped while starting: never registered
+        self._started: dict[str, asyncio.Event] = {}  # set once start() is through (stop() waits on it)
         self._why: dict[str, str] = {}  # stopped on purpose: what the log says instead of the exit code
         self.side: dict[str, asyncio.Task] = {}  # turns run in this process (Trợ lý AI), not by a CLI
         self.on_idle: Callable[[str], None] | None = None  # a CLI turn ended (autobe sends what waited for it)
@@ -115,17 +115,27 @@ class AgentRunner:
         return bool(self.procs or self._starting or self.side)
 
     def read(self, task_id: str, after: int = 0) -> tuple[list[dict], int]:
-        """(items after line `after`, total lines). Only whole lines: the pump may be mid-write."""
+        """(items after byte offset `after`, the offset to poll from next). Only whole lines: the pump may be
+        mid-write. A log shorter than `after` (the session ran again) reads nothing and gives its size: the page
+        starts over from 0. Seeks, so a 1.5 s poll of a long session reads just what is new."""
         p = self.log_path(task_id)
-        text = p.read_text() if p.is_file() else ""
-        lines = [ln for ln in text[: text.rfind("\n") + 1].splitlines() if ln.strip()]
+        if not p.is_file():
+            return [], 0
+        with p.open("rb") as f:
+            if after > (size := f.seek(0, 2)):
+                return [], size
+            f.seek(after)
+            raw = f.read()
+        raw = raw[: raw.rfind(b"\n") + 1]
         items = []
-        for ln in lines[after:]:
+        for ln in raw.decode(errors="replace").splitlines():
+            if not ln.strip():
+                continue
             try:
                 items.append(json.loads(at_usernames(ln)))  # a JSON line: "@user" needs no escaping
             except ValueError:
                 log.warning("task %s: unreadable log line skipped", task_id)
-        return items, len(lines)
+        return items, after + len(raw)
 
     def note(self, task_id: str, text: str) -> None:
         """A line from the app in the session log (a PR opened from it, ...)."""
@@ -164,11 +174,14 @@ class AgentRunner:
         if self.settings.forbids_project(project):  # registered before the rule, or the app itself
             raise ApiError(422, "project_forbidden")
         self._starting[task_id] = proc = None
+        self._started[task_id] = asyncio.Event()
         provider, sid = providers.split_session(session_id)
         try:
             tasks_dir(self.settings).mkdir(mode=0o700, exist_ok=True)
             if callable(text):
                 text = await text()
+            if task_id in self._cancel:  # stopped (deleted) while links were read: no CLI, nothing more on disk
+                raise ApiError(409, "task_cancelled")
             choice = providers.run_choice(self.settings, task=True, provider=provider)  # the session's CLI
             if ai[0] is not None:  # picked for this session: used as is, no step-down
                 choice = (ai[0], ai[1] or "", False)
@@ -220,6 +233,7 @@ class AgentRunner:
         finally:
             self._starting.pop(task_id, None)
             self._cancel.discard(task_id)
+            self._started.pop(task_id).set()
         # The pump owns the process from here; it first runs after these sync lines.
         self.pumps[task_id] = asyncio.create_task(self._pump(task_id, proc, choice, provider))
         if not resume:
@@ -288,7 +302,7 @@ class AgentRunner:
                     provider="claude") -> None:  # fmt: skip
         got_result, t0, st, ref = False, time.monotonic(), {}, session_ref(task_id)
         err = asyncio.create_task(proc.stderr.read())
-        reap = asyncio.create_task(self._reap_after_exit(proc))
+        reap = asyncio.create_task(reap_after_exit(proc))
         try:
             # once a result is in, a CLI that stays alive but silent is done, not "running"
             idle = lambda: AFTER_RESULT_IDLE if got_result else None  # noqa: B023, E731 (reads it live)
@@ -335,14 +349,6 @@ class AgentRunner:
             if self.on_idle:
                 self.on_idle(task_id)
 
-    @staticmethod
-    async def _reap_after_exit(proc) -> None:
-        """The CLI exited but a command it started still holds stdout/stderr: the pump would wait on
-        the pipe forever (task stuck "running"). Kill what's left after a grace period."""
-        await proc.wait()
-        await asyncio.sleep(EXIT_GRACE)
-        kill_tree(proc)
-
     async def stop(self, task_id: str, why: str = "Đã dừng.") -> None:
         """Stop the run (and what it started) and wait until its pump is done, so nothing writes to
         the log after. A turn still starting is cancelled: start() kills it and never registers it."""
@@ -350,6 +356,8 @@ class AgentRunner:
             self._cancel.add(task_id)
             if (starting := self._starting[task_id]) is not None:
                 kill_tree(starting)
+            if started := self._started.get(task_id):  # until start() is through: a delete after leaves nothing behind
+                await started.wait()
         proc = self.procs.get(task_id)
         if proc:
             self._why[task_id] = why

@@ -9,8 +9,9 @@ from telegram_dashboard.ai import AiService
 from telegram_dashboard.app import create_app
 from telegram_dashboard.config import Settings
 from telegram_dashboard.errors import ApiError
-from telegram_dashboard.models import DigestRequest, GroupInfo, StoredMessage
+from telegram_dashboard.models import GroupInfo, StoredMessage
 from telegram_dashboard.telegram.digest import DigestService, _people, parse_result
+from telegram_dashboard.telegram.models_digest import DigestRequest
 
 AI = dict(ai_agent_command="cat", ai_model="", ai_effort="")
 T0 = datetime(2026, 10, 30, 9, 0, tzinfo=UTC)
@@ -421,10 +422,29 @@ async def test_be_replies_finds_others_answering_open_be_questions(dg):
     po = at(A, 12, "xanh", 23)
     po.reply_to_id = 2  # not a BE question
     env.fake.history[A] += [be, old, po]
-    hits = (await svc.be_replies())[A]
+    hits = (await svc.be_replies()).replies[A]
     assert [(h.reply_to, h.message_id, h.text) for h in hits] == [("3", "11", "Trả 0 nhé")]
     env.fake.history[A].remove(be)
-    assert (await svc.be_replies())[A][0].message_id == "11"  # one live read reused for SCAN_TTL
+    assert (await svc.be_replies()).replies[A][0].message_id == "11"  # one live read reused for SCAN_TTL
+
+
+async def test_be_replies_says_which_groups_were_not_read_and_does_not_cache_them(dg):
+    env, svc, _ = dg
+    consent(env)
+    env.store.save_digest(A, 4, T0, json.dumps({"source_count": 4, "since": T0.isoformat(), "confirmations": [
+        {"text": "BE trả null hay 0?", "be": True, "message_ids": ["3"]}]}))  # fmt: skip
+    env.bridge.state = "degraded"
+    assert (await svc.be_replies()).failed == [A]  # offline: "not read", not "no reply"
+    env.bridge.state = "connected"
+    real = env.fake.fetch_range
+
+    async def boom(*a):
+        raise ConnectionError
+
+    env.fake.fetch_range = boom
+    assert (await svc.be_replies()).failed == [A] and await svc.answered() == {}
+    env.fake.fetch_range = real
+    assert (await svc.be_replies()).failed == []  # the failed scan was not reused
 
 
 async def test_be_replies_guesses_a_plain_message_from_who_must_answer(dg):
@@ -439,7 +459,7 @@ async def test_be_replies_guesses_a_plain_message_from_who_must_answer(dg):
     other = at(A, 12, "lunch?", 23)
     other.sender_name = "Hà"
     env.fake.history[A] += [tung, other]
-    hits = (await svc.be_replies())[A]
+    hits = (await svc.be_replies()).replies[A]
     assert [(h.reply_to, h.message_id, h.direct) for h in hits] == [("3", "11", False)]  # "Backend" names nobody
 
 
@@ -449,6 +469,8 @@ def test_chunks_split_at_lines():
     assert chunks("a\nb\n", 4) == ["a\nb\n"]
     assert chunks("aaa\nbbb\n", 4) == ["aaa\n", "bbb\n"]
     assert chunks("x" * 9, 4) == ["xxxx", "xxxx", "x"]
+    assert chunks("😀" * 5, 4) == ["😀😀", "😀😀", "😀"]  # Telegram counts UTF-16 units: an emoji is two
+    assert chunks("a\n😀😀\n", 4) == ["a\n", "😀😀"]  # a blank part is dropped
     assert chunks("") == []
 
 
@@ -570,6 +592,10 @@ def test_qa_threads_and_post(settings):
         assert r.json()["code"] is None and fake.send_calls[-1] | {"random_id": 0} == dict(
             chat_id=A, reply_to=4, text="cảm ơn", random_id=0, topic_id=None)  # fmt: skip
         assert c.post("/api/qa", json={"chat_id": "-999", "text": "x"}).status_code == 404
+        rid = "6f1c2b0e-8a4d-4f7e-9b1a-2c3d4e5f6a7b"  # one submit sent twice: one random_id
+        for _ in range(2):
+            c.post("/api/qa", json={"chat_id": A, "text": "Có ai biết?", "request_id": rid})
+        assert fake.send_calls[-1]["random_id"] == fake.send_calls[-2]["random_id"] != fake.send_calls[-3]["random_id"]
 
         # Someone asked me (a kept tag, older than the range); I answer with Q&A: their question leads the thread.
         ask = msg(20, "A hỏi: staging ở đâu?", 24 * 9, sender="9")

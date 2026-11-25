@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from types import SimpleNamespace as NS
 
 import pytest
@@ -51,7 +52,7 @@ class FakeAi:
         self.calls, self.prompts = 0, []
 
     async def ask(self, prompt, *, system, feature, on_text=None):
-        assert feature == "docs" and "<untrusted_link_content>" in prompt
+        assert feature == "docs" and re.search(r"<untrusted-[0-9a-f]{8}>", prompt)
         self.calls += 1
         self.prompts.append(prompt)
         return f"tóm tắt {self.calls}"
@@ -148,7 +149,8 @@ async def test_summary_runs_once_per_text_and_again_when_redact_flips(lib, ai, y
     assert await lib.summary(doc_id) == ("tóm tắt 1", False)
     assert await lib.summary(doc_id) == ("tóm tắt 1", True)
     assert ai.calls == 1 and "0912 345 678" in ai.prompts[0]
-    assert ai.prompts[0].count("<untrusted_link_content>") == 1  # the text cannot close the frame
+    tag = re.search(r"<(untrusted-[0-9a-f]{8})>", ai.prompts[0])[1]  # a random name: the text cannot close the frame
+    assert ai.prompts[0].count(f"</{tag}>") == 1
     monkeypatch.setattr(ai_mod, "REDACT", True)
     assert await lib.summary(doc_id) == ("tóm tắt 2", False)
     assert ai.calls == 2 and "0912" not in ai.prompts[1]

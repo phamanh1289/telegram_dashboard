@@ -73,10 +73,12 @@ export const answeredQuery = {
   staleTime: 60_000,
 };
 
-/** chat_id -> replies from others to questions still open with BE, newer than the digest (Với BE: "vừa trả lời"). */
+/** chat_id -> replies from others to questions still open with BE, newer than the digest (Với BE: "vừa trả lời");
+ *  `failed`: groups not read (offline, an error), shown as "không đọc được", not "Chờ trả lời". */
 export const beRepliesQuery = {
   queryKey: ["briefing-be-replies"],
-  queryFn: ({ signal }: { signal: AbortSignal }) => api<Record<string, BeReply[]>>("/briefing/be-replies", { signal }),
+  queryFn: ({ signal }: { signal: AbortSignal }) =>
+    api<{ replies?: Record<string, BeReply[]>; failed?: string[] }>("/briefing/be-replies", { signal }),
   staleTime: 60_000,
 };
 /** The replies to an item's question (any of its cited messages), and the guesses (`direct` false) when nobody replied. */

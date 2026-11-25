@@ -286,7 +286,7 @@ def test_ask_on_an_open_document_reads_all_of_it_matching_parts_first(client, ai
 
 
 def test_a_pos_draft_gets_the_kb_parts_matching_the_tag(client, monkeypatch):
-    from telegram_dashboard.models import AiResult
+    from telegram_dashboard.models_ai import AiResult
 
     add(client, "VA-A-1", "# Giải ngân\nĐiều kiện giải ngân: đủ hồ sơ")
     add(client, "VA-A-2", "Bài khác hẳn")

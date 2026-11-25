@@ -1,6 +1,7 @@
 import asyncio
 import json
 import pathlib
+import re
 import types
 from urllib.parse import parse_qs
 
@@ -205,7 +206,7 @@ async def test_ai_ticket_reads_kb_links_in_the_ticket(tmp_path):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "split"})
         await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "rewrite"})
-    assert "Trả 3 field" in agent.calls[0] and "<untrusted_link_content>" in agent.calls[0]
+    assert "Trả 3 field" in agent.calls[0] and re.search(r"<untrusted-[0-9a-f]{8}>", agent.calls[0])
     assert "Trả 3 field" not in agent.calls[1]  # a rewrite keeps the link, not the article
 
 

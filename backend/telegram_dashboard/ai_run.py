@@ -5,13 +5,12 @@ import contextlib
 import contextvars
 import logging
 import re
-import tempfile
 import time
 from collections.abc import Awaitable, Callable
 
 from . import providers
 from .claude import note_run
-from .config import child_env, kill_tree
+from .config import away_dir, child_env, kill_tree, reap_after_exit
 from .errors import ApiError
 
 log = logging.getLogger("telegram_dashboard.ai")
@@ -39,7 +38,7 @@ async def run(
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
-                cwd=cwd or tempfile.gettempdir(),  # never the repo root: .env and data/ live there
+                cwd=cwd or away_dir(),  # never the repo root (.env, data/) nor the temp dir an edit turn writes
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -52,11 +51,13 @@ async def run(
             raise ApiError(502, "ai_provider_error") from None
         read = asyncio.ensure_future(_read(proc, prompt, provider, on_text))
         watch = asyncio.ensure_future(_watch(client_gone.get()))
+        reap = asyncio.ensure_future(reap_after_exit(proc))  # a child left holding stdout must not stall `read`
         try:
             limit = PROJECT_AGENT_TIMEOUT if long else AGENT_TIMEOUT
             done, _ = await asyncio.wait({read, watch}, timeout=limit, return_when=asyncio.FIRST_COMPLETED)
         finally:
             watch.cancel()
+            reap.cancel()
             read.cancel()  # a no-op once it is done
         if read not in done:  # the user pressed Hủy / left the page: stop burning quota
             raise ApiError(499, "ai_cancelled") if watch in done else ApiError(504, "ai_timeout")

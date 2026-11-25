@@ -23,6 +23,7 @@ from .common import (
     now_ts,
     parse_cursor,
 )
+from .docs import _fts_query
 
 log = logging.getLogger("telegram_dashboard.storage")
 
@@ -209,12 +210,12 @@ class Messages:
                 return False
             return self._upsert_message(c, m, chat)
 
-    def store_mentions(self, found: list[tuple[str, str, StoredMessage, bool]]) -> list[int]:
+    def store_mentions(self, found: list[tuple[str, str, StoredMessage, bool]]) -> list[tuple[str, int]]:
         """Keep tags/replies to us, (title, kind, message, we_replied) each, in one transaction:
         track the chat, store the message, and for a tag seen for the first time apply the rules
         and mark it handled when answered (a kept tag the user reopened stays open). Tags of a
-        purged chat up to its purge are skipped. Returns ids of tags seen for the first time and
-        still pending (to notify about)."""
+        purged chat up to its purge are skipped. Returns (chat_id, message_id) of tags seen for the
+        first time and still pending (to notify about)."""
         fresh = []
         with self._conn(write=True) as c:
             rules = [dict(r) for r in c.execute("SELECT * FROM rules")]
@@ -234,7 +235,7 @@ class Messages:
                 if replied or _rule_matches(rules, m):
                     self._mark(c, m.chat_id, m.message_id, True, "reply" if replied else "rule")
                 else:
-                    fresh.append(m.message_id)
+                    fresh.append((m.chat_id, m.message_id))
         return fresh
 
     def apply_deletion(self, chat_id: str | None, message_ids: list[str]) -> list[str]:
@@ -566,16 +567,17 @@ class Messages:
             return [dict(r) for r in itertools.islice((r for r in rows if word.search(r["text"])), limit)]
 
     def search_tracked(self, q: str, limit: int = 20) -> list[dict]:
-        """Kept messages of tracked chats holding every word of `q` (accent-less), newest first."""
-        words = fold(q).split()
-        if not words:
+        """Kept messages of tracked chats holding every word of `q` (accent-less, whole words, the last one a prefix:
+        message_fts), newest first."""
+        match = _fts_query(q, False)
+        if not match:
             return []
         with self._conn() as c:
             rows = c.execute(
                 "SELECT m.chat_id, m.message_id, m.sender_name, m.text, m.date, m.outgoing, m.reply_to_id, c.title "
-                "FROM messages m JOIN chats c USING(chat_id) WHERE m.deleted=0 AND c.tracking=1 "
-                + "AND m.text_fold LIKE ? ESCAPE '\\' " * len(words) + "ORDER BY m.date DESC LIMIT ?",
-                (*(_like(w) for w in words), limit),
+                "FROM message_fts f JOIN messages m ON m.rowid=f.rowid JOIN chats c USING(chat_id) "
+                "WHERE message_fts MATCH ? AND m.deleted=0 AND c.tracking=1 ORDER BY m.date DESC LIMIT ?",
+                (match, limit),
             ).fetchall()
         return [dict(r) for r in rows]
 

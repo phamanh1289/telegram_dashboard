@@ -101,6 +101,24 @@ async def test_close_cancels_orphaned_reads(shots, monkeypatch):
     assert stopped.is_set() and not shots._inflight
 
 
+async def test_kept_reads_are_written_from_a_copy_and_never_under_another_account(shots, tmp_path, monkeypatch):
+    shots._path = lambda: tmp_path / "shots.json"
+    seen = []
+    monkeypatch.setattr(zeplin, "write_private_json", lambda path, data: seen.append(data))
+    identity = shots._identify("one")
+    await shots._keep(identity, {URL: {"cut": 1}})
+    # the thread encodes a copy: a second _keep changing the dicts meanwhile cannot break its iteration
+    assert seen[0]["shots"] == {URL: {"cut": 1}} and seen[0]["shots"] is not shots._kept
+    assert seen[0]["at"].keys() == {URL} and seen[0]["at"] is not shots._at
+    async with shots._write:  # a write in progress: the next one waits on the lock
+        waiting = asyncio.create_task(shots._keep(identity, {URL: {"cut": 2}}))
+        for _ in range(3):
+            await asyncio.sleep(0)
+        shots._identify("two")  # the account changes while it waits
+    await waiting
+    assert len(seen) == 1
+
+
 async def test_attachment_cache_checks_metadata_and_auth(tmp_path, monkeypatch):
     svc = YouTrackDashboard(SimpleNamespace(data_dir=tmp_path, youtrack_url="https://yt.test", youtrack_token="a"))
     att = {"id": "1", "name": "Đăng nhập - VA-1.html", "created": 1, "size": 123, "url": "/a"}

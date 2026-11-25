@@ -95,7 +95,8 @@ export function BeTopics({ chatId, title, r, open, onToggle, onJump, lit }: {
   const topics = beTopics(r, open);
   const verdicts = useVerdicts(chatId); // the last code check, per topic
   const replies = useQuery(beRepliesQuery); // BE answered since the digest: the card says so before the next summary
-  const hits = replies.data?.[chatId];
+  const hits = replies.data?.replies?.[chatId];
+  const unread = !!replies.data?.failed?.includes(chatId); // not read: a waiting card says so, not "Chờ trả lời"
   // Topics the last check found adapted (✅) and nothing new since, or whose check session was marked Done (its tags
   // and Q&A close with it): their items close (once per check and reason, undoable).
   useAutoDone(topics.flatMap((t) => closedBy(verdictOf(verdicts, t), seenIds(t, hits), t.id, t.lines.map(({ kind, it }) => todoKey(chatId, kind, it)))));
@@ -107,7 +108,7 @@ export function BeTopics({ chatId, title, r, open, onToggle, onJump, lit }: {
       <div className="flex flex-wrap items-center gap-2 text-xs text-ink-3">
         <span>{tx("{n} chủ đề · {m} chờ trả lời", { n: topics.length, m: topics.filter((t) => t.waiting && t.lines.some(({ kind, it }) => kind === "confirmations" && stillWaiting(it, hits))).length })}</span>
         {answered > 0 && <span className="inline-flex items-center gap-1 text-info"><MessageSquareReply className="size-3" aria-hidden />{tx("{n} có trả lời mới", { n: answered })}</span>}
-        {replies.isError && (
+        {(replies.isError || unread) && (
           <span role="alert" className="inline-flex items-center gap-1 text-error">
             {tx("Không dò được trả lời mới")}
             <button type="button" aria-label={tx("Thử lại")} onClick={() => void replies.refetch()} className="rounded-sm hover:text-ink"><RotateCw className="size-3" aria-hidden /></button>
@@ -117,14 +118,14 @@ export function BeTopics({ chatId, title, r, open, onToggle, onJump, lit }: {
         <DeepBulkAction chatId={chatId} title={title} items={topics.map((t) => checkOf(t, hits)).filter((x) => !x.waiting)} className="ml-auto" />
       </div>
       <ul className="zebra grid gap-2">
-        {topics.map((t) => <Card key={t.id} chatId={chatId} t={t} tv={verdictOf(verdicts, t)} hits={hits} onToggle={onToggle} onJump={onJump} lit={lit} />)}
+        {topics.map((t) => <Card key={t.id} chatId={chatId} t={t} tv={verdictOf(verdicts, t)} hits={hits} unread={unread} onToggle={onToggle} onJump={onJump} lit={lit} />)}
       </ul>
     </div>
   );
 }
 
-function Card({ chatId, t, tv, hits, onToggle, onJump, lit }: {
-  chatId: string; t: Topic; tv?: TopicVerdict; hits?: BeReply[]; onToggle?: (kind: Kind, it: DigestItem) => void; onJump?: (id: string) => void; lit?: string | null;
+function Card({ chatId, t, tv, hits, unread, onToggle, onJump, lit }: {
+  chatId: string; t: Topic; tv?: TopicVerdict; hits?: BeReply[]; unread?: boolean; onToggle?: (kind: Kind, it: DigestItem) => void; onJump?: (id: string) => void; lit?: string | null;
 }) {
   const tx = useT();
   const asked = t.lines.filter(({ kind }) => kind === "confirmations");
@@ -146,6 +147,10 @@ function Card({ chatId, t, tv, hits, onToggle, onJump, lit }: {
           : maybe
           ? <Hint side="bottom" text={tx("Người phải trả lời đã nhắn sau câu hỏi nhưng không bấm reply: có thể là câu trả lời. Tóm tắt lại để AI chốt.")}>
             <span tabIndex={0} className="inline-flex items-center gap-1 rounded-full border border-dashed border-info/50 px-1.5 text-xs leading-5 font-medium text-info"><MessageSquareReply className="size-3" aria-hidden />{tx("Có thể đã trả lời")}</span>
+          </Hint>
+          : t.waiting && unread
+          ? <Hint side="bottom" text={tx("Chưa đọc được nhóm trên Telegram nên chưa biết đã có trả lời chưa.")}>
+            <span tabIndex={0} className="inline-flex items-center gap-1 rounded-full border border-dashed border-error/50 px-1.5 text-xs leading-5 font-medium text-error"><RotateCw className="size-3" aria-hidden />{tx("Không đọc được")}</span>
           </Hint>
           : t.waiting
           ? <span className="inline-flex items-center gap-1 rounded-full bg-signal-wash px-1.5 text-xs leading-5 font-medium text-signal-2"><Hourglass className="size-3" aria-hidden />{tx("Chờ trả lời")}</span>
