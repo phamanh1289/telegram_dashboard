@@ -25,7 +25,7 @@ import { smooth } from "@/shared/lib/utils";
 import { dayLabel, timeLabel } from "@/shared/lib/time";
 import { aboutMe, readDigestTeams, useRole, usesCode } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { lastSp, yt } from "@/features/youtrack/lib/yt";
+import { lastSp, yt, ytFail } from "@/features/youtrack/lib/yt";
 import { Segmented } from "@/shared/components/ui/segmented";
 
 const PRESETS = [["24h", 24], ["3 ngày", 72], ["7 ngày", 168]] as const;
@@ -323,7 +323,8 @@ function ScopeFlag({ id }: { id: string }) {
 /** A decision about a ticket goes on record there: one click adds it as a comment. */
 function RecordOn({ id, text }: { id: string; text: string }) {
   const t = useT();
-  const save = useMutation({ mutationFn: () => yt.comment(id, text), onSuccess: () => toast({ text: tr("Đã ghi quyết định vào {id}", { id }) }) });
+  const save = useMutation({ mutationFn: () => yt.comment(id, text), onSuccess: () => toast({ text: tr("Đã ghi quyết định vào {id}", { id }) }),
+    onError: (e) => { const f = ytFail(e); toast({ text: tr("Không ghi được: {e}", { e: f.msg }), failure: f.failure }); } });
   return (
     <Hint side="bottom" text={save.isError ? t("Không ghi được: {e}", { e: save.error.message }) : t("Thêm quyết định này làm bình luận trên {id}", { id })}>
       <button type="button" disabled={save.isPending || save.isSuccess} onClick={() => save.mutate()}

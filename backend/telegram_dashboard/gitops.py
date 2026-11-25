@@ -10,7 +10,7 @@ import re
 import shutil
 import tempfile
 
-from .config import child_env
+from .config import child_env, kill_tree, user_env
 from .errors import ApiError
 
 # What a project's own repo could run when the dashboard runs git there, outside any AI sandbox: an AI session may have
@@ -38,19 +38,20 @@ async def _git(
     cwd: str, *args: str, tool: str = "git", env: dict | None = None, creds: bool = False
 ) -> tuple[int, str, str]:
     """Run git (or gh) in `cwd` to its end, or kill it after TIMEOUT; git never runs the repo's hooks / fsmonitor
-    (SAFE). `creds`: the user's whole env (push, gh: their tokens); else without this app's secrets (child_env)."""
+    (SAFE). `creds`: the user's env with their tokens (push, gh), never this app's (user_env); else child_env.
+    Its own process group: a timeout also kills the ssh / credential helper it started."""
     try:
         proc = await asyncio.create_subprocess_exec(
             tool, *(SAFE if tool == "git" else ()), *args, cwd=cwd, stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            env={**(os.environ if creds else child_env()), "GIT_TERMINAL_PROMPT": "0", **(env or {})},
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True,
+            env={**(user_env() if creds else child_env()), "GIT_TERMINAL_PROMPT": "0", **(env or {})},
         )  # fmt: skip
     except OSError:
         raise ApiError(422, "git_missing" if tool == "git" else "gh_missing") from None
     try:
         out, err = await asyncio.wait_for(proc.communicate(), TIMEOUT)
     except TimeoutError:
-        proc.kill()
+        kill_tree(proc)
         await proc.wait()
         raise ApiError(504, "git_timeout") from None
     return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")

@@ -673,4 +673,5 @@ export default {
   "Ẩn khỏi Hôm nay tới khi có bình luận hỏi mới": "Hide from Today until a newer comment asks you",
   "{label} · {n} ngày": "{label} · {n} days",
   "{who} đã trả lời: {text}": "{who} replied: {text}",
+  "Không đọc được trạng thái dashboard": "Could not read the dashboard status",
 } satisfies Dict;

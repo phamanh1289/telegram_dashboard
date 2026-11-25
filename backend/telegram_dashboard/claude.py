@@ -70,7 +70,12 @@ async def _wake_cli(settings) -> None:
     if time.monotonic() - _wake["at"] < WAKE_EVERY:
         return
     _wake["at"] = time.monotonic()
-    await run_cli([_claude_exe(settings), "-p", "Reply with exactly: OK", "--model", "haiku"], timeout=60)
+    from .provider_cmds import CLAUDE_SOURCES, run_env  # lazy: provider_cmds imports this module
+
+    # like every dashboard run: no tools, no MCP, none of the user's hooks / plugins; their settings env (a proxy) only
+    cmd = [_claude_exe(settings), "-p", "Reply with exactly: OK", "--model", "haiku", "--tools", "",
+           "--strict-mcp-config", *CLAUDE_SOURCES]  # fmt: skip
+    await run_cli(cmd, timeout=60, env={**child_env(), **run_env("claude", None)})
 
 
 def _headers(token: str, ua: str) -> dict:

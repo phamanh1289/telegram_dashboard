@@ -358,9 +358,30 @@ def _message_file(c):
     _add_cols(c, "messages", {"file": "TEXT"})
 
 
+def _messages_date(c):
+    """week_stats reads two weeks of every group's tags by date alone: messages_chat_date (chat first) cannot."""
+    c.execute("CREATE INDEX IF NOT EXISTS messages_date ON messages(date)")
+
+
+def _message_fts(c):
+    """Word index over `text_fold` for search_tracked (doc_fts's FTS5, external content: no second copy of the text),
+    kept by triggers on every write of messages; compact() rebuilds it (VACUUM may renumber messages' rowids)."""
+    c.execute("CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(text_fold, content='messages')")
+    c.execute("CREATE TRIGGER IF NOT EXISTS message_fts_ins AFTER INSERT ON messages BEGIN "
+              "INSERT INTO message_fts(rowid, text_fold) VALUES (new.rowid, new.text_fold); END")
+    c.execute("CREATE TRIGGER IF NOT EXISTS message_fts_del AFTER DELETE ON messages BEGIN "
+              "INSERT INTO message_fts(message_fts, rowid, text_fold) VALUES ('delete', old.rowid, old.text_fold); END")
+    c.execute("CREATE TRIGGER IF NOT EXISTS message_fts_upd AFTER UPDATE OF text_fold ON messages "
+              "WHEN old.text_fold IS NOT new.text_fold BEGIN "
+              "INSERT INTO message_fts(message_fts, rowid, text_fold) VALUES ('delete', old.rowid, old.text_fold); "
+              "INSERT INTO message_fts(rowid, text_fold) VALUES (new.rowid, new.text_fold); END")
+    c.execute("INSERT INTO message_fts(message_fts) VALUES ('rebuild')")
+
+
 MIGRATIONS = [
     _add_missing_columns, _task_kind, _task_ai, _task_done, _chat_purged, _pending_indexes, _drop_grants,
     _handled_by, _outbox_quote, _priority, _deep_anchor, _task_git_base, _task_ref_qa, _snooze_on,
     _task_ref_ask, _rule_extra, _flag_indexes, _text_fold, _flow_jobs, _docs,
     _doc_parts_by_doc, _doc_parent, _doc_revs, _doc_ai, _doc_added, _message_file, _doc_ordinal,
+    _messages_date, _message_fts,
 ]  # fmt: skip

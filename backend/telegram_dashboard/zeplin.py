@@ -279,6 +279,9 @@ class Shots:
         self._platforms: dict[str, str] = {}  # project id -> its platform: read once per project, not per screen
         self._inflight: dict[tuple, asyncio.Task] = {}
         self._sem = asyncio.Semaphore(PARALLEL)
+        # one connection pool per token, not a TLS handshake per screen; an old token's stays open for its reads
+        # still in flight. ponytail: closed only in aclose(), a token change is rare
+        self._clients: dict[str, httpx.AsyncClient] = {}
 
     async def aclose(self) -> None:
         tasks = list(self._inflight.values())
@@ -288,6 +291,14 @@ class Shots:
         self._inflight.clear()
         self._cache.clear()
         self._platforms.clear()
+        clients, self._clients = list(self._clients.values()), {}
+        await asyncio.gather(*(c.aclose() for c in clients), return_exceptions=True)
+
+    def _client(self, tok: str) -> httpx.AsyncClient:
+        if (c := self._clients.get(tok)) is None or c.is_closed:
+            headers = {"Authorization": f"Bearer {tok}", "Accept": "application/json"}
+            c = self._clients[tok] = httpx.AsyncClient(base_url=API, headers=headers, timeout=20.0)
+        return c
 
     def _identify(self, tok: str) -> tuple:
         identity = (self._scope(), repr(provider_cmds.zeplin_server()), tok)
@@ -344,6 +355,7 @@ class Shots:
         if not path or identity != self._identity:
             return
         kept, wall = await self._last(identity), time.time()
+        owner = self._owner
         for url, value in read.items():
             kept.pop(url, None)  # read again: newest last; a screen that is gone leaves the file
             self._at.pop(url, None)
@@ -354,7 +366,10 @@ class Shots:
             kept.pop(gone)
         try:
             async with self._write:
-                data = {"owner": self._owner, "shots": kept, "at": self._at}
+                if identity != self._identity or kept is not self._kept or owner != self._owner:
+                    return  # the account changed while waiting: these are the old account's reads
+                # a copy taken here, in the loop: the thread encodes it while another _keep may change the dicts
+                data = {"owner": owner, "shots": dict(kept), "at": dict(self._at)}
                 await asyncio.to_thread(write_private_json, path, data)
         except OSError as e:  # disk full, no permission: the read itself is fine, only the next cold open is slower
             log.warning("Zeplin shots not kept: %s", type(e).__name__)
@@ -377,9 +392,7 @@ class Shots:
 
         async def read(url: str):
             async with self._sem:
-                headers = {"Authorization": f"Bearer {tok}", "Accept": "application/json"}
-                async with httpx.AsyncClient(base_url=API, headers=headers, timeout=20.0) as c:
-                    value = await self._read(c, url)
+                value = await self._read(self._client(tok), url)
             if self._identity == identity:
                 self._cache[url] = (time.monotonic(), value)
                 self._cache.move_to_end(url)

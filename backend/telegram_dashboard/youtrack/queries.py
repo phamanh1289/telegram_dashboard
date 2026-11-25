@@ -21,6 +21,7 @@ from .client import (
     _who_clause,
     live,
     pages,
+    yt_code,
 )
 
 WAVE = 4  # issue pages fetched concurrently
@@ -140,9 +141,8 @@ class YtQueries(YtClient):
                 raise ApiError(422, "youtrack_project_not_found")
             post = {"project": {"id": pid}, "summary": summary, "description": description, "usesMarkdown": markdown}
             issue_id = (await self.yt("/api/issues", post=post, fields="idReadable"))["idReadable"]
-        except YtError as e:
-            code = "youtrack_unauthorized" if e.status in (401, 403) else "youtrack_error"
-            raise ApiError(502, code, detail=e.message) from None  # why YouTrack refused / "may have been created"
+        except YtError as e:  # why YouTrack refused / youtrack_unknown: it may have been created
+            raise ApiError(502, yt_code(e), detail=e.message) from None
         except KeyError, TypeError, ValueError:
             raise ApiError(502, "youtrack_error") from None
         return issue_id, f"{self.base}/issue/{issue_id}"
@@ -323,7 +323,7 @@ class YtQueries(YtClient):
             try:
                 trans = await self.cached(f"trans:{p}:{SINCE_DAYS}", lambda p=p: self.transitions(p, SINCE_DAYS))
             except YtError as e:
-                if e.status in (401, 403):
+                if e.status not in (400, 404):  # no activitiesPage on this server: per ticket. Token / network: up
                     raise
                 trans = []
             until, last = self._trans_until.get(f"{p}:{SINCE_DAYS}", 0), {}
@@ -341,8 +341,8 @@ class YtQueries(YtClient):
             async with sem:
                 try:
                     out[issue_id] = await self.state_since(issue_id, updated)
-                except YtError as e:  # skipped: the UI keeps its last known value
-                    if e.status in (401, 403):  # but a bad token must show, not look like "no data"
+                except YtError as e:  # a ticket gone (404) is skipped: the UI keeps its last known value
+                    if e.status != 404:  # a bad token / no YouTrack must show, not look like "no data"
                         raise
 
         await asyncio.gather(*map(one, rest))

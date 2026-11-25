@@ -61,6 +61,19 @@ class YtUnreachable(YtError):
         """`sent`: a write got past connecting, so YouTrack may have applied it (a retry could repeat it)."""
         msg = "Không rõ YouTrack đã ghi chưa — mở lại ticket để kiểm tra trước khi làm lại"
         super().__init__(502, msg if sent else "Không kết nối được YouTrack")
+        self.sent = sent
+
+
+_YT_CODES = {400: "youtrack_bad_request", 401: "youtrack_unauthorized", 403: "youtrack_unauthorized",
+             404: "youtrack_not_found", 409: "youtrack_conflict", 413: "youtrack_too_large"}  # fmt: skip
+
+
+def yt_code(e: YtError) -> str:
+    """The machine code of a YouTrack failure, beside its text: the page words it (and offers "Báo lỗi") like every
+    other API error. youtrack_unknown: a write may have landed, so the page says check before doing it again."""
+    if isinstance(e, YtUnreachable):
+        return "youtrack_unknown" if e.sent else "youtrack_unreachable"
+    return _YT_CODES.get(e.status, "youtrack_error")
 
 
 def _label(v):
@@ -335,9 +348,13 @@ class YtClient:
         task = self._inflight.get(key)  # concurrent identical requests share one YouTrack call
         if task is None:
             task = self._inflight[key] = asyncio.ensure_future(fn())
-            task.add_done_callback(  # only our own entry: set_auth may have replaced it
-                lambda t: self._inflight.get(key) is t and self._inflight.pop(key)
-            )
+            def done(t):
+                if self._inflight.get(key) is t:  # only our own entry: set_auth may have replaced it
+                    self._inflight.pop(key)
+                if not t.cancelled():
+                    t.exception()  # consumed even when every caller gave up waiting (wait_for + shield)
+
+            task.add_done_callback(done)
         value = await asyncio.shield(task)
         if auth != self._auth or forgot != self._forgot.get(key, 0):
             return value  # token changed / a write or forget() meanwhile: don't cache what was seen before
@@ -366,7 +383,7 @@ class YtClient:
         if (a.get("size") or 0) > MAX_FILE:
             raise YtError(413, "Tệp quá lớn để xem trong dashboard — mở trên YouTrack")
         url = urljoin(self.base + "/", a.get("url") or "")  # a path from the host root
-        if urlsplit(url).netloc != urlsplit(self.base).netloc:
+        if _origin(url) != _origin(self.base):
             raise YtError(502, "YouTrack trả về link tệp lạ")
         try:
             r = await self._http().get(url, headers={"Accept": "*/*"})
@@ -375,6 +392,17 @@ class YtClient:
         if r.status_code >= 400:
             raise YtError(502, f"YouTrack {r.status_code} khi tải tệp")
         return r.content
+
+
+def _origin(url: str) -> tuple:
+    """(scheme, user info, host, port) as compared: case-blind, an explicit default port the same as none."""
+    u = urlsplit(url)
+    try:
+        port = u.port
+    except ValueError:  # not a port: matches nothing
+        return (url,)
+    scheme = u.scheme.lower()
+    return scheme, u.username, u.password, u.hostname, port or {"http": 80, "https": 443}.get(scheme)
 
 
 LIST_PAGE = 100  # rows a page of `pages`

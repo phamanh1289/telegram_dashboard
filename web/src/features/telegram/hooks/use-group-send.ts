@@ -46,7 +46,7 @@ export function useGroupSend(chatIds: string[], replyTo?: string) {
       const got = [...r.got], fails: { chat: string; e: unknown }[] = [];
       for (const chat of chatIds.filter((c) => !got.includes(c))) {
         try {
-          await api<QaPosted>("/qa", { method: "POST", json: { chat_id: chat, text, reply_to: null, start: false } });
+          await api<QaPosted>("/qa", { method: "POST", json: { chat_id: chat, text, reply_to: null, start: false, request_id: r.id } });
           got.push(chat);
         } catch (e) {
           fails.push({ chat, e });

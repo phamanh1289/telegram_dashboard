@@ -85,7 +85,6 @@ export const useSaveBriefing = () => useMutation({
   mutationFn: (text: string) => api<null>("/briefing/saved", { method: "POST", json: { text } }),
   onSuccess: () => toast({ text: tr("Đã gửi vào Saved Messages") }),
   onError: (e) => toast({ text: errorText(e, {
-    not_connected: tr("Telegram chưa kết nối."),
     delivery_unknown: tr("Chưa rõ đã gửi chưa (mất kết nối giữa chừng). Xem Saved Messages trước khi gửi lại."),
   }, tr("Không gửi được, thử lại sau")) }),
 });

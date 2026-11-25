@@ -196,13 +196,23 @@ def _codex_catalog(cfg: dict) -> Path:
     return p if p and p.is_file() and p.is_relative_to(_codex_home()) else _codex_home() / "models_cache.json"
 
 
+_MODELS: dict = {}  # the last _codex_models() answer, by its catalog file's path / mtime / size and the proxy flag
+
+
 def _codex_models() -> tuple[list[dict], list[str]]:
     """The models Codex lists (shown ones only) with each one's efforts, and every effort any takes.
     Routed ids ("AgentAPI/agentgw-opus-5.5", "combo/gemini": opencodex) only when a local proxy routes them,
     grouped by their provider like the proxy's own model page."""
     cfg = _codex_config()
-    data = _read_json(_codex_catalog(cfg)).get("models")
-    proxy = bool(_codex_proxy(cfg))
+    path, proxy = _codex_catalog(cfg), bool(_codex_proxy(cfg))
+    try:
+        st = path.stat()
+        key = (str(path), st.st_mtime_ns, st.st_size, proxy)
+    except OSError:
+        key = None
+    if key and _MODELS.get("key") == key:  # read on every Codex run (run_choice): parse a 600 KB file once per change
+        return _MODELS["value"]
+    data = _read_json(path).get("models")
     rows, union = [], set()
     for m in data if isinstance(data, list) else []:
         if not isinstance(m, dict) or m.get("visibility") != "list":
@@ -226,7 +236,9 @@ def _codex_models() -> tuple[list[dict], list[str]]:
                 "efforts": ["", *efforts] if efforts else [],
             }
         )
-    return rows, [e for e in CODEX_EFFORTS if e in union] or ["low", "medium", "high", "xhigh"]
+    out = rows, [e for e in CODEX_EFFORTS if e in union] or ["low", "medium", "high", "xhigh"]
+    _MODELS.update(key=key, value=out)
+    return out
 
 
 def _codex_levels(model: str) -> list[str]:

@@ -6,7 +6,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
 import { useDocTag } from "@/features/docs/components/doc-tag";
 import { ytPeople } from "@/features/youtrack/lib/mentions";
-import { type Attachment, type Comment, DAY, when, yt } from "@/features/youtrack/lib/yt";
+import { type Attachment, type Comment, DAY, when, yt, ytFail } from "@/features/youtrack/lib/yt";
 import { useJoin, useMention } from "@/shared/components/mention";
 import { Button } from "@/shared/components/ui/button";
 import { Skeleton } from "@/shared/components/ui/skeleton";
@@ -68,7 +68,7 @@ export function Comments({ id, comments, pending, failed, files, draft, write }:
       setText("");
       toast({ text: t("Đã gửi bình luận") });
       await qc.invalidateQueries({ queryKey: ["yt", "detail", id] });
-    } catch (e) { toast({ text: t("Không gửi được: {msg}", { msg: (e as Error).message }) }); }
+    } catch (e) { const f = ytFail(e); toast({ text: t("Không gửi được: {msg}", { msg: f.msg }), failure: f.failure }); }
     finally { setSending(false); }
   }
 

@@ -13,10 +13,7 @@ const ERRORS: Record<string, Key> = {
   digest_consent_required: "Cần cho phép AI đọc nhóm này trước.",
   digest_empty: "Không có tin nào để tóm tắt.",
   digest_too_large: "Quá nhiều tin cho một lần tóm tắt (tối đa 2.000 tin); hãy thu hẹp khoảng thời gian.",
-  not_connected: "Telegram chưa kết nối.",
-  ai_not_configured: "AI đang chọn chưa cài hoặc chưa đăng nhập, xem Cài đặt › AI.",
   ai_timeout: "AI phản hồi quá lâu; thử lại hoặc thu hẹp khoảng thời gian.",
-  ai_provider_error: "AI gặp lỗi; thử lại.",
   ai_permission_changed: "Quyền đã đổi trong lúc xử lý; kết quả bị bỏ.",
   chat_not_found: "Không tìm thấy nhóm.",
 };
@@ -73,10 +70,12 @@ export const answeredQuery = {
   staleTime: 60_000,
 };
 
-/** chat_id -> replies from others to questions still open with BE, newer than the digest (Với BE: "vừa trả lời"). */
+/** chat_id -> replies from others to questions still open with BE, newer than the digest (Với BE: "vừa trả lời");
+ *  `failed`: groups not read (offline, an error), shown as "không đọc được", not "Chờ trả lời". */
 export const beRepliesQuery = {
   queryKey: ["briefing-be-replies"],
-  queryFn: ({ signal }: { signal: AbortSignal }) => api<Record<string, BeReply[]>>("/briefing/be-replies", { signal }),
+  queryFn: ({ signal }: { signal: AbortSignal }) =>
+    api<{ replies?: Record<string, BeReply[]>; failed?: string[] }>("/briefing/be-replies", { signal }),
   staleTime: 60_000,
 };
 /** The replies to an item's question (any of its cited messages), and the guesses (`direct` false) when nobody replied. */

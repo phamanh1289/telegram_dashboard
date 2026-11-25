@@ -3,10 +3,10 @@ import contextlib
 import functools
 import json
 import os
+import re
 import shlex
 import shutil
 import signal
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -67,25 +67,28 @@ def _load_dotenv(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip("'\""))
 
 
-SECRET_ENV = (
-    "TELEGRAM_",
-    "YOUTRACK_",
-    "YT_",  # .env lands in os.environ (yt_dashboard reads it)
-    # the user's other credentials: an agent's shell has no business with them (the AI CLIs keep theirs)
-    "GH_TOKEN",
-    "GITHUB_TOKEN",
-    "NPM_TOKEN",
-    "AWS_",
-    "AZURE_",
-    "GOOGLE_APPLICATION_CREDENTIALS",
-)
+APP_ENV = ("TELEGRAM_", "YOUTRACK_", "YT_")  # this app's own secrets (.env lands in os.environ): no child gets them
+# The user's other credentials, by name: an agent's shell has no business with them. A pattern, not a list of tools:
+# a new token (FIREBASE_TOKEN, NODE_AUTH_TOKEN, SSH_AUTH_SOCK…) stays out without anyone adding it here. Not a strict
+# allowlist either: builds in the sandbox need the user's toolchain env (JAVA_HOME, ANDROID_HOME, NVM_DIR…).
+SECRET_NAME = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|CREDENTIAL|PRIVATE_KEY|AUTH|^AWS_|^AZURE_",
+                         re.I)  # fmt: skip
+# What the AI CLIs themselves sign in with (a key, a proxy token): kept, or no run starts.
+CLI_ENV = ("ANTHROPIC_", "CLAUDE_", "OPENAI_", "CODEX_", "GEMINI_", "GOOGLE_API_KEY", "GOOGLE_GENAI_")
 RUN_DIR = Path.home() / ".telegram_dashboard"  # outside every install's data/: one server per machine
 DB_NAME = "dashboard.sqlite3"
 
 
 def child_env() -> dict[str, str]:
-    """os.environ minus secrets (this app's Telegram API / YouTrack token, cloud and git tokens): for AI CLI runs."""
-    return {k: v for k, v in os.environ.items() if not k.startswith(SECRET_ENV)}
+    """os.environ minus secrets (this app's Telegram API / YouTrack token; any other token, key or password by name,
+    except what the AI CLIs sign in with): for AI CLI runs and the commands they start."""
+    return {k: v for k, v in os.environ.items()
+            if not k.startswith(APP_ENV) and (k.startswith(CLI_ENV) or not SECRET_NAME.search(k))}  # fmt: skip
+
+
+def user_env() -> dict[str, str]:
+    """os.environ minus this app's own secrets: for git push / gh, which need the user's own tokens and SSH agent."""
+    return {k: v for k, v in os.environ.items() if not k.startswith(APP_ENV)}
 
 
 def api_token_path() -> Path:
@@ -108,15 +111,36 @@ def ensure_api_token() -> str:
     return tok
 
 
+EXIT_GRACE = 10  # seconds after a CLI exits before what it left holding its pipes is killed
+
+
+def away_dir() -> Path:
+    """This app's own empty folder (0700, under RUN_DIR which no AI turn reads): the cwd of every CLI run with no
+    project, never the temp dir (a Codex edit turn writes there; Claude would load <cwd>/.claude/settings.json hooks
+    from it) nor a project (its .npmrc / node_modules / nested repos). Also where mcp_pin starts stdio servers."""
+    home = RUN_DIR / "mcp"
+    home.mkdir(parents=True, exist_ok=True, mode=0o700)
+    return home
+
+
+async def reap_after_exit(proc) -> None:
+    """The CLI exited but a command it started still holds stdout/stderr: a reader would wait on the pipe forever.
+    Kill what's left after a grace period."""
+    await proc.wait()
+    await asyncio.sleep(EXIT_GRACE)
+    kill_tree(proc)
+
+
 async def run_cli(
-    cmd: list[str], stdin: bytes | None = None, timeout: float = 30, cwd=None, merge: bool = False
+    cmd: list[str], stdin: bytes | None = None, timeout: float = 30, cwd=None, merge: bool = False, *,
+    env: dict[str, str] | None = None,
 ) -> tuple[int, bytes, bytes] | None:
     """(exit code, stdout, stderr) of a short CLI call, run outside any project (`merge`: stderr into
     stdout). None when it did not start or ran past `timeout`; a timed-out or abandoned call is
     killed and reaped, never left running."""
     try:
         proc = await asyncio.create_subprocess_exec(
-            *cmd, cwd=cwd or tempfile.gettempdir(), env=child_env(),
+            *cmd, cwd=cwd or away_dir(), env=env or child_env(),
             stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT if merge else asyncio.subprocess.PIPE,

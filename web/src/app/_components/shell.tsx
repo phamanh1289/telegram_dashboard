@@ -1,13 +1,13 @@
 "use client";
 
-import { BookOpenText, Bug, ExternalLink, Moon, Send, Settings, Sun } from "lucide-react";
+import { BookOpenText, Bug, ExternalLink, Moon, RotateCw, Send, Settings, Sun } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, ViewTransition } from "react";
 import { AiQuota } from "@/shared/components/ai";
 import { Button, buttonVariants } from "@/shared/components/ui/button";
-import { errorText, updateStateQuery } from "@/shared/lib/api";
+import { errorText, isOffline, OFFLINE_TEXT, statusQuery, updateStateQuery } from "@/shared/lib/api";
 import { saveLang, t as tPlain, useT } from "@/shared/lib/i18n";
 import { Told } from "@/features/telegram/lib/inbox";
 import { useWaitingCount } from "@/features/telegram/lib/qa";
@@ -20,6 +20,7 @@ import { needOf, skipAskKey, skipNeedKey } from "@/features/youtrack/lib/yt-stat
 import { useDone } from "@/features/telegram/lib/follow";
 import { useAsked } from "@/features/youtrack/lib/trace";
 import { Pill } from "@/shared/components/ui/segmented";
+import { WarnBar } from "@/shared/components/ui/warn-bar";
 import { Hint } from "@/shared/components/ui/hint";
 import { prefillReport } from "@/features/settings/lib/contact-prefill";
 import { RestartPrompt } from "@/features/settings/components/update";
@@ -76,6 +77,31 @@ function useUpdateState() {
   return q.data?.behind ?? 0;
 }
 
+/** The local dashboard not answering: the shared /status read failed with fetch's TypeError. Any page may ask (the
+ *  Telegram inbox hides its own stream banner then); the shell's `useDashboardWatch` keeps the read going. */
+export function useDashboardDown() {
+  return isOffline(useQuery({ ...statusQuery, staleTime: Infinity }).error);
+}
+
+/** One watch for every page (in the top bar): /status re-read every 15s, every 5s while the dashboard is down, and on
+ *  coming back to the window (one local query, nothing per row), so an idle page notices too; another read failing the
+ *  same way asks /status at once; once it answers again, what failed meanwhile is read again. */
+function useDashboardWatch() {
+  const qc = useQueryClient();
+  const st = useQuery({ ...statusQuery, refetchInterval: (q) => (q.state.status === "error" ? 5000 : 15000), refetchOnWindowFocus: true });
+  const down = isOffline(st.error);
+  useEffect(() => qc.getQueryCache().subscribe((e) => {
+    if (e.type === "updated" && e.action.type === "error" && isOffline(e.action.error) && e.query.queryKey[0] !== "status")
+      void qc.invalidateQueries({ queryKey: statusQuery.queryKey }, { cancelRefetch: false });
+  }), [qc]);
+  const was = useRef(false);
+  useEffect(() => {
+    if (was.current && !down) void qc.invalidateQueries();
+    was.current = down;
+  }, [down, qc]);
+  return { down, checking: st.isFetching, retry: () => void qc.invalidateQueries() };
+}
+
 /** Module switch left; AI quota, guide, theme and the shared settings right. */
 /** `onClose`: Settings only, its leave (the closing animation, then back): the gear clicked again runs it. */
 export function TopBar({ module, children, onClose }: { module: Module; children?: React.ReactNode; onClose?: () => void }) {
@@ -86,6 +112,7 @@ export function TopBar({ module, children, onClose }: { module: Module; children
   useWatchGlobal((id, text) => { toast({ text: `${id}: ${text}` }); note(id, text); });
   useWaitNudge(true); // Chờ bổ sung waiting over 3 days: once a day, on every page
   const behind = useUpdateState();
+  const server = useDashboardWatch();
   // "Theo hệ thống": follow the OS when it flips while the page is open.
   useEffect(() => {
     const mq = matchMedia("(prefers-color-scheme: dark)");
@@ -94,7 +121,7 @@ export function TopBar({ module, children, onClose }: { module: Module; children
     return () => mq.removeEventListener("change", onChange);
   }, []);
   return (
-    <div className="col-span-full flex h-11 items-center gap-2 border-b bg-paper-2 px-2 sm:px-3">
+    <div className="relative col-span-full flex h-11 items-center gap-2 border-b bg-paper-2 px-2 sm:px-3">
       {children}
       <nav aria-label={t("Chuyển module")} className="flex gap-0.5 rounded-[var(--radius-card)] bg-paper-3 p-0.5 shadow-groove">
         {/* Module switch: each tab and the pill keep a name across pages, so the pill slides while the tabs move with it
@@ -143,6 +170,11 @@ export function TopBar({ module, children, onClose }: { module: Module; children
         </Link></Hint>
       </div>
       <RestartPrompt />
+      {/* over the top of the page, under the bar: no page's layout moves for it */}
+      <WarnBar open={server.down} className="absolute inset-x-0 top-full z-60"
+        action={<Button size="xs" variant="outline" aria-busy={server.checking} onClick={server.retry}><RotateCw /> {t("Thử lại")}</Button>}>
+        {OFFLINE_TEXT()}
+      </WarnBar>
     </div>
   );
 }

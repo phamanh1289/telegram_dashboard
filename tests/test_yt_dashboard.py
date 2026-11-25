@@ -2,6 +2,7 @@ import asyncio
 from urllib.parse import parse_qs
 
 import httpx
+import pytest
 from fastapi import FastAPI
 from telegram_dashboard.youtrack.api import build_router
 from telegram_dashboard.youtrack.client import YtError
@@ -158,6 +159,20 @@ async def test_statesince_reads_project_transitions_once_then_falls_back_per_tic
     assert calls.count("/api/activitiesPage") == 1
     await svc.since_all(["VA-1@400", "VA-2@250"])
     assert calls.count("/api/activitiesPage") == 1  # cached: no second project read
+
+
+async def test_statesince_shows_youtrack_down_instead_of_no_data():
+    calls = []
+
+    def handler(req):
+        calls.append(req.url.path)
+        return httpx.Response(503 if req.url.path == "/api/activitiesPage" else 200, json=[])
+
+    svc = make(handler)
+    with pytest.raises(YtError) as e:
+        await svc.since_all(["VA-1@400", "VA-2@250"])
+    assert e.value.status == 502
+    assert calls == ["/api/activitiesPage"]  # no per-ticket fallback against a server that is down
 
 
 async def test_a_write_that_timed_out_is_unknown_and_no_cached_ticket_is_trusted():

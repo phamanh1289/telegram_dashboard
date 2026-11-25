@@ -16,7 +16,7 @@ import { Input } from "@/shared/components/ui/input";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { Textarea } from "@/shared/components/ui/textarea";
-import { api, errorText, type YouTrackIssue } from "@/shared/lib/api";
+import { api, ApiError, errorText, isOffline, type YouTrackIssue } from "@/shared/lib/api";
 import { getPref, setPref } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 import { resolveProject, ytFieldsQuery, ytMeQuery, ytPeopleQuery, ytProjectsQuery } from "@/features/youtrack/lib/yt";
@@ -301,11 +301,11 @@ export function TicketForm({ title, hint, project: startProject, initial, note: 
   const primary = () => { if (mode === "ai") runDraft(); else if (canCreate) create.mutate(); };
   // the prompt box handles its own Enter (and marks it handled)
   const onKey = (e: KeyboardEvent) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.defaultPrevented) { e.preventDefault(); primary(); } };
+  const createUnknown = create.isError && (isOffline(create.error) || (create.error instanceof ApiError && ["youtrack_unknown", "http_error"].includes(create.error.code)));
   const aiError = draft.isError && (draft.error as Error).name !== "AbortError" && errorText(draft.error, {
     ai_scope_not_allowed: t("Tin này chưa được cấp quyền dùng AI."),
     ai_timeout: t("{name} chạy quá lâu, thử lại.", { name: aiName }),
-    ai_provider_error: t("{name} lỗi, kiểm tra đăng nhập {name} trong Cài đặt.", { name: aiName }),
-  }, t("AI chưa soạn được ticket."));
+  }, t("AI chưa soạn được ticket.")); // ai_provider_error: COMMON (no network vs the CLI's own reason)
   // grid-cols-1 (minmax(0,1fr)) on grid sections: a long one-line text must truncate, not widen the column; a wider
   // column overflowed the scroller and autoFocus scrolled it sideways, cutting the tab off.
   const slide = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.18, ease: [0.2, 0, 0, 1] as const } };
@@ -391,14 +391,19 @@ export function TicketForm({ title, hint, project: startProject, initial, note: 
                 </p>
               </div>
               {extra}
-              {create.isError && (
+              {create.isError && (createUnknown ? (
+                // cut mid-way: YouTrack may have it already; "failed" would make the user file it twice
+                <AiResultCard error title={t("Chưa rõ đã tạo ticket chưa")}>
+                  {t("Mất kết nối giữa chừng: tìm ticket trên YouTrack trước khi tạo lại.")}
+                </AiResultCard>
+              ) : (
                 <AiResultCard error title={t("Không tạo được ticket")}>
                   {errorText(create.error, {
                     youtrack_unauthorized: t("YouTrack từ chối token (YOUTRACK_TOKEN)."),
                     youtrack_project_not_found: t("Không thấy project này trên YouTrack."),
                   }, t("Không tạo được ticket."))}
                 </AiResultCard>
-              )}
+              ))}
             </motion.section>
           )}
         </AnimatePresence>

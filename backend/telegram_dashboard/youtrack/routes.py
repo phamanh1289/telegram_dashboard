@@ -48,22 +48,27 @@ def build_router(
         sets = (("Type", body.type), ("Priority", body.priority), ("Assignee", body.assignee))
         cmd = " ".join(f"{k} {{{v}}}" for k, v in sets if v)
         warning = ""
-        if cmd:
-            post = {"query": cmd, "issues": [{"idReadable": issue_id}]}
-            try:
-                await yt_dashboard.yt("/api/commands", post=post, fields="id")
-            except YtError as e:
-                log.warning("ticket %s created, fields not set: %s", issue_id, e.message)
-                warning = f"Chưa đặt được Type / Priority / Assignee: {e.message}."
-        if body.chat_id and body.message_id:  # the tag's screenshot goes with the bug report
-            photo = await photo_file(request, body.chat_id, int(body.message_id))
-            if photo is not None:
+        try:  # the ticket exists from here on: no step after it may fail the request (a retry files a duplicate)
+            if cmd:
+                post = {"query": cmd, "issues": [{"idReadable": issue_id}]}
                 try:
-                    await yt_dashboard.attach(issue_id, photo)
+                    await yt_dashboard.yt("/api/commands", post=post, fields="id")
                 except YtError as e:
-                    log.warning("ticket %s created, photo not attached: %s", issue_id, e.message)
-                    warning = f"{warning} Không đính kèm được ảnh.".strip()
-        yt_dashboard.stale()  # the YouTrack page shows it on its next refresh
+                    log.warning("ticket %s created, fields not set: %s", issue_id, e.message)
+                    warning = f"Chưa đặt được Type / Priority / Assignee: {e.message}."
+            if body.chat_id and body.message_id:  # the tag's screenshot goes with the bug report
+                photo = await photo_file(request, body.chat_id, int(body.message_id))
+                if photo is not None:
+                    try:
+                        await yt_dashboard.attach(issue_id, photo)
+                    except YtError as e:
+                        log.warning("ticket %s created, photo not attached: %s", issue_id, e.message)
+                        warning = f"{warning} Không đính kèm được ảnh.".strip()
+        except Exception as e:
+            log.warning("ticket %s created, follow-up step failed: %s", issue_id, type(e).__name__)
+            warning = f"{warning} Đã tạo ticket nhưng một bước sau đó lỗi ({type(e).__name__}).".strip()
+        finally:
+            yt_dashboard.stale(issue_id)  # the YouTrack page shows it on its next refresh
         return YouTrackIssue(id=issue_id, url=url, warning=warning)
 
 

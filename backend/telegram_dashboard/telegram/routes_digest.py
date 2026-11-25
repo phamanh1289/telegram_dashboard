@@ -1,6 +1,7 @@
 """HTTP for Digest / Briefing and Q&A: what the AI may read of a group, its summaries, and the question threads."""
 
 import asyncio
+import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -11,17 +12,20 @@ from fastapi.responses import StreamingResponse
 from ..ai_jobs import stream_answer
 from ..ai_run import client_gone
 from ..errors import int_or_404
-from ..models import (
-    BeReply,
+from ..models import GroupInfo, MessageDTO, StoredMessage, to_dto
+from ..storage import _dt
+from ..tasks import mark_tags
+from .digest import aware
+from .live_reads import TelegramReads
+from .models_digest import (
+    BeReplies,
     BriefingAskRequest,
     BriefingItem,
     DigestConsent,
     DigestConsentRequest,
     DigestRequest,
     DigestResult,
-    GroupInfo,
     HistoryPage,
-    MessageDTO,
     QaAcceptRequest,
     QaItem,
     QaList,
@@ -31,13 +35,7 @@ from ..models import (
     QaSummaryRequest,
     SavedDigest,
     SavedMessageRequest,
-    StoredMessage,
-    to_dto,
 )
-from ..storage import _dt
-from ..tasks import mark_tags
-from .digest import aware
-from .live_reads import TelegramReads
 from .qa import ack_only, chain_code, find_threads, has_tag, qa_code
 from .routes import S, known_chat
 
@@ -216,8 +214,12 @@ def build_router(live_reads: TelegramReads) -> APIRouter:
         opens = (reply_to is None or body.start) and not joined and has_tag(body.text)
         code = qa_code(datetime.now(UTC)) if opens else None
         text = body.text.strip() + (f"\n{code}" if code else "")
+        # the same submit sent twice (double click, a resend after "unknown") carries the same random_id
+        rid = None
+        if body.request_id is not None:
+            rid = int.from_bytes(hashlib.sha256(f"{body.chat_id}:{body.request_id}".encode()).digest()[:8]) >> 1
         try:
-            mid = await s.bridge.send_direct(body.chat_id, reply_to, text)
+            mid = await s.bridge.send_direct(body.chat_id, reply_to, text, random_id=rid)
         finally:  # also when the result is unknown: the list read next shows whether it landed
             live_reads.invalidate_qa(body.chat_id)
         if reply_to:
@@ -238,7 +240,10 @@ def build_router(live_reads: TelegramReads) -> APIRouter:
         await known_chat(s, live_reads, body.chat_id)
         ids = [int_or_404(i, "message_not_found") for i in body.message_ids]
         accepted = None if body.accepted_id is None else int_or_404(body.accepted_id, "message_not_found")
-        fetch = s.bridge.fetch_ids if s.bridge.state == "connected" else None
+        fetch = None
+        if s.bridge.state == "connected":
+            def fetch(chat_id: str, ids: list[int]):
+                return live_reads.scan(s.bridge.fetch_ids(chat_id, ids))
 
         async def work(on_text):
             return {"text": await s.ai.qa_summary(body.chat_id, ids, fetch, accepted, body.intro, on_text)}
@@ -268,7 +273,7 @@ def build_router(live_reads: TelegramReads) -> APIRouter:
 
 
     @router.get("/api/briefing/be-replies")
-    async def briefing_be_replies(request: Request) -> dict[str, list[BeReply]]:
+    async def briefing_be_replies(request: Request) -> BeReplies:
         """chat_id -> replies from others to questions still open with BE, newer than the digest (Với BE shows them)."""
         return await S(request).digest.be_replies()
 

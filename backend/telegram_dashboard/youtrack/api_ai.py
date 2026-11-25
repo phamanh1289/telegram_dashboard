@@ -12,7 +12,7 @@ from .. import providers
 from ..agent import read_task_result, task_result_path
 from ..ai import data_json, json_object, parse_ticket
 from ..ai_jobs import stream_answer
-from ..ai_run import client_gone, no_retry
+from ..ai_run import OFFLINE, client_gone, no_retry
 from ..errors import ApiError
 from ..links import ISSUE, link_block
 from ..telegram.digest import VN
@@ -132,7 +132,8 @@ async def _ai(
                             on_text=on_text, feature=feature, yt=True, shell=shell and bool(code),
                             ref=_session_ref(request))  # fmt: skip
     except ApiError as e:
-        msg = AI_ERR.get(e.code, f"{{ai}} lỗi ({e.code})").format(ai=name())
+        code = "ai_offline" if e.code == "ai_provider_error" and OFFLINE.search(e.detail or "") else e.code
+        msg = AI_ERR.get(code, f"{{ai}} lỗi ({e.code})").format(ai=name())
         raise YtError(min(e.status, 502), f"{msg}: {e.detail}" if e.detail else msg) from None
     finally:
         no_retry.reset(token)

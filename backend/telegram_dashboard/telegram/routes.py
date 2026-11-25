@@ -65,7 +65,7 @@ def prune_media(settings: Settings, chat_id: str | None = None) -> None:
 
 
 async def photo_file(request: Request, chat_id: str, mid: int) -> Path | None:
-    """Cached copy of a kept tag's photo, downloaded on first use."""
+    """Cached copy of a kept tag's photo, downloaded on first use (None: no photo, or offline)."""
     s = S(request)
     m = await s.db.read(s.store.get_message, chat_id, mid)
     if m is None or m.media_kind != "photo":
@@ -76,11 +76,9 @@ async def photo_file(request: Request, chat_id: str, mid: int) -> Path | None:
     if not dest.is_file():
         if s.bridge.state != "connected":
             return None
-        try:
-            if not await s.bridge.download_photo(chat_id, mid, dest):
-                return None
-        except Exception as e:
-            log.warning("photo %s/%s not downloaded: %r", chat_id, mid, e)
+        # a flood wait / RPC / connection error surfaces (app handlers); only "no photo there" is None
+        reads = request.app.state.live_reads
+        if not await reads.click(s.bridge.download_photo(chat_id, mid, dest)):
             return None
     return dest
 
@@ -433,6 +431,8 @@ def build_router(
         session = Path(f"{get_settings().session_path}.session")
         if session.exists():
             session.chmod(0o600)
+        S(request).bridge.forget_account()  # maybe another account than before
+        live_reads.forget()  # groups, members, Q&A read as the account before
         await S(request).bridge.start()  # the run loop stopped at login_required
         return TelegramSignInResult(password_required=False)
 

@@ -151,7 +151,7 @@ async def test_backfill_mentions_stores_only_tagged(env):
         ("Team A", "supergroup", msg(A, 5, "@me hi", sender="7"), False),
         ("Team A", "supergroup", msg(A, 6, "@me done?", sender="7"), True),
     ]
-    env.fake.fetch_mentions = lambda cutoff: _async(tagged)
+    env.fake.fetch_mentions = lambda cutoff, skip: _async(tagged)
     await env.bridge.backfill_mentions()
     assert env.store.is_tracking(A)
     assert env.store.get_message(A, 5).text == "@me hi"
@@ -238,7 +238,7 @@ def test_store_mentions_reports_only_new_pending_tags(env):
     tags = [("A", "supergroup", msg(A, 1, "@me hi"), False),
             ("A", "supergroup", msg(A, 2, "@me #TB"), False),  # ignore rule
             ("A", "supergroup", msg(A, 3, "@me ok?"), True)]  # fmt: skip
-    assert env.store.store_mentions(tags) == [1]
+    assert env.store.store_mentions(tags) == [(A, 1)]
     edited = msg(A, 1, "@me hi!", edit=100)
     assert env.store.store_mentions([("A", "supergroup", edited, False)]) == []  # no 2nd notify
     assert env.store.get_message(A, 1).text == "@me hi!"
@@ -362,7 +362,7 @@ def test_backfill_neither_resurrects_a_purge_nor_recloses_a_reopened_tag(env):
     assert env.store.store_mentions(old) == [] and env.store.get_message(A, 1) is None  # stays forgotten
     assert not env.store.is_tracking(A)
     new = msg(A, 2, "@me again").model_copy(update={"date": datetime.now(UTC) + timedelta(seconds=5)})
-    assert env.store.store_mentions([("Team", "supergroup", new, False)]) == [2]  # a new tag brings it back
+    assert env.store.store_mentions([("Team", "supergroup", new, False)]) == [(A, 2)]  # a new tag brings it back
     env.store.set_handled(A, 2, False)  # reopened after a reply: a later backfill must not close it
     env.store.store_mentions([("Team", "supergroup", new, True)])
     assert not env.store.get_message(A, 2).handled

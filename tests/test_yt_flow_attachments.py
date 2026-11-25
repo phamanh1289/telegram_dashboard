@@ -32,7 +32,7 @@ async def test_flow_save_conflict_writes_nothing(tmp_path):
     c, _ = flow_app(yt, tmp_path)
     async with c:
         r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
-        assert r.status_code == 409 and "người khác" in r.json()["error"] and yt.writes == []
+        assert r.status_code == 409 and "người khác" in r.json()["error"]["detail"] and yt.writes == []
         r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved()})  # opened before the file existed
         assert r.status_code == 409 and yt.writes == []
 
@@ -109,9 +109,9 @@ async def test_flow_save_rejects_no_change_and_bad_flow(tmp_path):
     c, _ = flow_app(yt, tmp_path)
     async with c:
         r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": FLOW, "base": "1-1"})
-        assert r.status_code == 400 and r.json()["error"] == "Không có thay đổi"
+        assert r.status_code == 400 and r.json()["error"]["detail"] == "Không có thay đổi"
         r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": {"screens": [], "links": []}, "base": "1-1"})
-        assert r.status_code == 400 and r.json()["error"] == "UI flow không hợp lệ"
+        assert r.status_code == 400 and r.json()["error"]["detail"] == "UI flow không hợp lệ"
     assert yt.writes == []
 
 
@@ -121,7 +121,7 @@ async def test_flow_save_without_engine_writes_nothing(tmp_path):
     (tmp_path / "uiflow.js").unlink()
     async with c:
         r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": FLOW})
-    assert r.status_code == 503 and "uiflow.js" in r.json()["error"] and yt.writes == []
+    assert r.status_code == 503 and "uiflow.js" in r.json()["error"]["detail"] and yt.writes == []
 
 
 async def test_upload_401_reaches_the_ui_message():
@@ -152,7 +152,7 @@ async def test_flow_save_upload_timeout_is_unknown_not_failed(tmp_path):
     svc._cache["issue:VA-1"] = (time.monotonic(), {})
     async with c:
         r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
-    assert r.status_code == 502 and r.json()["error"].startswith("Không rõ đã lưu chưa")
+    assert r.status_code == 502 and r.json()["error"]["detail"].startswith("Không rõ đã lưu chưa")
     assert yt.writes == [UPLOAD]  # no DELETE, no comment
     assert "issue:VA-1" not in svc._cache  # stale ran on this path too
 
@@ -162,7 +162,7 @@ async def test_flow_save_upload_500_is_a_plain_failure(tmp_path):
     c, _ = flow_app(yt, tmp_path)
     async with c:
         r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
-    assert r.status_code == 502 and r.json()["error"].startswith("YouTrack 500") and yt.writes == [UPLOAD]
+    assert r.status_code == 502 and r.json()["error"]["detail"].startswith("YouTrack 500") and yt.writes == [UPLOAD]
 
 
 def test_real_engine_survives_build_html():
@@ -243,7 +243,7 @@ async def test_only_the_files_author_may_replace_or_remove_it(tmp_path):
         got = (await c.get("/api/yt/flow", params={"issue": "VA-1"})).json()
         assert (got["author"], got["yours"]) == ({"id": "1-2", "login": "an", "name": "An"}, False)
         r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
-        assert r.status_code == 403 and r.json()["error"].startswith("Chỉ An (người lưu UI flow này)")
+        assert r.status_code == 403 and r.json()["error"]["detail"].startswith("Chỉ An (người lưu UI flow này)")
         r = await c.post("/api/yt/flow/delete", json={"id": "VA-1", "base": "1-1"})
         assert r.status_code == 403 and yt.writes == []  # nothing uploaded, removed or commented
         yt.files[0]["author"] = ME

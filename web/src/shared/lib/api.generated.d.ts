@@ -148,27 +148,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/tasks/{task_id}/reopen": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reopen Task
-         * @description Run the same task again in a fresh session on the CLI that ran it (its model/effort picks
-         *     belong to that CLI); the old result goes once it runs.
-         */
-        post: operations["reopen_task_api_tasks__task_id__reopen_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/tasks/{task_id}/events": {
         parameters: {
             query?: never;
@@ -3093,6 +3072,15 @@ export interface components {
              */
             qa: string;
         };
+        /** BeReplies */
+        BeReplies: {
+            /** Replies */
+            replies?: {
+                [key: string]: components["schemas"]["BeReply"][];
+            };
+            /** Failed */
+            failed?: string[];
+        };
         /**
          * BeReply
          * @description A message replying to an open question with BE that the latest digest has not read yet.
@@ -4727,6 +4715,8 @@ export interface components {
              * @default false
              */
             start: boolean;
+            /** Request Id */
+            request_id?: string | null;
         };
         /** QaPosted */
         QaPosted: {
@@ -5558,35 +5548,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: string[];
                     };
-                };
-            };
-        };
-    };
-    reopen_task_api_tasks__task_id__reopen_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -9132,9 +9093,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: components["schemas"]["BeReply"][];
-                    };
+                    "application/json": components["schemas"]["BeReplies"];
                 };
             };
         };

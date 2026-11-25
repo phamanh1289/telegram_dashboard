@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type AiAccount, type AiCatalogEntry, type AiPicks, type AiPrefs, api, type ClaudeAccount } from "@/shared/lib/api";
+import { type AiAccount, type AiCatalogEntry, type AiPicks, type AiPrefs, api, ApiError, type ClaudeAccount } from "@/shared/lib/api";
 import { t, useLang } from "@/shared/lib/i18n";
 import { byUnit } from "@/shared/lib/time";
 
@@ -105,9 +105,10 @@ function useOtherAccounts(every: number | false = false) {
   });
 }
 
-/** One CLI's login in one shape, whichever CLI it is. */
+/** One CLI's login in one shape, whichever CLI it is. `error`: the login could not be read (server down, CLI silent…),
+ *  so `installed` is unknown (undefined), never "not installed". */
 export type AccountView = {
-  checking: boolean; installed: boolean; loggedIn: boolean; email?: string | null; plan?: string | null;
+  checking: boolean; installed?: boolean; error?: unknown; loggedIn: boolean; email?: string | null; plan?: string | null;
   pending: boolean; url?: string | null; install: string; usage: ClaudeAccount["usage"]; usage_at?: string | null;
   /** "no_token": not live, `usage` is the last reading (Claude only). */
   usage_error?: string | null;
@@ -125,15 +126,18 @@ export function useAccounts(every: number | false = false): Record<Provider, Acc
   const { info } = useAiPrefs();
   const other = (id: Provider): AccountView => {
     const a = o.data?.find((x) => x.provider === id);
+    const error = o.isError && !o.data ? o.error : undefined;
     return {
-      checking: !a && !o.isError, installed: !!a?.installed, loggedIn: !!a?.loggedIn, email: a?.email,
+      checking: !a && !o.isError, installed: error ? undefined : !!a?.installed, error, loggedIn: !!a?.loggedIn, email: a?.email,
       plan: a && (OTHER_PLANS[a.plan ?? ""] ?? a.plan ?? a.method), pending: !!a?.login_pending, url: a?.login_url, install: a?.install ?? info(id)?.install ?? "",
       usage: a?.usage ?? [], usage_at: a?.usage_at, resets: a?.resets ?? [], resets_left: a?.resets_left ?? 0,
     };
   };
+  const gone = c.error instanceof ApiError && c.error.code === "claude_cli_unavailable"; // no `claude` answering: not installed
+  const cError = c.isError && !gone && !c.data ? c.error : undefined;
   return {
     claude: {
-      checking: !c.data && !c.isError, installed: !c.isError, loggedIn: !!c.data?.loggedIn, email: c.data?.email,
+      checking: !c.data && !c.isError, installed: gone ? false : cError ? undefined : true, error: cError, loggedIn: !!c.data?.loggedIn, email: c.data?.email,
       plan: c.data && planLabel(c.data), pending: !!c.data?.login_pending, url: c.data?.login_url, install: info("claude")?.install ?? "",
       usage: c.data?.usage ?? [], usage_at: c.data?.usage_at, usage_error: c.data?.usage_error,
       resets: c.data?.resets ?? [], resets_left: c.data?.resets_left ?? 0, resets_blocked: c.data?.resets_blocked,

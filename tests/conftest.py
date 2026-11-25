@@ -90,7 +90,7 @@ class FakeTransport:
         dest.write_bytes(got[1])
         return got[0]
 
-    async def fetch_mentions(self, cutoff):
+    async def fetch_mentions(self, cutoff, *, skip=frozenset()):
         return []
 
     async def latest_id(self, chat_id):
@@ -151,12 +151,10 @@ def _own_home(tmp_path, monkeypatch):
     test builds. Beside tmp_path, not tmp_path: ~ is no project (Settings.forbids_project). A test may set its own."""
     import telegram_dashboard.__main__ as cli
     import telegram_dashboard.config as config
-    import telegram_dashboard.provider_cmds as provider_cmds
-
     home = tmp_path.with_name(f"{tmp_path.name}-home")
     home.mkdir(exist_ok=True)
     monkeypatch.setenv("HOME", str(home))
-    for mod in (config, provider_cmds, cli):  # read from HOME at import: api_token, mcp dir, server lock / port
+    for mod in (config, cli):  # read from HOME at import: api_token, mcp dir (away_dir), server lock / port
         monkeypatch.setattr(mod, "RUN_DIR", home / ".telegram_dashboard")
 
 

@@ -82,7 +82,12 @@ function YouTrackSection() {
       qc.removeQueries({ queryKey: ["yt"] }); // projects/me/issues of the old token (or sample data) are cached forever
     },
   });
-  if (!cfg.data) return <div className="pt-1"><StatusLine tone={cfg.isError ? "error" : "idle"}>{cfg.isError ? t("Không đọc được cấu hình YouTrack") : t("Đang kiểm tra…")}</StatusLine></div>;
+  if (!cfg.data) return (
+    <div className="flex flex-wrap items-center gap-2 pt-1">
+      <StatusLine tone={cfg.isError ? "error" : "idle"}>{cfg.isError ? errorText(cfg.error, {}, t("Không đọc được cấu hình YouTrack")) : t("Đang kiểm tra…")}</StatusLine>
+      {cfg.isError && <Button size="xs" variant="outline" aria-busy={cfg.isFetching} disabled={cfg.isFetching} onClick={() => void cfg.refetch()}><RotateCw /> {t("Thử lại")}</Button>}
+    </div>
+  );
   const live = !cfg.data.mock;
   const validUrl = /^https?:\/\/\S+$/.test(base);
   return (

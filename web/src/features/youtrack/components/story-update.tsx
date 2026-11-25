@@ -10,7 +10,7 @@ import { findMember, groupsMembers } from "@/features/telegram/lib/mentions";
 import { AiAsk, Markdown, Picker, YtPicks } from "@/features/youtrack/components/bits";
 import { NoteBox, useNote } from "@/features/youtrack/components/story-notify";
 import { ytPeople } from "@/features/youtrack/lib/mentions";
-import { type Attachment, yt, ytDetailQuery, ytMeQuery } from "@/features/youtrack/lib/yt";
+import { type Attachment, yt, ytDetailQuery, ytFail, ytMeQuery } from "@/features/youtrack/lib/yt";
 import { AiPromptBox, AiResultCard, AiThinking } from "@/shared/components/ai/chat";
 import { Avatar } from "@/shared/components/avatar";
 import { Button } from "@/shared/components/ui/button";
@@ -113,7 +113,7 @@ export function StoryUpdate({ ids, note: startNote, draft: start, notify, onSave
   const comment = useMutation({
     mutationFn: (text: string) => yt.comment(id, text),
     onSuccess: (_r, text) => { setYtSent(text); toast({ text: tr("Đã gửi bình luận") }); void qc.invalidateQueries({ queryKey: ["yt", "detail", id] }); },
-    onError: (e) => toast({ text: tr("Không gửi được: {msg}", { msg: (e as Error).message }) }),
+    onError: (e) => { const f = ytFail(e); toast({ text: tr("Không gửi được: {msg}", { msg: f.msg }), failure: f.failure }); },
   });
   const tg = useGroupSend(chats, notify?.replyTo);
   const tgSame = tg.text === tgNote.wired; // the send's state is about this very text
@@ -146,7 +146,7 @@ export function StoryUpdate({ ids, note: startNote, draft: start, notify, onSave
       void qc.invalidateQueries({ queryKey: ["yt", "detail", id] });
       if (also) tell();
     },
-    onError: (e) => toast({ text: tr("Không lưu được mô tả: {msg}", { msg: (e as Error).message }) }),
+    onError: (e) => { const f = ytFail(e); toast({ text: tr("Không lưu được mô tả: {msg}", { msg: f.msg }), failure: f.failure }); },
   });
   // another ticket: the run, the edit and the messages written for the old one go with it
   const pickId = (v: string) => { setId(v.trim().toUpperCase()); setEdit(null); setBody(null); ytNote.reset(); tgNote.reset(); abort.current?.abort(); draft.reset(); save.reset(); };

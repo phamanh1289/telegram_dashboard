@@ -28,7 +28,8 @@ from .ai_prompts import (
 )
 from .config import child_env, on_path
 from .errors import ApiError
-from .models import AiResult, StoredMessage
+from .models import StoredMessage
+from .models_ai import AiResult
 from .storage import Db, Store
 
 log = logging.getLogger("telegram_dashboard.ai")
@@ -538,7 +539,7 @@ class AiService:
         `session` (id, resume): the run starts that CLI session or carries it on (providers.keeps_session says
         where); such a run is not retried here, its id being taken by the first try.
         `zeplin`: the user's zeplin MCP server: the run may read the design with its read-only tools (the longer
-        timeout), its token in the run's env only (provider_cmds.run_env)."""
+        timeout), its token in mcp_pin's file for the server alone (provider_cmds._away), never the CLI's env."""
         s = self.settings
         if project and s.forbids_project(project):
             raise ApiError(422, "project_forbidden")
@@ -554,7 +555,7 @@ class AiService:
         prompt = providers.stdin(provider or "claude", f"{system}{LANG_RULE}{SCOPE_RULE}\n\n{user_prompt}")
         # Briefing / Digest parts read many messages, a Zeplin run reads designs: the longer timeout
         long = bool(project or heavy or brief or zeplin)
-        # the token only where the command loads the zeplin server (Antigravity runs its own)
+        # the user's Claude settings env (a proxy); HTTP MCP headers only where the command loads that server
         env = {**child_env(), **provider_cmds.run_env(provider, zeplin)}
         try:
             return await self._run(cmd, cwd, prompt, long, on_text, feature, choice, provider, ref, env)

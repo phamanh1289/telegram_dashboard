@@ -443,8 +443,9 @@ export function TasksPage({ focus, headSlot, onOpenGroup }: {
   const removeMany = useMutation({
     mutationFn: (ids: string[]) => Promise.allSettled(ids.map((id) => api<void>(`/tasks/${id}`, { method: "DELETE" }))),
     onSuccess: (res) => {
-      const failed = res.filter((r) => r.status === "rejected").length;
-      toast({ text: failed ? tNow("Xóa lỗi {failed}/{n} phiên, thử lại.", { failed, n: res.length }) : tNow("Đã xóa {n} phiên", { n: res.length }) });
+      const bad = res.filter((r) => r.status === "rejected");
+      const why = bad.length ? errorText(bad[0].reason, {}, "") : ""; // the first failure's reason, when one is known
+      toast({ text: bad.length ? `${tNow("Xóa lỗi {failed}/{n} phiên, thử lại.", { failed: bad.length, n: res.length })}${why && ` ${why}`}` : tNow("Đã xóa {n} phiên", { n: res.length }) });
     },
     onSettled: () => { setBatch(null); return qc.invalidateQueries({ queryKey: ["tasks"] }); },
   });

@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+from pathlib import Path
 
 from telegram_dashboard import provider_cmds
 from telegram_dashboard.config import Settings
@@ -130,16 +131,20 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     assert "download_layer_asset" not in z[z.index("--allowedTools") + 1]
     assert "mcp__zeplin__download_layer_asset" in z[z.index("--disallowedTools") :]  # past a user's allow rule
     assert z[z.index("--permission-mode") + 1] == "default" and z[z.index("--tools") + 1] == "Read,Grep,Glob,Skill"
-    assert "ZEPLIN_ACCESS_TOKEN" in z[z.index("--mcp-config") + 1] and '"x"' not in " ".join(z)  # by ${NAME} only
-    # npx starts outside the sandbox: never from the project (its .npmrc / node_modules), through mcp_pin --cwd
-    from telegram_dashboard.provider_cmds import RUN_DIR
+    assert '"x"' not in " ".join(z)  # never on the command line
+    # npx starts outside the sandbox: never from the project (its .npmrc / node_modules), through mcp_pin --cwd; its
+    # token in a 0600 file mcp_pin gives the server alone, never the CLI's env (sandboxed `env` would read it)
+    from telegram_dashboard.config import RUN_DIR
 
     zep = json.loads(z[z.index("--mcp-config") + 1])["mcpServers"]["zeplin"]
-    away = [*provider_cmds.PIN[1:], "--cwd", str(RUN_DIR / "mcp"), "npx"]
-    assert zep["command"] == sys.executable and zep["args"][:5] == away and zep["args"][5:] == zs["args"]
-    # Codex: read-only zeplin tools approved ahead, token from the env; with MCP on, the user's config
+    away = [*provider_cmds.PIN[1:], "--cwd", str(RUN_DIR / "mcp"), "--env"]
+    assert zep["command"] == sys.executable and zep["args"][:5] == away and zep["args"][6:] == ["npx", *zs["args"]]
+    secret = Path(zep["args"][5])
+    assert json.loads(secret.read_text()) == {"ZEPLIN_ACCESS_TOKEN": "x"} and secret.stat().st_mode & 0o077 == 0
+    assert "env" not in zep and "ZEPLIN_ACCESS_TOKEN" not in run_env("claude", zs, True)
+    # Codex: read-only zeplin tools approved ahead, token through the same file; with MCP on, the user's config
     c = task_cmd(s, "codex", "plan", "codex:", False, "", "", zeplin=zs)
-    assert "--ignore-user-config" in c and 'mcp_servers.zeplin.env_vars=["ZEPLIN_ACCESS_TOKEN"]' in c
+    assert "--ignore-user-config" in c and not any("env_vars" in x for x in c)
     assert 'mcp_servers.zeplin.default_tools_approval_mode="approve"' in c and '"x"' not in " ".join(c)
     assert f"mcp_servers.zeplin.command={json.dumps(sys.executable)}" in c and '"--cwd"' in " ".join(c)
     (tmp_path / ".codex").mkdir(exist_ok=True)
@@ -365,3 +370,10 @@ def test_mcp_pin_starts_from_a_project_on_an_install_and_loads_nothing_from_it(t
                        capture_output=True, text=True, env={"PATH": os.environ["PATH"]}, timeout=30)  # fmt: skip
     assert r.returncode == 0, r.stderr
     assert os.path.realpath(r.stdout.strip()) == os.path.realpath(away)  # the server starts away from the project
+    # --env FILE: the server's secrets in its env only
+    (secret := away / "env.json").write_text(json.dumps({"TOK": "s3cr"}))
+    show_tok = [sys.executable, "-c", "import os; print(os.environ['TOK'])"]
+    r = subprocess.run([*provider_cmds.PIN, "--cwd", str(away), "--env", str(secret), *show_tok], cwd=tmp_path,
+                       stdin=subprocess.DEVNULL, capture_output=True, text=True, env={"PATH": os.environ["PATH"]},
+                       timeout=30)  # fmt: skip
+    assert r.returncode == 0 and r.stdout.strip() == "s3cr", r.stderr

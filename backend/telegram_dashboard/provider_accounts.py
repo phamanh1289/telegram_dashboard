@@ -8,16 +8,15 @@ import re
 import shlex
 import subprocess
 import sys
-import tempfile
 import time
 import uuid
 from datetime import UTC, datetime
 
 from .claude import USAGE_EVERY, login_failed, spawn
-from .config import _read_json, child_env, run_cli
+from .config import _read_json, away_dir, child_env, run_cli
 from .desktop import applescript_str, osascript
 from .errors import ApiError
-from .provider_cmds import agy_agent, away_dir
+from .provider_cmds import agy_agent
 from .providers import INSTALL, _agy_home, _codex_home, exe, installed
 
 _login: dict = {"proc": None, "url": None}  # a dashboard-started `codex login`
@@ -53,7 +52,7 @@ async def _codex_rpc(settings, method: str, params: dict | None = None) -> dict 
     proc = None
     with contextlib.suppress(OSError):
         proc = await asyncio.create_subprocess_exec(
-            *cmd, cwd=tempfile.gettempdir(), env=child_env(), stdin=asyncio.subprocess.PIPE,
+            *cmd, cwd=away_dir(), env=child_env(), stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, limit=1 << 22,
         )  # fmt: skip
     if proc is None:

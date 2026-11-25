@@ -45,7 +45,10 @@ Mỗi dòng dưới đây là lỗi đã có thật trong repo (deep review 2026
 - **Lượt có text người khác**: không tool / chỉ Read-Grep-Glob; shell chỉ trong sandbox (mạng chỉ kho package, không loopback). Run "không tool" phải thật sự không tool ở **mọi** provider (Claude, Codex, Antigravity).
 - **Deny đọc**: `data/`, `.env`, `~/.ssh`, `~/.codex`, `~/.aws`, `~/.config/gh`, `~/.telegram_dashboard`.
 - **API local**: Host/Origin chỉ chặn trình duyệt. Mọi route mới tự nằm sau `LocalGuardMiddleware` (cookie mã truy cập); không thêm ngoại lệ.
-- **Link trong text người khác** không tự đọc bằng quyền của mình (t.me chỉ cùng nhóm với tin gốc).
+- **Link trong text người khác** không tự đọc bằng quyền của mình (t.me chỉ cùng nhóm với tin gốc; `#DOC` chỉ ngoài đoạn trích). Ngoại lệ có chủ đích: ticket / bài KB của chính YouTrack mình (Vòng BE phải đọc ticket BE nhắc tới).
+- **Khung text người khác**: `fence()` (`ai_prompts.py`, tên thẻ ngẫu nhiên mỗi lần), không dùng thẻ cố định + regex lọc.
+- **Secret MCP stdio** đi qua file 0600 cho `mcp_pin --env`, không vào env của CLI (lệnh sandbox chạy `env` sẽ đọc được). Chỉ header HTTP MCP còn trong env CLI (`run_env`).
+- **cwd mặc định** của mọi CLI không có project là `away_dir()` (`config.py`), không bao giờ `tempfile.gettempdir()` (lượt Codex ghi được temp; Claude nạp `<cwd>/.claude/settings.json`).
 - Biến môi trường cho CLI con đi qua `child_env()`.
 - Release: ký gói, action pin theo SHA, khóa riêng không bao giờ vào repo.
 - Thông báo / log: không nội dung tin mặc định; log chỉ id và tên lỗi.

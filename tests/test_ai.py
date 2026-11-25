@@ -303,7 +303,7 @@ async def test_answer_reads_the_project_with_its_git_log_and_tickets(ai, tmp_pat
 
 
 def test_answer_from_code_runs_on_after_the_panel_goes(client, monkeypatch):
-    from telegram_dashboard.models import AiResult
+    from telegram_dashboard.models_ai import AiResult
 
     async def run(self, kind, *a, **kw):
         return AiResult(text=kind, options=[], analysis="", source_message_ids=["1"], context_revision="")
@@ -324,7 +324,7 @@ def test_assist_turns_are_saved_as_the_tags_session(client, monkeypatch):
     """Trợ lý AI: every ask on a tag goes into one saved session (log, result, Q&A's sent list), the earlier answers
     into the next prompt as data; a failed turn is logged as such."""
     from telegram_dashboard.errors import ApiError
-    from telegram_dashboard.models import AiResult
+    from telegram_dashboard.models_ai import AiResult
 
     seen = []
 
@@ -378,14 +378,15 @@ def test_who_gives_every_prompt_a_tag_that_tags(monkeypatch):
     assert ai.at_usernames(page) == "Người gửi: BE Hỗ trợ (tag: @citics_be_support_bot), hỏi [Lan](tg://user?id=42)"
 
 
-async def test_a_zeplin_ask_run_gets_the_servers_token_in_its_env_only(tmp_path):
-    exe = tmp_path / "claude"  # a claude CLI that answers with the token it was given
+async def test_a_zeplin_ask_runs_token_reaches_the_server_alone(tmp_path):
+    """The zeplin server's token goes in mcp_pin's 0600 file, never the CLI's env (commands the AI runs inherit it)."""
+    exe = tmp_path / "claude"  # a claude CLI that answers with the token in its env
     exe.write_text('#!/bin/sh\ncat >/dev/null\n'
                    'printf \'{"type":"result","is_error":false,"result":"%s"}\\n\' "${ZEPLIN_TOKEN-none}"\n')
     exe.chmod(0o755)
     s = Settings(root=app_root(tmp_path), ai_agent_command=shlex.quote(str(exe)), ai_model="", ai_effort="")
     zep = {"command": "npx", "args": ["zeplin-mcp"], "env": {"ZEPLIN_TOKEN": "s3cret"}}
-    assert await AiService(s, None, None).ask("hi", zeplin=zep) == "s3cret"
+    assert await AiService(s, None, None).ask("hi", zeplin=zep) == "none"
     assert await AiService(s, None, None).ask("hi") == "none"
     other = tmp_path / "agent.sh"  # another AI command loads no zeplin server: no token for it
     other.write_text('#!/bin/sh\ncat >/dev/null\nprintf "%s" "${ZEPLIN_TOKEN-none}"\n')

@@ -31,13 +31,22 @@ async def test_result_persists_restart_scope_cursor_and_processed_retention(tmp_
     assert restarted.flow_job_events("account-a", "job-0001", result[0]["cursor"]) == result[1:]
     with restarted._conn(write=True) as c:
         c.execute("UPDATE flow_jobs SET updated_at=0")
+    restarted.flow_job_create("account-a", "job-0002", "VA-1")  # still queued: an open job never expires
     restarted.flow_jobs_recover()
-    assert restarted.flow_job_get("account-a", "job-0001")  # unresolved never expires
-    restarted.flow_job_update("account-a", "job-0001", processed=True)
-    with restarted._conn(write=True) as c:
-        c.execute("UPDATE flow_jobs SET updated_at=0")
-    restarted.flow_jobs_recover()
+    # an ended job expires after 30 days applied or not, its events with it
     assert restarted.flow_job_get("account-a", "job-0001") is None
+    assert restarted.flow_job_events("account-a", "job-0001", 0) == []
+    assert restarted.flow_job_get("account-a", "job-0002")
+
+
+def test_a_tickets_job_list_is_the_newest_few_without_checkpoints(tmp_path):
+    store = Store(tmp_path / "test.db")
+    for n in range(25):
+        store.flow_job_create("scope", f"job-{n:04}", "VA-1")
+        store.flow_job_update("scope", f"job-{n:04}", checkpoint=FLOW)
+    jobs = store.flow_job_get("scope", issue="VA-1")
+    assert [j["id"] for j in jobs] == [f"job-{n:04}" for n in range(24, 4, -1)]
+    assert "checkpoint" not in jobs[0] and "scope" not in jobs[0]
 
 
 async def test_restart_safe_checkpoint_recovery_never_calls_ai(tmp_path):

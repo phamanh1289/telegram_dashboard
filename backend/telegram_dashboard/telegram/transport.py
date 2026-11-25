@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .. import ai
 from ..errors import ApiError
-from ..models import FileInfo, GroupInfo, LinkSpan, Member, SentMessage, StoredMessage
+from ..models import FileInfo, GroupInfo, LinkSpan, Member, SentMessage, StoredMessage, utf16_len
 from .bridge import LoginRequired, PartialBackfill, SendRejected, TelegramBridge, split_format
 
 log = logging.getLogger("telegram_dashboard.telegram")
@@ -283,38 +283,42 @@ class TelethonTransport:
         return out
 
     async def fetch_mentions(
-        self, cutoff: datetime
+        self, cutoff: datetime, *, skip: frozenset[str] = frozenset()
     ) -> list[tuple[str, str, StoredMessage, bool]]:
         from telethon import errors
-        from telethon.tl.types import InputMessagesFilterMyMentions
 
-        out = []
+        out, done = [], set()
         try:
             async for d in self.client.iter_dialogs():
-                if not d.is_group or (d.date and d.date < cutoff):
+                if not d.is_group or str(d.id) in skip or (d.date and d.date < cutoff):
                     continue  # dialogs come newest-activity first, but pinned ones break the order
-                tags = []
-                it = self.client.iter_messages(d.id, filter=InputMessagesFilterMyMentions)
-                async for m in it:
-                    if m.date < cutoff:
-                        break  # newest first
-                    tags.append(m)
-                if not tags:
-                    continue
-                # Which tags we already answered: our own replies to them since the oldest.
-                oldest = min(m.date for m in tags)
-                replied: set[int] = set()
-                async for m in self.client.iter_messages(d.id, from_user="me"):
-                    if m.date < oldest:
-                        break
-                    if (rid := getattr(m.reply_to, "reply_to_msg_id", None)) is not None:
-                        replied.add(rid)
-                title, kind = d.name or str(d.id), "supergroup" if d.is_channel else "group"
-                out += [(title, kind, await self._convert(m), m.id in replied) for m in tags]
-        except errors.FloodWaitError as e:  # keep what we have; the next connect tries again
+                out += await self._dialog_mentions(d, cutoff)
+                done.add(str(d.id))
+        except errors.FloodWaitError as e:  # keep what we have; the retry skips the dialogs already read
             log.warning("mention backfill cut short by a %ss flood wait", e.seconds)
-            raise PartialBackfill(out, e.seconds) from e
+            raise PartialBackfill(out, e.seconds, done) from e
         return out
+
+    async def _dialog_mentions(self, d, cutoff: datetime) -> list[tuple[str, str, StoredMessage, bool]]:
+        from telethon.tl.types import InputMessagesFilterMyMentions
+
+        tags = []
+        async for m in self.client.iter_messages(d.id, filter=InputMessagesFilterMyMentions):
+            if m.date < cutoff:
+                break  # newest first
+            tags.append(m)
+        if not tags:
+            return []
+        # Which tags we already answered: our own replies to them since the oldest.
+        oldest = min(m.date for m in tags)
+        replied: set[int] = set()
+        async for m in self.client.iter_messages(d.id, from_user="me"):
+            if m.date < oldest:
+                break
+            if (rid := getattr(m.reply_to, "reply_to_msg_id", None)) is not None:
+                replied.add(rid)
+        title, kind = d.name or str(d.id), "supergroup" if d.is_channel else "group"
+        return [(title, kind, await self._convert(m), m.id in replied) for m in tags]
 
     async def fetch_context(
         self, chat_id: str, message_id: int, before: int, after: int
@@ -509,8 +513,8 @@ class TelethonTransport:
         from telethon.tl import functions, types
 
         text, tags = split_format(text)
-        entities = await self._entities(tags)
-        try:
+        try:  # resolving a tagged user is a request too: its flood wait is a plain rejection, nothing sent yet
+            entities = await self._entities(tags)
             peer = await self.client.get_input_entity(int(chat_id))
             result = await self.client(
                 functions.messages.SendMessageRequest(
@@ -561,11 +565,16 @@ class TelethonTransport:
 
 
 def chunks(text: str, size: int = 4000) -> list[str]:
-    """Split at line breaks (a longer line is cut) so each part fits one Telegram message."""
+    """Split at line breaks (a longer line is cut) so each part fits one Telegram message, sized in UTF-16 units
+    as Telegram counts (an emoji takes two)."""
     out, cur = [], ""
     for line in text.splitlines(keepends=True):
-        for piece in [line[i : i + size] for i in range(0, len(line), size)]:
-            if cur and len(cur) + len(piece) > size:
+        while line:
+            n = size  # code points that fit in `size` units: at most `size`, fewer with astral characters
+            while (over := utf16_len(line[:n]) - size) > 0:
+                n -= (over + 1) // 2  # each dropped character frees one or two units
+            piece, line = line[:n], line[n:]
+            if cur and utf16_len(cur) + utf16_len(piece) > size:
                 out.append(cur)
                 cur = ""
             cur += piece

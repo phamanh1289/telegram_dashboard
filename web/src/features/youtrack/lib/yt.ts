@@ -5,7 +5,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import type { components } from "../../../shared/lib/api.generated";
-import { type AiStep, api, ApiError, readAnswer } from "@/shared/lib/api";
+import { type AiStep, api, ApiError, errorText, type Failure, failureFor, OFFLINE_TEXT, readAnswer } from "@/shared/lib/api";
 import { fmtDate, fmtDay, fmtNum, type Key, t, tMaybe } from "@/shared/lib/i18n";
 import { readYtRole } from "@/shared/lib/prefs";
 import { fold } from "@/shared/lib/utils";
@@ -76,8 +76,10 @@ export async function ytApi<T>(path: string, init: { json?: unknown; signal?: Ab
   const role = readYtRole(); // the server adds that role's team instructions to every AI prompt
   // an AI run cut mid-way (sleep, Wi-Fi, server restart) in words, not "ai_provider_error"; other calls keep the
   // browser's TypeError (loadError words it)
+  // other calls: the dashboard did not answer, in words (not the browser's "Failed to fetch"); still a TypeError
   const lost = (e: unknown) => job && (e instanceof TypeError || (e as { cut?: boolean } | null)?.cut)
-    ? new Error(t("Mất kết nối với dashboard giữa chừng, thử lại")) : e;
+    ? new Error(t("Mất kết nối với dashboard giữa chừng, thử lại"))
+    : e instanceof TypeError ? Object.assign(new TypeError(OFFLINE_TEXT()), { cause: e }) : e;
   const res = await fetch(`/api/yt${path}`, {
     method: init.json === undefined ? "GET" : "POST",
     cache: "no-store",
@@ -98,10 +100,19 @@ export async function ytApi<T>(path: string, init: { json?: unknown; signal?: Ab
     if (res.status === 422 && !e && Array.isArray(body?.detail)) throw new Error(t("Dashboard từ chối yêu cầu ở “{where}”. Nếu vừa cập nhật app, khởi động lại dashboard (Start Dashboard › Restart) rồi thử lại.", { where: (body.detail[0]?.loc ?? []).slice(1).join(".") }));
     // an older backend: no route (the catch-all answers {code: "not_found"}), wrong method or body shape
     if (([404, 405, 422].includes(res.status) && !e) || (typeof e === "object" && e?.code === "not_found")) throw new Error(t("Backend chưa có tính năng này: khởi động lại dashboard (Start Dashboard › Restart) rồi thử lại."));
-    // status: a caller may act on one (the UI flow's 409); the text is what the user reads
-    throw Object.assign(new Error(typeof e === "string" ? tMaybe(e) : e?.detail || e?.code || `HTTP ${res.status}`), { status: res.status });
+    // an ApiError (code, status: a caller may act on one, the UI flow's 409) whose message is what the user reads;
+    // errorText words it and offers "Báo lỗi" like every other API error (ytErrorText)
+    const text = typeof e === "string" ? tMaybe(e) : e?.detail ? tMaybe(e.detail) : e?.code || `HTTP ${res.status}`;
+    throw Object.assign(new ApiError(res.status, (typeof e === "object" && e?.code) || "http_error", null, typeof e === "object" ? e?.detail ?? null : e ?? null), { message: text });
   }
   return body as T;
+}
+/** A YouTrack call's failure for a toast: its text, worded like every API error (YouTrack's own reason kept, the
+ *  dashboard down in words), and the failure behind an unexpected one, so the toast offers "Báo lỗi". */
+export function ytFail(e: unknown): { msg: string; failure?: Failure } {
+  const own = e instanceof ApiError && e.message !== e.code ? { [e.code]: e.message } : {}; // ytApi's text wins
+  const raw = errorText(e, own, e instanceof Error ? e.message : String(e));
+  return { msg: raw.trim(), failure: failureFor(raw) ?? undefined };
 }
 const enc = encodeURIComponent;
 /** The project to use: `wanted` while it exists, else VA, else the first one (YouTrack tab and the ticket form). */

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, History, House as Home, Inbox as InboxIcon, LayoutDashboard, ListChecks, type LucideIcon, Menu, MessageCircleQuestion, MessageSquare, Pin, Rocket, RotateCw, Search, Send, Sparkles, Sun, UserSearch, WifiOff, X } from "lucide-react";
+import { ChevronRight, History, House as Home, Inbox as InboxIcon, LayoutDashboard, ListChecks, type LucideIcon, Menu, MessageCircleQuestion, MessageSquare, Pin, Rocket, RotateCw, Search, Send, Sparkles, Sun, UserSearch, X } from "lucide-react";
 import { AiBotIcon } from "@/shared/components/ai/chat";
 import { type ReactNode, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { ChatList, useChats } from "@/features/telegram/components/chat-list";
@@ -24,12 +24,13 @@ import { TasksPage } from "@/features/telegram/components/tasks-page";
 import { PendingInbox, type PendingTab } from "@/features/telegram/components/pending-inbox";
 import { Kbd } from "@/shared/components/ui/kbd";
 import { ShortcutsDialog } from "@/shared/components/shortcuts";
-import { Toaster, TopBar } from "@/app/_components/shell";
+import { Toaster, TopBar, useDashboardDown } from "@/app/_components/shell";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery, readTagRange, saveTagRange } from "@/shared/components/date-range";
 import { Button } from "@/shared/components/ui/button";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { type StreamState, useSync } from "@/features/telegram/hooks/use-events";
-import { type Message, type Status, statusQuery } from "@/shared/lib/api";
+import { errorText, isOffline, type Message, type Status, statusQuery } from "@/shared/lib/api";
+import { WarnBar } from "@/shared/components/ui/warn-bar";
 import type { View } from "@/features/telegram/hooks/use-chat-messages";
 import { ALL, askInQa, BRIEFING, groupsQuery, TODAY, goKey, msgKey, openQa, openReplyById, openTask, PINNED, QA, QaCodes, scrollToRow, TASKS, taskToast, typing, useTaskList } from "@/features/telegram/lib/inbox";
 import { toast } from "@/shared/lib/notifications";
@@ -109,11 +110,12 @@ export function App() {
     );
   }
   if (!status.data) {
+    const down = isOffline(status.error); // else the server answered with an error: say which
     return (
       <main className="grid min-h-dvh place-items-center p-4">
         <div role="alert" className="grid max-w-sm justify-items-start gap-3">
-          <h1 className="text-base">{t("Không liên lạc được backend")}</h1>
-          <p className="text-sm leading-relaxed text-ink-2">{t("Server dashboard trên máy này chưa chạy hoặc vừa dừng. Mở lại app (hoặc chạy lại Start Dashboard Telegram), rồi bấm Thử lại.")}</p>
+          <h1 className="text-base">{down ? t("Không liên lạc được backend") : t("Không đọc được trạng thái dashboard")}</h1>
+          <p className="text-sm leading-relaxed text-ink-2">{down ? t("Server dashboard trên máy này chưa chạy hoặc vừa dừng. Mở lại app (hoặc chạy lại Start Dashboard Telegram), rồi bấm Thử lại.") : errorText(status.error, {})}</p>
           <Button size="sm" variant="outline" aria-busy={status.isFetching} disabled={status.isFetching} onClick={() => void status.refetch()}>
             <RotateCw /> {t("Thử lại")}
           </Button>
@@ -393,7 +395,9 @@ function Inbox({ status }: { status: Status }) {
   const showQa = chatId === QA;
   const qaGroupTitle = useQuery({ ...groupsQuery, enabled: showQa }).data?.find((g) => showQa && g.chat_id === qaShown)?.title;
   const qaTitle = showQa && qaShown === QA_MINE ? t("Câu hỏi của tôi") : qaGroupTitle;
-  const offline = status.state !== "connected" || stream !== "open";
+  // The dashboard itself down: the shell's banner says so on every page, this one only speaks of Telegram / the stream.
+  const serverDown = useDashboardDown();
+  const offline = (status.state !== "connected" || stream !== "open") && !serverDown;
   // Shown only once the problem lasts a few seconds: a reconnect blip shouldn't flash a banner.
   const [lasting, setLasting] = useState(false);
   useEffect(() => {
@@ -508,7 +512,9 @@ function Inbox({ status }: { status: Status }) {
       </aside>
       <div className="hidden md:block" aria-hidden />
 
-      <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)]">
+      {/* header · banner (a Fold: always in the DOM, 0 high when shut) · page: one track each, or the page drops into an
+          auto row under an empty 1fr one */}
+      <div className="grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)]">
         <header className="flex min-h-14 min-w-0 flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2 sm:px-6">
           <Hint side="bottom" text={t("Thu gọn / mở rộng menu")}>
             <Button size="icon-sm" variant="ghost" onClick={(e) => { e.currentTarget.blur(); toggleMenu(); }}
@@ -553,17 +559,11 @@ function Inbox({ status }: { status: Status }) {
         </header>
         {/* The page sits in one card, like the YouTrack ledger. A reply opens beside the list on a wide screen (≥1280px),
             else as a detail page over it; the list stays mounted (hidden) so its scroll and "next tag" order survive. */}
-        {banner && (
-          <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-warn-wash px-3 py-1.5 text-xs text-warn sm:px-6">
-            <WifiOff className="size-4 shrink-0" aria-hidden />
-            <span className="min-w-0 flex-1">
-              {t(status.state !== "connected" ? STATE_LABEL[status.state] : STREAM_LABEL[stream])}. {t("Danh sách có thể chưa mới.")}
-            </span>
-            {status.state === "setup_required" || status.state === "login_required"
-              ? <Link href="/settings/#telegram" className="font-bold underline underline-offset-4">{t("Mở Cài đặt Telegram")}</Link>
-              : <Button size="xs" variant="outline" onClick={() => void qc.invalidateQueries()}><RotateCw /> {t("Thử lại")}</Button>}
-          </div>
-        )}
+        <WarnBar open={banner} action={status.state === "setup_required" || status.state === "login_required"
+          ? <Link href="/settings/#telegram" className="font-bold underline underline-offset-4">{t("Mở Cài đặt Telegram")}</Link>
+          : <Button size="xs" variant="outline" onClick={() => void qc.invalidateQueries()}><RotateCw /> {t("Thử lại")}</Button>}>
+          {t(status.state !== "connected" ? STATE_LABEL[status.state] : STREAM_LABEL[stream])}. {t("Danh sách có thể chưa mới.")}
+        </WarnBar>
         <div className="min-h-0 min-w-0 p-2 sm:p-4 lg:p-5">
           <QaCodes.Provider value={chatId === QA ? NO_CODES : qa.codes}>
           <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock">

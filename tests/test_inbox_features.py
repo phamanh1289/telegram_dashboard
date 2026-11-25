@@ -405,9 +405,8 @@ def test_plain_text_at_username_is_a_tag():
 def test_old_terminal_task_lists_but_is_read_only(client):
     client.app.state.store.add_task("t9", A, 4, "/tmp/proj", "x", mode="terminal")
     assert client.get("/api/tasks").json()[0]["mode"] == "terminal"
-    for path in ("message", "reopen"):
-        r = client.post(f"/api/tasks/t9/{path}", json={"text": "hi"}, headers=H)
-        assert r.status_code == 409 and r.json()["error"]["code"] == "terminal_task_unsupported"
+    r = client.post("/api/tasks/t9/message", json={"text": "hi"}, headers=H)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "terminal_task_unsupported"
 
 
 def test_headless_task_runs_and_resumes(tmp_path):
@@ -684,6 +683,7 @@ def test_attached_ref_finds_its_qa_up_the_live_chain(tmp_path):
 
     from telegram_dashboard.storage import Db, Store
     from telegram_dashboard.tasks import add_refs
+    from telegram_dashboard.telegram.live_reads import TelegramReads
 
     st = Store(tmp_path / "db.sqlite3")
     # BE's answer (never stored) replies to the copied ask that carries the code
@@ -697,7 +697,7 @@ def test_attached_ref_finds_its_qa_up_the_live_chain(tmp_path):
 
     async def run():
         db = Db(st, SimpleNamespace(notify=lambda: None))
-        s = SimpleNamespace(store=st, db=db, bridge=SimpleNamespace(fetch_ids=fetch_ids))
+        s = SimpleNamespace(store=st, db=db, bridge=SimpleNamespace(fetch_ids=fetch_ids), live_reads=TelegramReads())
         await add_refs(s, "t", [(A, "2")])
         live.clear()  # offline: the ref is still kept, only without a code
         await add_refs(s, "t", [(A, "3")])

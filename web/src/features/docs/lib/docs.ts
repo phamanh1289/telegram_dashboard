@@ -176,7 +176,6 @@ export const docErrors = () => ({
   doc_zeplin_token_refused: t("Token Zeplin bị từ chối (hết hạn?): cập nhật ZEPLIN_ACCESS_TOKEN của Zeplin MCP."),
   doc_zeplin_unreachable: t("Không kết nối được Zeplin, thử lại sau."),
   doc_empty_question: t("Gõ câu hỏi trước."),
-  ai_not_configured: t("AI chưa cài hoặc chưa đăng nhập, xem Cài đặt › AI."),
 });
 
 /** One source's sync failure, in words (codes from docs/sync.py). */
@@ -190,7 +189,7 @@ export function syncErrorText(e: DocSourceError) {
     : e.code === "unreadable" ? t("không đọc được")
     : e.code === "bad_pdf" ? t("PDF hỏng hoặc có mật khẩu")
     : e.code === "pdf_no_text" ? t("PDF không có chữ (bản scan)")
-    : e.detail ? `${e.code}: ${e.detail}` : e.code;
+    : e.detail ? `${t("lỗi đồng bộ")} (${e.detail})` : t("lỗi đồng bộ");
   return `${e.ref}: ${why}`;
 }
 

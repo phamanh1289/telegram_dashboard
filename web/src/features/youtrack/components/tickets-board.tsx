@@ -18,7 +18,8 @@ import { useFlow } from "./workflow";
 
 /** Board drag: one spring for lift, the slots opening / closing and the card flying into place. */
 const DND = { type: "spring", stiffness: 460, damping: 36 } as const;
-type Drag = { t: Ticket; from: string; w: number; h: number; land?: string }; // land: set on release, the column the card flies into
+// grab: where the pointer holds the card (0..1 of its width / height); dock: the board's left / width, the dock centres on it; land: set on release, the column the card flies into
+type Drag = { t: Ticket; from: string; w: number; h: number; grab: [number, number]; dock: [number, number]; land?: string };
 const colAt = (x: number, y: number) => (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>("[data-col]") ?? null;
 const GHOST = "\u0000ghost";
 /** order with xs put right after `from` (at the end when it isn't there). */
@@ -35,6 +36,7 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
   const now = useNow();
   const still = useReducedMotion();
   const [over, setOver] = useState<string | null>(null);
+  const [inDock, setInDock] = useState(false); // the pointer is over the dock (any part of it, not only a state)
   const [drag, setDrag] = useState<Drag | null>(null);
   const [pend, setPend] = useState<{ id: string; state: string } | null>(null); // the dropped card sits in its new column while YouTrack answers
   const PER = 60;
@@ -69,20 +71,26 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
   const flow = useFlow(y.project);
   const canGo = (t: Ticket, to: string) => { const f = flow(t.state); return !f || f.includes(to); };
   const live = drag && !drag.land ? drag : null;
-  // while a card is dragged, the states it can move to that have no column yet open as empty columns right after its own, to drop it on
+  // while a card is dragged, the states it can move to that have no column yet show as drop zones in a dock over the board's foot:
+  // the columns never shift under the pointer; dropped on one, that state's column appears right after the card's own
   const fields = useQuery({ ...ytFieldsQuery(y.project), enabled: write && !!y.project });
   const extra = live ? (flow(live.t.state) ?? fields.data?.State ?? []).filter((s) => s !== live.t.state && !lanes.some(([c]) => c === s)) : [];
-  const shownLanes = live && extra.length
-    ? ranked.flatMap((l) => (l[0] === live.from ? [l, ...extra.map((s) => [s, [] as Ticket[]] as const)] : [l]))
-    : ranked;
   const target = live && over && over !== live.from && over !== "—" && canGo(live.t, over) ? over : null; // where the card goes if let go now
   const blocked = !!live && !!over && over !== live.from && !target;
 
   // the floating copy: position, lift (0 resting → 1 picked up), tilt from horizontal speed
   const ox = useMotionValue(0), oy = useMotionValue(0), lift = useMotionValue(0), fade = useMotionValue(1);
+  const px = useMotionValue(0), py = useMotionValue(0); // the pointer, where the compact chip sits
   const vx = useVelocity(ox);
   const rotate = useSpring(useTransform(() => (still ? 0 : Math.max(-7, Math.min(7, vx.get() / 260)) + lift.get() * 1.5)), { stiffness: 380, damping: 28 });
-  const scale = useTransform(lift, [0, 1], [1, 1.03]);
+  // over a dock state the copy folds into a chip with only the ticket id (0 card → 1 chip), so the drop zone and its caption stay readable under it;
+  // the card collapses into the pointer where the chip grows from, and unfolds again when the pointer leaves the zone or the card is let go
+  const chip = useSpring(0, { stiffness: 460, damping: 36 });
+  const onDock = !!live && extra.length > 0 && (inDock || (!!target && extra.includes(target)));
+  useEffect(() => { if (still) chip.jump(onDock ? 1 : 0); else chip.set(onDock ? 1 : 0); }, [onDock, still, chip]);
+  const scale = useTransform(() => (1 + 0.03 * lift.get()) * (1 - 0.75 * chip.get()));
+  const cardOpacity = useTransform(() => fade.get() * (1 - chip.get()));
+  const chipScale = useTransform(chip, [0, 1], [0.6, 1]);
   const boxShadow = useTransform(lift, (v) => `0 ${1 + 13 * v}px ${3 + 29 * v}px ${-5 * v}px oklch(0% 0 0 / ${0.1 + 0.14 * v}), 0 0 0 1px oklch(0% 0 0 / 0.05)`);
   const ptr = useRef({ x: 0, y: 0 });
   const board = useRef<HTMLDivElement>(null);
@@ -92,11 +100,11 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
     if (!drag) return;
     const tk = drag.t, ok = !!to && to !== drag.from && to !== "—" && canGo(tk, to);
     if (to && to !== drag.from && to !== "—" && !ok) toast({ text: t("Workflow của team không cho {from} → {to}", { from: tk.state ?? "—", to }) });
-    setOver(null);
+    setOver(null); setInDock(false);
     setDrag({ ...drag, land: ok ? to : drag.from });
     if (!ok) return;
     setPend({ id: tk.id, state: to });
-    // dropped on a column that only opened for this drag: it keeps its place beside the source in the user's own order too
+    // dropped on a state from the dock: its new column keeps its place beside the source in the user's own order too
     if (!lanes.some(([c]) => c === to) && placed.order.includes(drag.from)) savePlaced(after(placed.order.filter((s) => s !== to), drag.from, [to]));
     const prev = tk.state, go = (from: Ticket, s: string) => saveTicket(y.patchTicket, from, { state: s }, () => yt.setField(tk.id, "State", s));
     void go(tk, to).then((saved) => {
@@ -119,9 +127,10 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
         document.documentElement.classList.add("yt-dragging");
         ox.jump(r.left); oy.jump(r.top); lift.jump(0); fade.jump(1);
         animate(lift, 1, DND);
-        setDrag({ t, from, w: r.width, h: r.height });
+        const b = board.current?.getBoundingClientRect();
+        setDrag({ t, from, w: r.width, h: r.height, grab: [(sx - r.left) / r.width, (sy - r.top) / r.height], dock: b ? [b.left, b.width] : [0, innerWidth] });
       }
-      ox.set(ev.clientX - sx + r.left); oy.set(ev.clientY - sy + r.top);
+      ox.set(ev.clientX - sx + r.left); oy.set(ev.clientY - sy + r.top); px.set(ev.clientX); py.set(ev.clientY);
     };
     const end = (ev: Event) => {
       removeEventListener("pointermove", move); removeEventListener("pointerup", end); removeEventListener("pointercancel", end); removeEventListener("keydown", esc, true);
@@ -132,7 +141,7 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
     };
     const esc = (ev: KeyboardEvent) => { if (ev.key === "Escape" && on) { ev.stopPropagation(); ev.preventDefault(); end(ev); } };
     addEventListener("pointermove", move); addEventListener("pointerup", end); addEventListener("pointercancel", end); addEventListener("keydown", esc, true);
-  }, [ox, oy, lift, fade]);
+  }, [ox, oy, px, py, lift, fade]);
   const open = useCallback((i: Ticket) => { if (!dragged.current) onOpen(i); }, [onOpen]);
   useEffect(() => () => document.documentElement.classList.remove("yt-dragging"), []);
 
@@ -144,9 +153,10 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
     const tick = () => {
       const p = ptr.current, b = board.current;
       if (b) { const r = b.getBoundingClientRect(); b.scrollLeft += speed(r.right - p.x) - speed(p.x - r.left); }
-      const col = colAt(p.x, p.y), ul = col?.querySelector("ul");
+      const hit = document.elementFromPoint(p.x, p.y), col = hit?.closest<HTMLElement>("[data-col]"), ul = col?.querySelector("ul");
       if (ul) { const r = ul.getBoundingClientRect(); ul.scrollTop += speed(r.bottom - p.y) - speed(p.y - r.top); }
       setOver(col?.dataset.col ?? null);
+      setInDock(!!hit?.closest("[data-dock]"));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -167,10 +177,10 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
   }, [drag, still, lift, ox, oy, fade]);
 
   return (
-    <Reorder.Group as="div" axis="x" values={shownLanes.map(([s]) => s)} onReorder={reorder} ref={board} layoutScroll data-view
+    <Reorder.Group as="div" axis="x" values={ranked.map(([s]) => s)} onReorder={reorder} ref={board} layoutScroll data-view
       className="flex gap-3 overflow-x-auto pb-2 md:max-h-[calc(100dvh-var(--yt-top)-1rem)]">
       <AnimatePresence initial={false}>
-      {shownLanes.map(([st, list]) => {
+      {ranked.map(([st, list]) => {
         const shown: (Ticket | typeof GHOST)[] = list.slice(0, PER);
         if (st === target && live) {
           const at = list.findIndex((i) => order.get(i.id)! > order.get(live.t.id)!);
@@ -178,11 +188,11 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
         }
         const away = drag && (drag.land ? drag.land !== drag.from : !!target); // the card is leaving its column: close its old slot
         return (
-          <Lane key={st} st={st} fresh={extra.includes(st)} label={`${st}: ${t("{n} ticket", { n: list.length })}`}
+          <Lane key={st} st={st} label={`${st}: ${t("{n} ticket", { n: list.length })}`}
+            off={!!live && st !== live.from && (st === "—" || !canGo(live.t, st))}
             head={<><StatePill state={st} /><b className="ml-auto rounded-full bg-paper-3 px-1.5 font-mono text-xs font-medium text-ink-3">{list.length}</b></>}
-            className={cn("relative flex w-72 shrink-0 flex-col rounded-[var(--radius-card)] bg-paper-2 transition-[background-color,box-shadow,opacity] duration-(--dur-short)",
-              st === target && "bg-hl-wash shadow-[inset_0_0_0_2px_var(--color-hl)]",
-              live && st !== live.from && st !== "—" && !canGo(live.t, st) && "opacity-40")}>
+            className={cn("relative flex w-72 shrink-0 flex-col rounded-[var(--radius-card)] bg-paper-2 transition-[background-color,box-shadow,filter] duration-(--dur-short)",
+              st === target && "bg-hl-wash shadow-[inset_0_0_0_2px_var(--color-hl)]")}>
             <ul className="zebra-in flex min-h-16 flex-col overflow-y-auto px-2 pb-1">
               <AnimatePresence initial={false} custom={!!drag?.land}>
                 {shown.map((i) => i === GHOST ? <Slot key={GHOST} h={live!.h} open grow />
@@ -201,23 +211,65 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
           <b className="font-mono font-medium tabular-nums">{fmt(doneN)}</b><span className="[writing-mode:vertical-rl]">{t(showDone ? "Ẩn đã xong" : "Đã xong")}</span>
         </button>
       )}
-      {drag && createPortal(
-        <motion.div aria-hidden style={{ x: ox, y: oy, width: drag.w, rotate, scale, boxShadow, opacity: fade }}
-          className={cn("pointer-events-none fixed top-0 left-0 z-50 grid origin-center gap-1.5 rounded-[var(--radius-input)] bg-cotton py-2.5 pr-2.5 pl-3.5 transition-[outline-color] duration-(--dur-micro) outline-2 outline-transparent",
+      {drag && createPortal(<>
+        <AnimatePresence>{extra.length > 0 && <Dock key="dock" id={drag.t.id} states={extra} target={target} at={drag.dock} still={!!still} />}</AnimatePresence>
+        <motion.div aria-hidden style={{ x: ox, y: oy, width: drag.w, rotate, scale, boxShadow, opacity: cardOpacity, originX: drag.grab[0], originY: drag.grab[1] }}
+          className={cn("pointer-events-none fixed top-0 left-0 z-50 grid gap-1.5 rounded-[var(--radius-input)] bg-cotton py-2.5 pr-2.5 pl-3.5 transition-[outline-color] duration-(--dur-micro) outline-2 outline-transparent",
             blocked && "outline-error")}>
           <CardBody i={drag.t} now={now} bar={stateColor(drag.land ?? target ?? drag.t.state)} />
-        </motion.div>, document.body)}
+        </motion.div>
+        <motion.div aria-hidden style={{ x: px, y: py, scale: chipScale, opacity: chip }}
+          className="pointer-events-none fixed top-0 left-0 z-50 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cotton px-3 py-1 font-mono text-xs font-bold text-ink shadow-stock outline-2 outline-hl">
+          {drag.t.id}
+        </motion.div></>, document.body)}
     </Reorder.Group>
   );
 }
 
-/** A Board column, dragged by its header to a new place among the others (mouse / pen; touch keeps scrolling the board). */
-function Lane({ st, fresh, label, head, className, children }: { st: string; fresh: boolean; label: string; head: React.ReactNode; className: string; children: React.ReactNode }) {
+/** While a card is dragged: its next states that have no column, as drop zones (`data-col`, found like a column) floating at the window's foot,
+ *  centred on the board. Fixed to the window, not the board: the board gets shorter when the card leaves its column, the dock must not move. */
+function Dock({ id, states, target, at, still }: { id: string; states: string[]; target: string | null; at: [number, number]; still: boolean }) {
+  const t = useT();
+  return (
+    <motion.div initial={{ opacity: 0, y: still ? 0 : 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: still ? 0 : 24 }} transition={DND}
+      style={{ left: at[0], width: at[1] }} className="pointer-events-none fixed bottom-6 z-40 flex justify-center px-4">
+      <div data-dock className="pointer-events-auto grid max-w-5xl gap-4 rounded-[var(--radius-card)] bg-cotton/95 p-6 shadow-stock backdrop-blur">
+        {/* the header says what letting go does: above every zone, the dragged card (under the pointer) never covers it */}
+        <span className="grid px-1 text-sm">
+          <span className={cn("[grid-area:1/1] text-ink-3 transition-opacity duration-(--dur-short)", target && "opacity-0")}>{t("Trạng thái chưa có cột trên board")}</span>
+          <span className={cn("[grid-area:1/1] font-medium text-ink transition-opacity duration-(--dur-short)", !target && "opacity-0")}>
+            {target && t("Thả ra để chuyển {id} sang {state}", { id, state: target })}</span>
+        </span>
+        <div className="flex flex-wrap gap-3">
+          {states.map((s, k) => {
+            const on = s === target;
+            // the one under the card grows (its hit area too, so it stays picked while the pointer wobbles)
+            return (
+              <motion.div key={s} data-col={s} aria-label={s}
+                initial={{ opacity: 0, y: still ? 0 : 10 }} animate={{ opacity: 1, y: still || !on ? 0 : -6, scale: still || !on ? 1 : 1.1 }}
+                transition={{ ...DND, opacity: { duration: 0.2, delay: 0.04 * k }, y: { ...DND, delay: on ? 0 : 0.04 * k } }}
+                className={cn("relative grid min-w-80 content-center gap-2 rounded-[var(--radius-input)] border-2 border-dashed px-6 py-7 transition-[background-color,border-color,box-shadow] duration-(--dur-short) ease-(--ease-out)",
+                  on ? "z-10 border-hl bg-hl-wash shadow-stock" : "border-hl/45 bg-paper-2")}>
+                <StatePill state={s} />
+                <span className="text-xs text-ink-3">{t("Chưa có cột: thả vào để mở cột mới")}</span>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+/** A Board column, dragged by its header to a new place among the others (mouse / pen; touch keeps scrolling the board).
+ *  `off`: a card is being dragged and the team workflow does not let it move here; the column fades out (opacity lives in `animate`, a class would be overridden). */
+function Lane({ st, off, label, head, className, children }: { st: string; off: boolean; label: string; head: React.ReactNode; className: string; children: React.ReactNode }) {
   const t = useT();
   const ctl = useDragControls();
   return (
-    <Reorder.Item as="section" value={st} dragListener={false} dragControls={ctl} data-col={st} aria-label={label} className={cn(className, fresh && "border-2 border-dashed border-hl/45")}
-      initial={fresh ? { opacity: 0, scale: 0.96 } : false} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={DND}
+    <Reorder.Item as="section" value={st} dragListener={false} dragControls={ctl} data-col={st} aria-label={label} aria-disabled={off || undefined}
+      className={cn(className, off && "grayscale")}
+      initial={{ opacity: 0 }} animate={{ opacity: off ? 0.35 : 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={DND}
       whileDrag={{ scale: 1.02, zIndex: 20, boxShadow: "0 16px 40px -12px oklch(0% 0 0 / 0.35)" }}>
       <Hint text={t("Kéo để đổi thứ tự cột")} side="bottom">
         <header onPointerDown={(e) => { if (e.button === 0 && e.pointerType !== "touch") ctl.start(e); }}

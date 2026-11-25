@@ -46,33 +46,35 @@ from .errors import ApiError, int_or_404
 from .events import Hub, event_stream
 from .external_runs import external_runs, run_provider
 from .models import (
-    AiAccount,
-    AiCatalogEntry,
     AiDeepBatchRequest,
     AiDeepRequest,
     AiDraftRequest,
+    AiProvider,
+    AiTicketDraft,
+    AiTicketRequest,
+    ChangesPage,
+    ProjectDTO,
+    ProjectRequest,
+    StatusDTO,
+)
+from .models_ai import (
+    AiAccount,
+    AiCatalogEntry,
     AiGuideRequest,
     AiLoginStarted,
     AiMascotJob,
     AiMascotRequest,
     AiMascotRig,
     AiPrefs,
-    AiProvider,
     AiResetRequest,
     AiResetResult,
     AiResult,
     AiRun,
     AiTestRequest,
     AiTestResult,
-    AiTicketDraft,
-    AiTicketRequest,
-    ChangesPage,
     ClaudeAccount,
     ClaudeLoginCode,
     ClaudeLoginStarted,
-    ProjectDTO,
-    ProjectRequest,
-    StatusDTO,
 )
 from .storage import Db, Store, parse_cursor
 from .tasks import add_refs, assist_history, close_in_done_qa, new_task_id, start_task
@@ -85,7 +87,7 @@ from .telegram.live_reads import TelegramReads
 from .telegram.routes import build_router as build_telegram_router
 from .telegram.routes import photo_file, prune_media
 from .telegram.routes_digest import build_router as build_digest_router
-from .youtrack.api import build_router
+from .youtrack.api import build_router, yt_error_response
 from .youtrack.client import YtError
 from .youtrack.routes import build_router as build_youtrack_router
 from .youtrack.service import YouTrackDashboard
@@ -216,14 +218,14 @@ def create_app(
         app.state.settings = settings
         await auto.restore()
         await bridge.start()
-        auto = asyncio.create_task(updater.auto_loop(settings, app.state.agent))
+        upd = asyncio.create_task(updater.auto_loop(settings, app.state.agent))  # not `auto`: on_tags reads that
         # YouTrack rounds with no page open: new-ticket banner (macOS; the page toasts), Báo lại, ticket snoozes
         mac = settings.notify and sys.platform == "darwin"
         watch = asyncio.create_task(yt_dashboard.watch(db, notify_mac if mac else None))
         try:
             yield
         finally:
-            auto.cancel()
+            upd.cancel()
             watch.cancel()
             # Agents and Telegram first; one failing step never skips the others.
             for step in (live_reads.aclose, app.state.agent.stop_all, bridge.stop, yt_dashboard.aclose):
@@ -231,13 +233,15 @@ def create_app(
                     await step()
                 except Exception:
                     log.warning("shutdown step %s failed", step.__name__, exc_info=True)
-            for task in (auto, watch):
+            for task in (upd, watch):
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
 
     yt_dashboard = YouTrackDashboard(settings)
     live_reads = TelegramReads()
-    app = FastAPI(title="Radar", lifespan=lifespan)
+    # No /docs, /redoc, /openapi.json: they sit outside the /api token check and /docs shadows Tài liệu.
+    # `export-openapi` calls app.openapi() directly.
+    app = FastAPI(title="Radar", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.live_reads = live_reads
     app.add_middleware(
         LocalGuardMiddleware,
@@ -261,9 +265,7 @@ def create_app(
     async def telegram_error(r: Request, e: tg_errors.RPCError):
         return await api_error(r, ApiError(502, "telegram_error", detail=type(e).__name__))
 
-    @app.exception_handler(YtError)
-    async def yt_error(_: Request, e: YtError):
-        return JSONResponse({"error": e.message}, status_code=e.status)  # the YouTrack UI reads a string
+    app.exception_handler(YtError)(yt_error_response)
 
     yt_router = build_router(yt_dashboard)
     for route in yt_router.routes:
@@ -338,9 +340,11 @@ def create_app(
 
 
     def _live_fetch(request: Request):
-        """Reads messages not kept (Cả nhóm) live, while Telegram is connected."""
+        """Reads messages not kept (Cả nhóm) live, while Telegram is connected, under the scans' shared cap."""
         s = S(request)
-        return s.bridge.fetch_ids if s.bridge.state == "connected" else None
+        if s.bridge.state != "connected":
+            return None
+        return lambda chat_id, ids: s.live_reads.scan(s.bridge.fetch_ids(chat_id, ids))
 
     async def _draft_extras(request: Request, body: AiDraftRequest):
         """Photos and nearby messages of a tag, for a draft or a ticket: (nearby, images)."""
@@ -351,13 +355,18 @@ def create_app(
         for m in msgs:
             if m.media_kind != "photo":
                 continue
-            if photo := await photo_file(request, m.chat_id, m.message_id):
+            try:  # a photo is a bonus: a flood wait / dropped connection drafts from the text alone
+                photo = await photo_file(request, m.chat_id, m.message_id)
+            except Exception as e:  # noqa: BLE001
+                log.warning("draft without photo %s/%s: %s", m.chat_id, m.message_id, type(e).__name__)
+                continue
+            if photo:
                 images.append(photo)
             else:
                 log.warning("draft without photo %s/%s: not available", m.chat_id, m.message_id)
         if body.with_context and len(ids) == 1 and s.bridge.state == "connected":
             try:
-                nearby = await s.bridge.fetch_context(body.chat_id, ids[0])
+                nearby = await s.live_reads.click(s.bridge.fetch_context(body.chat_id, ids[0]))
             except Exception as e:  # context is a bonus; draft from the tag alone
                 log.warning("draft without context for %s: %r", body.chat_id, e)
         return nearby, images
@@ -652,6 +661,9 @@ def create_app(
                 job.update(state="error", error="ai_failed")
 
         mascots.append(job)
+        for old in mascots[:-8]:  # out of the list: DELETE can't find it any more, so it must not run on unseen
+            if task := old.get("task"):
+                task.cancel()
         del mascots[:-8]
         job["task"] = asyncio.get_running_loop().create_task(draw())  # held by the job; DELETE cancels it
         return AiMascotJob(**job)

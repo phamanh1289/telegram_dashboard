@@ -33,7 +33,7 @@ async def test_long_output_line_and_locked_down_flags(tmp_path):
     await r.start("t1", str(tmp_path), "hi", "edit", "s1", False)
     await r.pumps["t1"]
     items, total = r.read("t1")
-    assert [i["kind"] for i in items] == ["user", "result"] and total == 2
+    assert [i["kind"] for i in items] == ["user", "result"] and total == r.log_path("t1").stat().st_size
     assert not items[1]["error"] and not r.running("t1")
     assert read_task_result(r.settings, "t1").startswith("x" * 1000)
     text = items[1]["text"]  # the line was over asyncio's default 64 KiB limit
@@ -68,7 +68,9 @@ async def test_failed_spawn_and_corrupt_log(tmp_path):
     assert e.value.code == "task_launch_failed" and not r.running("t1")
     assert r.read("t1")[0][-1]["text"].startswith("AI lỗi (task_launch_failed)")  # the page shows why
     r.log_path("t2").write_text('{"kind":"user","text":"a"}\n{broken\n{"kind":"res')
-    assert r.read("t2") == ([{"kind": "user", "text": "a"}], 2)  # half-written tail not counted
+    whole = len('{"kind":"user","text":"a"}\n{broken\n')  # byte offset: the half-written tail not counted
+    assert r.read("t2") == ([{"kind": "user", "text": "a"}], whole)
+    assert r.read("t2", whole) == ([], whole) and r.read("t2", 10_000) == ([], r.log_path("t2").stat().st_size)
 
 
 async def test_cli_lingering_after_its_result_ends_the_run(tmp_path, monkeypatch):
@@ -434,3 +436,25 @@ async def test_a_pr_never_pushes_into_a_folder_named_origin(tmp_path, monkeypatc
     assert e.value.code == "git_push_failed" and not pwned.exists()
     for c in ("push.recurseSubmodules=no", "submodule.recurse=false", "diff.submodule=short"):
         assert c in gitops.SAFE
+
+
+async def test_a_session_stopped_while_its_links_load_never_spawns(tmp_path):
+    """Deleted while start() still reads links: no CLI starts, and stop() returns only once start() is through, so a
+    delete that follows leaves nothing behind."""
+    r = runner(tmp_path, SLOW)
+    gate = asyncio.Event()
+
+    async def text():
+        await gate.wait()
+        return "hi"
+
+    start = asyncio.create_task(r.start("t1", str(tmp_path), text, "edit", "s1", True))
+    await asyncio.sleep(0)
+    stop = asyncio.create_task(r.stop("t1"))
+    await asyncio.sleep(0.05)
+    assert not stop.done()  # waits for start()
+    gate.set()
+    with pytest.raises(ApiError) as e:
+        await start
+    await stop
+    assert e.value.code == "task_cancelled" and r.procs == {} and not r.running("t1")

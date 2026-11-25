@@ -10,7 +10,7 @@ import { FoldMore } from "@/shared/components/ui/fold";
 import { Button } from "@/shared/components/ui/button";
 import { ConfirmDialog, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/shared/components/ui/dialog";
 import { Hint } from "@/shared/components/ui/hint";
-import { api, ApiError, errorText, updateStateQuery } from "@/shared/lib/api";
+import { api, ApiError, errorText, isOffline, OFFLINE_TEXT, updateStateQuery } from "@/shared/lib/api";
 import { type Key, type Lang, t as tPlain, tMaybe, useLang, useT } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
 import { cn } from "@/shared/lib/utils";
@@ -83,7 +83,7 @@ export function UpdateSection() {
   const pending = useQuery({ ...updateStateQuery, retry: false }).data?.pending || d?.pending || "";
   const reboot = useRestartServer();
   // The updater's `detail` is fixed Vietnamese text from the server (English in en/common.ts): translated when known.
-  const err = (e: unknown) => (e instanceof ApiError && ((e.detail && tMaybe(e.detail)) || t("Cập nhật lỗi ({code}).", { code: e.code }))) || t("Không kết nối được GitHub.");
+  const err = (e: unknown) => (e instanceof ApiError && ((e.detail && tMaybe(e.detail)) || t("Cập nhật lỗi ({code}).", { code: e.code }))) || (isOffline(e) ? OFFLINE_TEXT() : t("Không kết nối được GitHub."));
   const busy = run.isPending || restarting;
   const latest = d?.commits[0]?.sha ?? "";
   const release = d?.branch === "GitHub Releases";

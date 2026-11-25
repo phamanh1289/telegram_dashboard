@@ -178,9 +178,16 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
   const start = !!target && !!threads && !items.some((i) => thread(i).some((m) => msgKey(m) === msgKey(target)));
   const reading = !!cur || open === "new" || !!target; // narrow screens: the reader takes the list's place
 
+  // One request id per typed text until it lands: a double submit or a resend after "unknown" is not posted twice.
+  const rid = useRef<{ text: string; id: string } | null>(null);
   const post = useMutation({
-    mutationFn: (text: string) => api<QaPosted>("/qa", { method: "POST", json: { chat_id: chatId, text, reply_to: to?.message_id ?? null, start } }),
+    mutationFn: (text: string) => {
+      const key = `${to?.message_id ?? ""}\n${text}`; // the same text to another message is another post
+      const r = rid.current?.text === key ? rid.current : (rid.current = { text: key, id: crypto.randomUUID() });
+      return api<QaPosted>("/qa", { method: "POST", json: { chat_id: chatId, text, reply_to: to?.message_id ?? null, start, request_id: r.id } });
+    },
     onSuccess: (r) => {
+      rid.current = null;
       rememberQaGroup(chatId);
       edit("");
       setTarget(null);

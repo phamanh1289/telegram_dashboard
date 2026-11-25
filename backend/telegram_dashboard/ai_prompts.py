@@ -1,6 +1,14 @@
 """Prompt text every AI run is built from: rules, task templates, the AI Agent session frame (session_rules)."""
 
 import re
+import secrets
+
+
+def fence(body: str, name: str = "untrusted") -> str:
+    """`body` (others' text: a link, a ticket, a document) in a tag named at random per call, `<untrusted-1a2b3c4d>`:
+    no text can close a frame whose name it cannot guess, so nothing in it goes on as "instructions"."""
+    tag = f"{name}-{secrets.token_hex(4)}"
+    return f"<{tag}>\n{body}\n</{tag}>"
 
 # Appended to every AI system prompt (run, session_rules): answers follow the language the user typed in, not the
 # UI setting, the machine, or the data's language.

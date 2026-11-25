@@ -183,7 +183,7 @@
     "tab": "youtrack",
     "area": "Ticket › Board",
     "title": "Kéo thả thẻ để đổi State",
-    "what": "Trên Board, kéo thẻ sang cột khác để đổi State trên YouTrack (lúc kéo, State kế tiếp chưa có cột sẽ mở tạm một cột trống ngay sau cột của thẻ để thả vào); có nút hoàn tác trong thông báo. Kéo tiêu đề cột để đổi thứ tự cột (nhớ theo từng project). Cột đã xong được gộp thành một nút.",
+    "what": "Trên Board, kéo thẻ sang cột khác để đổi State trên YouTrack (lúc kéo, các State kế tiếp chưa có cột hiện thành ô thả trong thanh nổi ở đáy board, board không xô lệch; rê thẻ vào một ô thì ô phóng to, dòng trên cùng của thanh đổi thành \"Thả ra để chuyển … sang …\" và thẻ đang kéo thu gọn thành một chip chỉ ghi mã ticket ngay khi con trỏ vào thanh (ra khỏi thanh thì mở lại như cũ); thả ra thì cột State đó mọc ra ngay sau cột của thẻ; cột mà Workflow của team không cho chuyển tới bị làm mờ, thả vào đó thẻ quay về chỗ cũ); có nút hoàn tác trong thông báo. Kéo tiêu đề cột để đổi thứ tự cột (nhớ theo từng project). Cột đã xong được gộp thành một nút.",
     "how": [
       {
         "t": "Bấm \"Ticket\"",

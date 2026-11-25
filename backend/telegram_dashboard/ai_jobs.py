@@ -88,7 +88,11 @@ class AiJobs:
 
     def start(self, job_id: str, work, key: str = "") -> StreamingResponse:
         """`work(on_text)` in the background (check `free` first); the response streams it like `stream_answer`.
-        `key`: one run at a time for it (a ticket's UI flow): an older run still going is stopped, its CLI killed."""
+        `key`: one run at a time for it (a ticket's UI flow): an older run still going is stopped, its CLI killed.
+        Checked again here, with nothing awaited before the insert: `free` came before the caller's awaits, and a
+        second request with the same id meanwhile would orphan the first run (no stop by id, nor by stop_all)."""
+        if not self.free(job_id):
+            raise ApiError(409, "ai_job_taken")
         self._prune()
         for k, j in self._jobs.items():
             if key and j.key == key and j.ended is None:
