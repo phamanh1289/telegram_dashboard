@@ -202,17 +202,15 @@ class AutoBe:
                     return task_id, chain
         return None, chain
 
-    def edited(self, row: dict) -> bool:
-        """The session may edit files: started in edit, or a turn ran with edits let (the user's approval)."""
+    def turn_flags(self, row: dict) -> tuple[bool, bool]:
+        """(edit, mcp) for the session's next relay turn, from one read of its log. edit: started in edit, or a turn
+        ran with edits let (the user's approval). mcp: "Dùng MCP / plugin" as the user left it on their last own edit
+        turn (the box lives in the browser, so the turn carries it; a turn logged before the flag was kept: on)."""
         items, _ = self.s.agent.read(row["id"])
-        return row["mode"] == "edit" or any(i.get("kind") == "user" and i.get("mode") == "edit" for i in items)
-
-    def mcp_on(self, row: dict) -> bool:
-        """ "Dùng MCP / plugin" as the user left it on their last own edit turn (the box lives in the browser, so the
-        turn carries it). A turn logged before the flag was kept ran with MCP: on."""
-        items, _ = self.s.agent.read(row["id"])
-        mine = [i for i in items if i.get("kind") == "user" and i.get("mode") == "edit" and not i.get("auto")]
-        return bool(mine[-1].get("mcp", True)) if mine else True
+        edits = [i for i in items if i.get("kind") == "user" and i.get("mode") == "edit"]
+        mine = [i for i in edits if not i.get("auto")]
+        edit = row["mode"] == "edit" or bool(edits)
+        return edit, edit and (bool(mine[-1].get("mcp", True)) if mine else True)
 
     async def flush(self, task_id: str) -> None:
         """Send the answers waiting for a session as one turn, once it is not running."""
@@ -238,13 +236,13 @@ class AutoBe:
         if rest:  # the turn after this one takes them
             self.pending[task_id] = rest
         took = [(m.chat_id, m.message_id) for m in msgs]
-        mode = "edit" if await asyncio.to_thread(self.edited, row) else "plan"
+        edit, mcp = await asyncio.to_thread(self.turn_flags, row)
+        mode = "edit" if edit else "plan"
         names = ", ".join(dict.fromkeys(m.sender_name or "?" for m in msgs))
         titles = {c["chat_id"]: c["title"] for m in msgs if (c := await s.db.read(s.store.get_chat, m.chat_id))}
         text = with_attachments(RELAY.format(who=names, act=ACT[mode]), msgs, row["chat_id"], titles)
         try:
             # an edit turn: MCP only as the user's own last edit turn had it ("Dùng MCP / plugin")
-            mcp = mode == "edit" and await asyncio.to_thread(self.mcp_on, row)
             await send_turn(s, row, text, took, mode == "edit", auto=True, mcp=mcp, model=cheap or None)
             if cheap:
                 s.agent.note(task_id, f"Vòng BE: quota Claude đã tới {QUOTA_STOP}%, lượt tự chạy này hạ model xuống "

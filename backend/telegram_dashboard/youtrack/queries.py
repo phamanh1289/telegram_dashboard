@@ -21,6 +21,7 @@ from .client import (
     _who_clause,
     live,
     pages,
+    yt_code,
 )
 
 WAVE = 4  # issue pages fetched concurrently
@@ -140,9 +141,8 @@ class YtQueries(YtClient):
                 raise ApiError(422, "youtrack_project_not_found")
             post = {"project": {"id": pid}, "summary": summary, "description": description, "usesMarkdown": markdown}
             issue_id = (await self.yt("/api/issues", post=post, fields="idReadable"))["idReadable"]
-        except YtError as e:
-            code = "youtrack_unauthorized" if e.status in (401, 403) else "youtrack_error"
-            raise ApiError(502, code, detail=e.message) from None  # why YouTrack refused / "may have been created"
+        except YtError as e:  # why YouTrack refused / youtrack_unknown: it may have been created
+            raise ApiError(502, yt_code(e), detail=e.message) from None
         except KeyError, TypeError, ValueError:
             raise ApiError(502, "youtrack_error") from None
         return issue_id, f"{self.base}/issue/{issue_id}"

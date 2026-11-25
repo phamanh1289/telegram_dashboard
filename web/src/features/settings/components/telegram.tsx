@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AtSign, BellOff, Clock1, Clock12, Clock2, Clock4, Clock8, Eye, ExternalLink, MousePointerClick, Plus, Timer, Users, X } from "lucide-react";
+import { AtSign, BellOff, Clock1, Clock12, Clock2, Clock4, Clock8, Eye, ExternalLink, MousePointerClick, Plus, RotateCw, Timer, Users, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState, useSyncExternalStore } from "react";
 import { AUTO_BRIEF } from "@/features/telegram/components/briefing-page";
@@ -171,7 +171,8 @@ const TG_ERRORS: Record<string, Key> = {
 function TelegramSection() {
   const t = useT();
   const qc = useQueryClient();
-  const status = useStatus().data;
+  const sq = useStatus();
+  const status = sq.data;
   const [editApi, setEditApi] = useState(false);
   const [apiId, setApiId] = useState("");
   const [apiHash, setApiHash] = useState("");
@@ -192,7 +193,13 @@ function TelegramSection() {
     mutationFn: () => api<{ password_required: boolean }>("/telegram/sign-in", { method: "POST", json: step === "password" ? { password } : { code: code.trim() } }),
     onSuccess: (r) => { if (r.password_required) setStep("password"); else { setPassword(""); refresh(); } },
   });
-  if (!status) return <div className="pt-1"><StatusLine tone="idle">{t("Đang kiểm tra…")}</StatusLine></div>;
+  if (!status) return (
+    <div className="flex flex-wrap items-center gap-2 pt-1">
+      {sq.isError ? <StatusLine tone="error">{errorText(sq.error, {}, t("Không đọc được trạng thái Telegram."))}</StatusLine>
+        : <StatusLine tone="idle">{t("Đang kiểm tra…")}</StatusLine>}
+      {sq.isError && <Button size="xs" variant="outline" aria-busy={sq.isFetching} disabled={sq.isFetching} onClick={() => void sq.refetch()}><RotateCw /> {t("Thử lại")}</Button>}
+    </div>
+  );
   const err = saveApi.error ?? sendCode.error ?? signIn.error;
   const errLine = err && <p role="alert" className="text-xs text-error">{errorText(err, tMap(t, TG_ERRORS), t("Không thực hiện được, thử lại."))}</p>;
 

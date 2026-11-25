@@ -295,4 +295,5 @@ export default {
   "Không kết nối được YouTrack để tải lại bài.": "Could not reach YouTrack to download the article again.",
   "YouTrack từ chối token: không tải lại được bài.": "YouTrack refused the token: the article could not be downloaded again.",
   "YouTrack không trả bài này (đã xóa, hoặc bạn không có quyền đọc).": "YouTrack did not return this article (deleted, or you cannot read it).",
+  "lỗi đồng bộ": "sync error",
 } satisfies Dict;

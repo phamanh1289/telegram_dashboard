@@ -151,7 +151,40 @@ const COMMON: Record<string, (e: ApiError) => string> = {
   task_cancelled: () => t("Phiên đã bị dừng khi đang khởi động. "),
   project_forbidden: () => t("Không dùng được thư mục này làm dự án: đó là thư mục của chính app, thư mục chứa app, thư mục nhà hoặc dữ liệu của app. Chọn thư mục code của dự án. "),
   ai_scope_not_allowed: () => t("Tin này không còn được theo dõi hoặc đã bị xóa. "),
+  not_connected: () => t("Telegram chưa kết nối. "),
+  ai_not_configured: () => t("AI đang chọn chưa cài hoặc chưa đăng nhập, xem Cài đặt › AI."),
+  ai_timeout: () => t("AI phản hồi quá lâu; thử lại. "),
+  ai_provider_error: (e) => (aiOffline(e) ? t("AI không kết nối được máy chủ (mạng / VPN?), thử lại. ") : t("AI gặp lỗi; thử lại.")),
+  ai_cli_missing: () => t("Chưa cài lệnh của AI này, xem Cài đặt › AI. "),
+  ai_cli_unavailable: () => t("Lệnh của AI không trả lời, thử lại. "),
+  claude_cli_unavailable: () => t("Lệnh claude không trả lời, thử lại. "),
+  ai_logout_unsupported: () => t("AI này không đăng xuất được từ dashboard. "),
+  terminal_failed: () => t("Không mở được Terminal. "),
+  youtrack_unauthorized: () => t("Token YouTrack hết hạn hoặc thiếu quyền, xem Cài đặt › YouTrack."),
+  youtrack_unreachable: () => t("Không kết nối được YouTrack (mạng chặn? bật VPN), thử lại sau. "),
+  youtrack_unknown: () => t("Không rõ YouTrack đã ghi chưa — mở lại ticket để kiểm tra trước khi làm lại"),
+  youtrack_error: () => t("YouTrack báo lỗi, thử lại sau. "),
+  youtrack_not_configured: () => t("Chưa có token YouTrack — dán token trong Cài đặt"),
+  unknown_chat: () => t("Không tìm thấy nhóm này (có thể đã bỏ theo dõi). "),
+  chat_migrated: () => t("Nhóm đã chuyển thành supergroup: mở lại nhóm mới. "),
+  photo_not_available: () => t("Không còn ảnh của tin này. "),
+  picker_failed: () => t("Không mở được hộp chọn thư mục. "),
+  reveal_failed: () => t("Không mở được Finder. "),
+  data_clear_failed: () => t("Không xóa được dữ liệu, thử lại. "),
+  task_not_found: () => t("Phiên này không còn (đã xóa). "),
+  terminal_task_unsupported: () => t("Phiên Terminal cũ chỉ còn để xem. "),
+  rule_value_empty: () => t("Nhập giá trị cho luật. "),
+  request_not_found: () => t("Không tìm thấy lượt gửi này. "),
+  guide_session_gone: () => t("AI đã đổi, hỏi lại từ đầu. "),
+  mascot_gone: () => t("Lượt vẽ này không còn, vẽ lại. "),
 };
+// An AI CLI that could not reach its server (no network, VPN, proxy down), in its own words.
+const AI_OFFLINE = /connection error|network|econn|etimedout|enotfound|eai_again|socket hang up|fetch failed|getaddrinfo/i;
+const aiOffline = (e: ApiError) => AI_OFFLINE.test(e.detail ?? "");
+
+/** The local dashboard did not answer at all (stopped, restarting): fetch's TypeError, not an abort. */
+export const isOffline = (e: unknown) => e instanceof TypeError || (e instanceof Error && e.name === "TypeError");
+export const OFFLINE_TEXT = () => t("Không liên lạc được dashboard local. Kiểm tra app còn chạy rồi thử lại.");
 
 /** Newer versions on GitHub (the server checks hourly) and the running one; the shell's badge and Liên hệ share it. */
 export const updateStateQuery = {
@@ -171,8 +204,9 @@ const WITH_DETAIL = new Set(["ai_provider_error", "task_launch_failed", "claude_
 
 /** The message for an error's code; an AI run's failure also gets the CLI's own reason (`detail`). */
 export function errorText(e: unknown, map: Record<string, string>, fallback = t("Có lỗi xảy ra.")) {
-  const text = (e instanceof ApiError && (map[e.code] || COMMON[e.code]?.(e))) || fallback;
-  const out = e instanceof ApiError && WITH_DETAIL.has(e.code) && e.detail ? `${text.trimEnd()} (${tMaybe(e.detail)}) ` : text;
+  const text = (e instanceof ApiError && (map[e.code] || COMMON[e.code]?.(e))) || (isOffline(e) ? OFFLINE_TEXT() : fallback);
+  const out = e instanceof ApiError && WITH_DETAIL.has(e.code) && e.detail && !(e.code === "ai_provider_error" && aiOffline(e))
+    ? `${text.trimEnd()} (${tMaybe(e.detail)}) ` : text;
   lastFailure = reportable(e) ? { text: out, at: Date.now(), failure: failureOf(e) } : null;
   return out;
 }

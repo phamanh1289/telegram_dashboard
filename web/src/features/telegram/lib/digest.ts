@@ -13,10 +13,7 @@ const ERRORS: Record<string, Key> = {
   digest_consent_required: "Cần cho phép AI đọc nhóm này trước.",
   digest_empty: "Không có tin nào để tóm tắt.",
   digest_too_large: "Quá nhiều tin cho một lần tóm tắt (tối đa 2.000 tin); hãy thu hẹp khoảng thời gian.",
-  not_connected: "Telegram chưa kết nối.",
-  ai_not_configured: "AI đang chọn chưa cài hoặc chưa đăng nhập, xem Cài đặt › AI.",
   ai_timeout: "AI phản hồi quá lâu; thử lại hoặc thu hẹp khoảng thời gian.",
-  ai_provider_error: "AI gặp lỗi; thử lại.",
   ai_permission_changed: "Quyền đã đổi trong lúc xử lý; kết quả bị bỏ.",
   chat_not_found: "Không tìm thấy nhóm.",
 };

@@ -202,5 +202,18 @@
       }
     ],
     "keys": "collapse sidebar expand rail hide menu hamburger drawer"
+  },
+  {
+    "id": "dashboard-down",
+    "tab": "telegram",
+    "area": "Top bar › connection strip",
+    "title": "When the local dashboard stops answering or a screen crashes",
+    "what": "The dashboard server on this machine (the app) stopped or is restarting: on every page (Telegram, YouTrack, Documents, Settings) within 15 seconds a yellow strip shows under the top bar: \"Could not reach the local dashboard. Check the app is still running, then try again.\" The dashboard checks again every 5 seconds; once it answers, the strip hides and whatever failed meanwhile loads again. The Telegram Inbox's own strip (\"Update stream paused\", Telegram disconnected) shows only while the dashboard is running. A page that hits an unexpected error shows the \"This screen ran into an error\" screen instead of a blank page.",
+    "how": [
+      "See the \"Could not reach the local dashboard\" strip: reopen the app (or run Start Dashboard Telegram again), then click \"Retry\" on the strip",
+      "On the \"This screen ran into an error\" screen: click \"Retry\"; if it persists, click \"Reload\"",
+      "Click \"Report it\" to open Settings › Contact with the error filled in"
+    ],
+    "keys": "connection lost dashboard not answering server stopped offline retry screen error crash reload report"
   }
 ]

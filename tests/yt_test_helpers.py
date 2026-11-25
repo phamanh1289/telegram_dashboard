@@ -4,10 +4,9 @@ import types
 
 import httpx
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
 from telegram_dashboard.config import Settings
 from telegram_dashboard.youtrack import flow as uiflow
-from telegram_dashboard.youtrack.api import build_router
+from telegram_dashboard.youtrack.api import build_router, yt_error_response
 from telegram_dashboard.youtrack.client import YtError
 from telegram_dashboard.youtrack.service import YouTrackDashboard
 
@@ -94,7 +93,7 @@ def flow_app(yt: FakeYt, tmp_path) -> tuple[httpx.AsyncClient, YouTrackDashboard
     app = FastAPI()
     app.include_router(build_router(svc))
     app.state.settings = types.SimpleNamespace(static_dir=tmp_path)
-    app.exception_handler(YtError)(lambda _, e: JSONResponse({"error": e.message}, status_code=e.status))
+    app.exception_handler(YtError)(yt_error_response)
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t"), svc
 
 

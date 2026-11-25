@@ -331,7 +331,8 @@ function Empty({ anyFilter }: { anyFilter: boolean }) {
   }
   return (
     <div className="grid justify-items-center gap-3 rounded-lg bg-cotton px-6 py-14 text-center text-sm text-ink-2 shadow-stock">
-      <p>{q ? t("Không tìm thấy ticket nào khớp “{q}” trong dữ liệu đã tải.", { q }) : t("Không có ticket nào.")}</p>
+      {/* list unreadable: the error banner above says why, "no tickets" would be wrong */}
+      {!(y.issues.isError && !y.issues.data) && <p>{q ? t("Không tìm thấy ticket nào khớp “{q}” trong dữ liệu đã tải.", { q }) : t("Không có ticket nào.")}</p>}
       {anyFilter && <Button size="sm" variant="outline" onClick={() => y.setFilters({ q: "", tier: null, quick: null, state: [], priority: [], type: [], sprint: [], assignee: [] })}><X /> {t("Xóa bộ lọc")}</Button>}
       <div className="flex w-full max-w-md gap-2">
         <input type="search" value={gid} onChange={(e) => setGid(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void find(); }} placeholder={t("Tìm toàn cục theo ID (vd. 123 hoặc VA-123)")}

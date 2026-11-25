@@ -184,7 +184,6 @@ export default {
   "Chưa có ticket xong trong sprint.": "No tickets done in the sprint yet.",
   // home (Dev / QA / PO)
   "Đã gửi vào Saved Messages": "Sent to Saved Messages",
-  "Telegram chưa kết nối.": "Telegram is not connected.",
   "Không gửi được, thử lại sau": "Could not send, try again later",
   "{x} lúc {w}": "{x} at {w}",
   "Việc của AI": "AI tasks",
@@ -485,6 +484,8 @@ export default {
   "Bạn dùng YouTrack với vai trò nào?": "Which role do you use YouTrack in?",
   "Trang chủ, góc nhìn Ticket, Dashboard và AI (cả tóm tắt bên Telegram) sẽ theo vai trò này. Đổi bất cứ lúc nào ở ô Vai trò trên thanh bên, hoặc xóa trong Cài đặt › Chung.": "Home, the Tickets view, Dashboard and AI (Telegram summaries too) follow this role. Change it anytime in the Role box on the sidebar, or clear it in Settings › General.",
   "Không liên lạc được dashboard local. Kiểm tra app còn chạy rồi thử lại.": "Could not reach the local dashboard. Check the app is still running, then try again.",
+  "Chưa rõ đã tạo ticket chưa": "Not sure the ticket was created",
+  "Mất kết nối giữa chừng: tìm ticket trên YouTrack trước khi tạo lại.": "The connection dropped midway: look for the ticket in YouTrack before creating it again.",
   "YouTrack từ chối token. Kiểm tra lại token trong Cài đặt › YouTrack.": "YouTrack rejected the token. Check the token in Settings › YouTrack.",
   "YouTrack không phản hồi hoặc đang lỗi. Thử lại sau ít phút.": "YouTrack is not responding or has an error. Try again in a few minutes.",
   "Không tải được dữ liệu YouTrack.": "Could not load YouTrack data.",
@@ -715,4 +716,5 @@ export default {
   "Chờ bạn chốt": "Waiting on your decision",
   "Xem thay đổi so với mô tả hiện tại, sửa nếu cần rồi lưu lên YouTrack": "See the changes against the current description, edit if needed, then save to YouTrack",
   "Lưu vào mô tả": "Save to description",
+  "Không đọc được trạng thái lượt chạy nền: {e}": "Could not read the background runs' status: {e}",
 } satisfies Dict;

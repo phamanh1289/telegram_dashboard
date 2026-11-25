@@ -6,7 +6,7 @@ import { Button } from "@/shared/components/ui/button";
 import { toast } from "@/shared/lib/notifications";
 import { type Key, t as tNow, useT } from "@/shared/lib/i18n";
 import { readJson, setPref } from "@/shared/lib/prefs";
-import { type Filters, yt } from "@/features/youtrack/lib/yt";
+import { type Filters, yt, ytFail } from "@/features/youtrack/lib/yt";
 import { runningSprints } from "@/features/youtrack/lib/yt-stats";
 import { Popover } from "./bits";
 import { saveOneShot } from "./history";
@@ -37,7 +37,7 @@ export async function aiFilterApply(y: Yt, text: string) {
       .filter(([, v]) => v.length).map(([k, v]) => `- **${k}:** ${v.join(", ")}`);
     done(rows.length ? `${tNow("Bộ lọc AI đã đặt:")}\n${rows.join("\n")}` : tNow("AI không đặt được bộ lọc nào từ câu này."));
     toast({ text: tNow("AI đã đặt bộ lọc, xem các chip bên dưới") });
-  } catch (e) { const text = tNow("AI lọc lỗi: {msg}", { msg: (e as Error).message }); done(text); toast({ text }); } // done: the history session is not left "Chưa xong"
+  } catch (e) { const f = ytFail(e), text = tNow("AI lọc lỗi: {msg}", { msg: f.msg }); done(text); toast({ text, failure: f.failure }); } // done: the history session is not left "Chưa xong"
   finally { setFilterBusy(false); }
 }
 

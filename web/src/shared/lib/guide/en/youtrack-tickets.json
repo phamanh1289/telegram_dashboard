@@ -183,7 +183,7 @@
     "tab": "youtrack",
     "area": "Ticket › Board",
     "title": "Drag cards to change State",
-    "what": "On the Board, drag a card to another column to change its State on YouTrack (while dragging, next States with no column open as empty columns right after the card's own, to drop it on); the notice has an undo button. Drag a column header to reorder the columns (remembered per project). Done columns are folded into one button.",
+    "what": "On the Board, drag a card to another column to change its State on YouTrack (while dragging, next States with no column show as drop zones in a bar floating at the board's foot, so the columns don't shift; hover one and it grows, the bar's top line turns into \"Let go to move … to …\" and the dragged card folds into a chip with just the ticket id as soon as the pointer is over the bar (it unfolds again off the bar); let go and that State's column appears right after the card's own; columns the team Workflow does not allow are faded, and a card dropped there goes back); the notice has an undo button. Drag a column header to reorder the columns (remembered per project). Done columns are folded into one button.",
     "how": [
       {
         "t": "Click \"Tickets\"",

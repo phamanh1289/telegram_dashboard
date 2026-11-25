@@ -202,5 +202,18 @@
       }
     ],
     "keys": "thu gon menu sidebar mo rong rail an menu hamburger collapse"
+  },
+  {
+    "id": "dashboard-down",
+    "tab": "telegram",
+    "area": "Thanh trên cùng › dải báo kết nối",
+    "title": "Khi dashboard local không trả lời hoặc màn hình gặp lỗi",
+    "what": "Server dashboard trên máy (app) dừng hoặc đang khởi động lại: ở mọi trang (Telegram, YouTrack, Tài liệu, Cài đặt) trong vòng 15 giây một dải vàng hiện dưới thanh trên cùng: \"Không liên lạc được dashboard local. Kiểm tra app còn chạy rồi thử lại.\" Dashboard tự kiểm tra lại mỗi 5 giây; trả lời lại thì dải tự ẩn và dữ liệu lỗi trong lúc đó được tải lại. Dải riêng của Telegram Inbox (\"Luồng cập nhật tạm dừng\", mất kết nối Telegram) chỉ hiện khi dashboard vẫn chạy. Một trang gặp lỗi không mong đợi thì hiện màn \"Màn hình gặp lỗi\" thay cho trang trắng.",
+    "how": [
+      "Thấy dải \"Không liên lạc được dashboard local\": mở lại app (hoặc chạy lại Start Dashboard Telegram), rồi bấm \"Thử lại\" trên dải",
+      "Ở màn \"Màn hình gặp lỗi\": bấm \"Thử lại\"; vẫn lỗi thì bấm \"Tải lại\"",
+      "Bấm \"Báo lỗi này\" để mở Cài đặt › Liên hệ với nội dung lỗi điền sẵn"
+    ],
+    "keys": "mat ket noi mất kết nối dashboard khong tra loi không trả lời server dung offline thu lai thử lại man hinh gap loi màn hình gặp lỗi tai lai tải lại bao loi báo lỗi crash"
   }
 ]

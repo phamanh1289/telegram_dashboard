@@ -105,7 +105,6 @@ export default {
   "Cần cho phép AI đọc nhóm này trước.": "Allow the AI to read this group first.",
   "Không có tin nào để tóm tắt.": "No messages to summarize.",
   "Quá nhiều tin cho một lần tóm tắt (tối đa 2.000 tin); hãy thu hẹp khoảng thời gian.": "Too many messages for one summary (max 2,000); narrow the time range.",
-  "Telegram chưa kết nối.": "Telegram is not connected.",
   "AI đang chọn chưa cài hoặc chưa đăng nhập, xem Cài đặt › AI.": "The selected AI is not installed or not signed in, see Settings › AI.",
   "AI phản hồi quá lâu; thử lại hoặc thu hẹp khoảng thời gian.": "The AI took too long; try again or narrow the time range.",
   "AI gặp lỗi; thử lại.": "The AI ran into an error; try again.",
@@ -226,7 +225,6 @@ export default {
   "Blocker và rủi ro": "Blockers and risks",
   "Cần confirm gì?": "What needs confirming?",
   "Chưa có bản tóm tắt nào; bấm “Tóm tắt” trước.": "No summaries yet; click “Summarize” first.",
-  "AI chưa cài hoặc chưa đăng nhập, xem Cài đặt › AI.": "The AI is not installed or not signed in, see Settings › AI.",
   "Đang đọc tóm tắt các nhóm": "Reading the group summaries",
   "Đang tìm việc chờ bạn": "Finding what waits on you",
   "Đang xếp theo độ gấp": "Sorting by urgency",
@@ -478,4 +476,6 @@ export default {
   "Không đọc được danh sách nhóm.": "Could not read the group list.",
   "Không thấy nhóm nào.": "No groups found.",
   "Không lưu được câu trả lời đã chốt, thử lại": "Could not save the accepted answer, try again",
+  "Màn hình gặp lỗi": "This screen ran into an error",
+  "Trang này gặp lỗi không mong đợi. Bấm Thử lại; vẫn lỗi thì tải lại trang hoặc báo lỗi (Cài đặt › Liên hệ).": "This page hit an unexpected error. Click Retry; if it persists, reload the page or report it (Settings › Contact).",
 } satisfies Dict;

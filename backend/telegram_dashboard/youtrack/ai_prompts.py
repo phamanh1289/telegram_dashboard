@@ -273,4 +273,5 @@ AI_ERR = {  # {ai}: the CLI picked in Settings › AI
     "ai_timeout": "{ai} chạy quá lâu, thử lại",
     "ai_cancelled": "Đã hủy",
     "ai_provider_error": "{ai} lỗi, kiểm tra đăng nhập {ai} trong Cài đặt",
+    "ai_offline": "{ai} không kết nối được máy chủ (mạng / VPN?), thử lại",  # ai_provider_error, no network (OFFLINE)
 }

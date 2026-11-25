@@ -614,4 +614,5 @@ export default {
   "Vừa reset gần đây, chờ một lúc mới dùng được lượt tiếp; lượt vẫn còn.": "A reset was used recently; wait a bit before the next one. The reset is kept.",
   "Có thể còn lượt reset miễn phí: {name} chỉ báo cho CLI bản mới, chạy {cmd} rồi bấm đọc lại.": "You may have free resets: {name} lists them only to a recent CLI. Run {cmd}, then read the limits again.",
   "Không reset được, thử lại sau.": "Couldn't reset, try again later.",
+  "Không đọc được trạng thái {name} CLI.": "Could not read the {name} CLI status.",
 } satisfies Dict;

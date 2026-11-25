@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from ..config import write_private_json
 from . import api_ai, api_flow, api_flow_file
 from .asked import asked
-from .client import FIELDS, ID_RE, YtError, _fields, _me, _normalize, _projects
+from .client import FIELDS, ID_RE, YtError, _fields, _me, _normalize, _projects, yt_code
 from .schemas import (
     AiNotes,
     Assignee,
@@ -32,6 +32,11 @@ from .service import YouTrackDashboard
 LOGIN_RE = re.compile(r"^[\w.@-]+$")
 SINCE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+@\d+\Z")
 
+
+
+def yt_error_response(_: Request, e: YtError) -> JSONResponse:
+    """A YouTrack failure in the same {code, detail} as ApiError: the page words it, and offers "Báo lỗi", one way."""
+    return JSONResponse({"error": {"code": yt_code(e), "detail": e.message}}, status_code=e.status)
 
 def build_router(svc: YouTrackDashboard) -> APIRouter:
     r = APIRouter(prefix="/api/yt")

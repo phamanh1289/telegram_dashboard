@@ -13,7 +13,7 @@ import { type Key, t as tNow, useT } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
 import type { YtRole } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { type PromptCtx, type PromptLib, type SavedPrompt, yt } from "@/features/youtrack/lib/yt";
+import { type PromptCtx, type PromptLib, type SavedPrompt, yt, ytFail } from "@/features/youtrack/lib/yt";
 
 /** Built-in AI jobs (the session runs them by `kind`); `for`: one ticket, several, or either. The team may delete them, not edit them. */
 export const BUILTINS = [
@@ -56,7 +56,7 @@ export function usePrompts() {
   const m = useMutation({
     mutationFn: yt.setPrompts,
     onSuccess: (next) => qc.setQueryData(KEY, next),
-    onError: (e) => toast({ text: tNow("Không lưu được prompt: {msg}", { msg: (e as Error).message }) }),
+    onError: (e) => { const f = ytFail(e); toast({ text: tNow("Không lưu được prompt: {msg}", { msg: f.msg }), failure: f.failure }); },
   });
   const lib: PromptLib = { prompts: [], shown: {}, hidden: [], ...q.data };
   return { q, lib, save: m.mutate, saving: m.isPending }; // save(next, { onSuccess }): act only once it is stored

@@ -8,6 +8,7 @@ import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Toaster, TopBar } from "@/app/_components/shell";
 import { YtLogo } from "@/shared/components/yt-logo";
+import { ApiError, isOffline } from "@/shared/lib/api";
 import { Button } from "@/shared/components/ui/button";
 import { Dropdown } from "@/shared/components/ui/dropdown";
 import { fmtClock, type Key, t as tNow, tMaybe, useT } from "@/shared/lib/i18n";
@@ -275,10 +276,11 @@ const who = (v: string) => (v === UNASSIGNED ? tNow("Chưa assign") : shortName(
 
 /** A failed YouTrack load in words the user can act on; the raw reason stays as a secondary line. */
 function loadError(e: Error): Key {
-  const m = e.message;
-  if (e.name === "TypeError" || /failed to fetch|load failed|networkerror/i.test(m)) return "Không liên lạc được dashboard local. Kiểm tra app còn chạy rồi thử lại.";
-  if (/\b(401|403)\b|unauthori|forbidden|token/i.test(m)) return "YouTrack từ chối token. Kiểm tra lại token trong Cài đặt › YouTrack.";
-  if (/\bHTTP 5\d\d\b|timeout|timed out|unavailable/i.test(m)) return "YouTrack không phản hồi hoặc đang lỗi. Thử lại sau ít phút.";
+  const m = e.message, code = e instanceof ApiError ? e.code : "";
+  if (isOffline(e) || /failed to fetch|load failed|networkerror/i.test(m)) return "Không liên lạc được dashboard local. Kiểm tra app còn chạy rồi thử lại.";
+  if (code === "youtrack_unauthorized" || /\b(401|403)\b|unauthori|forbidden|token/i.test(m)) return "YouTrack từ chối token. Kiểm tra lại token trong Cài đặt › YouTrack.";
+  if (code === "youtrack_unreachable") return "Không kết nối được YouTrack (mạng chặn? bật VPN), thử lại sau. ";
+  if (code === "youtrack_error" || /\bHTTP 5\d\d\b|timeout|timed out|unavailable/i.test(m)) return "YouTrack không phản hồi hoặc đang lỗi. Thử lại sau ít phút.";
   return "Không tải được dữ liệu YouTrack.";
 }
 

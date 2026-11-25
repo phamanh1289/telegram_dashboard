@@ -61,7 +61,7 @@ export function AiQuota({ scope = "telegram" }: { scope?: AiScope }) {
   const name = info(provider)?.name ?? "AI";
   const acc = useAccounts(5 * 60_000)[provider];
   const now = useNow();
-  if (acc.checking) return null;
+  if (acc.checking || acc.error) return null; // unreadable: no "not installed" claim in the top bar
   const group = /^(claude|gpt)/.test(p?.by.antigravity?.[KEYS[kind][0]] ?? "") ? "Claude & GPT" : "Gemini";
   const usage = !acc.loggedIn ? [] : provider === "antigravity" ? acc.usage.filter((u) => u.label.endsWith(group)) : acc.usage;
   const peak = Math.max(0, ...usage.map((u) => u.percent));
@@ -135,7 +135,7 @@ export function AiAccounts() {
       {PROVIDERS.map((id) => {
         const a = accounts[id];
         const name = info(id)?.name ?? id;
-        const dot = a.checking || a.pending ? "bg-ink-3 animate-pulse" : a.installed && a.loggedIn ? "bg-ok" : "bg-signal";
+        const dot = a.checking || a.pending ? "bg-ink-3 animate-pulse" : a.error ? "bg-error" : a.installed && a.loggedIn ? "bg-ok" : "bg-signal";
         return (
           <div key={id} className="grid gap-2 py-3 first:pt-1 last:pb-0">
             <div className="flex items-center gap-3">
@@ -150,6 +150,7 @@ export function AiAccounts() {
                   <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dot)} />
                   <span className="min-w-0 truncate">
                     {a.checking ? <span className="text-ink-3">{t("Đang kiểm tra…")}</span>
+                      : a.error ? <span role="alert" className="text-error">{errorText(a.error, {}, t("Không đọc được trạng thái {name} CLI.", { name }))}</span>
                       : !a.installed ? <span className="text-signal-2">{t("Chưa cài")}</span>
                       : a.loggedIn ? <><span className="text-ink-2">{a.email ?? t("Đã đăng nhập")}</span>{a.plan && <span className="text-ink-3"> · {a.plan}</span>}</>
                       : a.pending ? <span className="text-ink-3">{t("Đang chờ đăng nhập…")}</span>
@@ -157,11 +158,11 @@ export function AiAccounts() {
                   </span>
                 </span>
               </span>
-              {!a.checking && (a.installed
+              {!a.checking && (a.error ? <Button size="sm" variant="outline" onClick={recheck}>{t("Thử lại")}</Button> : a.installed
                 ? <Button size="sm" variant={a.loggedIn ? "ghost" : "outline"} onClick={() => setOpen(true)}>{a.loggedIn ? t("Chi tiết") : t("Đăng nhập")}</Button>
                 : <Button size="sm" variant="outline" onClick={recheck}>{t("Đã cài, kiểm tra lại")}</Button>)}
             </div>
-            {!a.checking && !a.installed && a.install && <div className="pl-12"><InstallCmd cmd={a.install} /></div>}
+            {!a.checking && !a.error && !a.installed && a.install && <div className="pl-12"><InstallCmd cmd={a.install} /></div>}
           </div>
         );
       })}
@@ -371,6 +372,8 @@ function CliAccountCard({ provider, onEdit }: { provider: Provider; onEdit: () =
   const logout = useMutation({ mutationFn: () => api(`/ai/${provider}/logout`, { method: "POST" }), onSettled: recheck });
   const name = info(provider)?.name ?? provider;
   if (a.checking) return <AgentCard provider={provider} tone="wait" line={t("Đang kiểm tra…")}><Skeleton className="h-12" /></AgentCard>;
+  if (a.error) return <AgentCard provider={provider} tone="off" line={<span role="alert" className="text-error">{errorText(a.error, {}, t("Không đọc được trạng thái {name} CLI.", { name }))}</span>}
+    actions={<Button variant="outline" size="sm" onClick={recheck}>{t("Thử lại")}</Button>} />;
   const notes = [
     !a.installed && <InstallCmd key="install" cmd={a.install} />,
     a.pending && a.url && (
@@ -509,7 +512,7 @@ export function PrefsSection({ plain = false, scope: initial = "telegram", fixed
   const [scope, setScope] = useState<AiScope>(initial);
   if (!p || !catalog) return null;
   const inUse = used();
-  const broken = inUse.filter((id) => !accounts[id].checking && !(accounts[id].installed && accounts[id].loggedIn));
+  const broken = inUse.filter((id) => !accounts[id].checking && !accounts[id].error && !(accounts[id].installed && accounts[id].loggedIn));
   const pad = plain ? "py-3 first:pt-1" : "px-4 py-3";
   const tabs = !fixed && (
     <Segmented id={`ai-scope-${plain ? "plain" : "page"}`} label={t("Model và effort cho module")} value={scope} onChange={setScope}

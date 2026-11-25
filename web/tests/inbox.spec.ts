@@ -265,3 +265,20 @@ test("ticking Cho sửa code on an empty box writes the approval; unticking it u
   await tick.click();
   await expect(box).toHaveValue("việc riêng của tôi");
 });
+
+// Every Telegram page starts right under its header and fills the rest: the banner between them is a Fold (always in the
+// DOM), so the column needs a row for it, or the page drops into an auto row under an empty 1fr one (Q&A, Hôm nay).
+for (const [name, url] of [["Hôm nay", "/"], ["Q&A", "/?chat=__qa__"], ["Briefing", "/?chat=__briefing__"], ["AI Agent", "/?chat=__tasks__"]]) {
+  test(`${name} fills the column under its header`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(url);
+    const header = page.locator("header").filter({ has: page.getByRole("heading", { level: 2 }) }).first(); // the column's, before a page's own
+    await expect(header).toBeVisible();
+    const m = await header.evaluate((h) => {
+      const body = h.parentElement!.lastElementChild!.getBoundingClientRect();
+      return { gap: body.top - h.getBoundingClientRect().bottom, bottom: body.bottom, vh: innerHeight };
+    });
+    expect(m.gap).toBeLessThan(2);
+    expect(Math.abs(m.bottom - m.vh)).toBeLessThan(2);
+  });
+}

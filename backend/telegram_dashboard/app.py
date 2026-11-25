@@ -87,7 +87,7 @@ from .telegram.live_reads import TelegramReads
 from .telegram.routes import build_router as build_telegram_router
 from .telegram.routes import photo_file, prune_media
 from .telegram.routes_digest import build_router as build_digest_router
-from .youtrack.api import build_router
+from .youtrack.api import build_router, yt_error_response
 from .youtrack.client import YtError
 from .youtrack.routes import build_router as build_youtrack_router
 from .youtrack.service import YouTrackDashboard
@@ -265,9 +265,7 @@ def create_app(
     async def telegram_error(r: Request, e: tg_errors.RPCError):
         return await api_error(r, ApiError(502, "telegram_error", detail=type(e).__name__))
 
-    @app.exception_handler(YtError)
-    async def yt_error(_: Request, e: YtError):
-        return JSONResponse({"error": e.message}, status_code=e.status)  # the YouTrack UI reads a string
+    app.exception_handler(YtError)(yt_error_response)
 
     yt_router = build_router(yt_dashboard)
     for route in yt_router.routes:

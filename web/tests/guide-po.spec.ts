@@ -138,7 +138,8 @@ test("Cập nhật story › Telegram with no group yet: pick the group, then se
   await box.fill("@binh_tg VA-1 đã cập nhật");
   await tg.getByRole("button", { name: "Gửi Telegram" }).click();
   await expect(tg.getByRole("button", { name: "Đã gửi vào nhóm" })).toBeVisible();
-  expect(posts).toEqual([{ chat_id: CHAT, text: "@binh_tg VA-1 đã cập nhật", reply_to: null, start: false }]);
+  // request_id: one per send, so a double click / retry is not posted twice (Telegram drops the repeat)
+  expect(posts).toEqual([{ chat_id: CHAT, text: "@binh_tg VA-1 đã cập nhật", reply_to: null, start: false, request_id: expect.any(String) }]);
 });
 
 // Several groups get the message; a quick group keeps its people (by name) when the dialog opens again with no group

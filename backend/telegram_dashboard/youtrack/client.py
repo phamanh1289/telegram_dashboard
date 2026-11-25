@@ -61,6 +61,19 @@ class YtUnreachable(YtError):
         """`sent`: a write got past connecting, so YouTrack may have applied it (a retry could repeat it)."""
         msg = "Không rõ YouTrack đã ghi chưa — mở lại ticket để kiểm tra trước khi làm lại"
         super().__init__(502, msg if sent else "Không kết nối được YouTrack")
+        self.sent = sent
+
+
+_YT_CODES = {400: "youtrack_bad_request", 401: "youtrack_unauthorized", 403: "youtrack_unauthorized",
+             404: "youtrack_not_found", 409: "youtrack_conflict", 413: "youtrack_too_large"}  # fmt: skip
+
+
+def yt_code(e: YtError) -> str:
+    """The machine code of a YouTrack failure, beside its text: the page words it (and offers "Báo lỗi") like every
+    other API error. youtrack_unknown: a write may have landed, so the page says check before doing it again."""
+    if isinstance(e, YtUnreachable):
+        return "youtrack_unknown" if e.sent else "youtrack_unreachable"
+    return _YT_CODES.get(e.status, "youtrack_error")
 
 
 def _label(v):

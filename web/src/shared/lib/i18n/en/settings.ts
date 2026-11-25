@@ -759,4 +759,5 @@ export default {
   "Database ở thư mục đó hỏng hoặc do bản app mới hơn tạo: không dùng được.": "The database in that folder is damaged or was made by a newer app version: it can't be used.",
   "Dùng dữ liệu ở đó": "Use the data there",
   "Thư mục này đã có dữ liệu Radar. Dùng nó thì app khởi động lại và chạy trên dữ liệu đó (đăng nhập Telegram, tin, phiên AI ở đó). Dữ liệu đang dùng không bị xóa, vẫn nằm ở thư mục hiện tại; không chép gì sang.": "This folder already holds Radar data. Using it restarts the app on that data (the Telegram login, messages and AI sessions there). The data in use now is not deleted, it stays in the current folder; nothing is copied over.",
+  "Không đọc được trạng thái Telegram.": "Could not read the Telegram status.",
 } satisfies Dict;

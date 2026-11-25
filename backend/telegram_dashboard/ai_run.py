@@ -141,6 +141,10 @@ TRANSIENT = re.compile(
     r"network error|temporarily unavailable",
     re.I,
 )
+# the CLI could not reach its server at all (no network, VPN, proxy down): the user fixes the network, not the login
+OFFLINE = re.compile(
+    r"connection error|network|econn|etimedout|enotfound|eai_again|socket hang up|fetch failed|getaddrinfo", re.I
+)
 _REASON = re.compile(r"error|failed|denied|not supported|no longer|quota|unauthori[sz]ed|rate limit", re.I)
 
 

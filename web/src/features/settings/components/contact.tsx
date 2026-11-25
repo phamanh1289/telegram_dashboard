@@ -427,7 +427,6 @@ function PreviewDialog({ open, req, photos, onClose, onSent }: { open: boolean; 
   useEffect(() => { if (open) reset(); }, [open, reset]); // a new preview starts without the last send's error
   const err = send.isError ? errorText(send.error, tMap(t, {
     forbidden: "Không gửi được tới nhà phát triển: tài khoản Telegram của bạn bị chặn hoặc không nhắn được cho người này.",
-    not_connected: "Telegram chưa kết nối.",
     bad_photo: "Có ảnh không đọc được, xóa ảnh đó rồi gửi lại.",
     photo_too_large: "Có ảnh lớn hơn 5 MB.",
     validation: "Thiếu tiêu đề hoặc mô tả.",

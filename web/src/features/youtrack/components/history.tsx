@@ -1,6 +1,6 @@
 "use client";
 
-import { History, LayoutDashboard, ListChecks, MessageSquareText, Pencil, Search, Trash2 } from "lucide-react";
+import { History, LayoutDashboard, ListChecks, MessageSquareText, Pencil, RotateCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/button";
 import { Hint } from "@/shared/components/ui/hint";
@@ -8,7 +8,7 @@ import { Segmented } from "@/shared/components/ui/segmented";
 import { t as tNow, useT } from "@/shared/lib/i18n";
 import { getPref, put, readJson } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { AI_MAX, type AiReq, type AiTurn, DAY, when, yt } from "@/features/youtrack/lib/yt";
+import { AI_MAX, type AiReq, type AiTurn, DAY, when, yt, ytFail } from "@/features/youtrack/lib/yt";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { type AiPending, YtFetching } from "./bits";
 import { sessionId } from "@/features/telegram/lib/inbox";
@@ -209,6 +209,13 @@ export function HistoryPage() {
         </label>
         <Segmented id="yt-history" label={t("Loại phiên AI")} value={tab} onChange={(x) => { setTab(x); setSure(false); }} className="w-full" items={([["all", "Tất cả"], ["ticket", "Ticket"], ["dash", "Số liệu"]] as const).map(([v, l]) => (
           { value: v, label: <>{t(l)} <span className="font-mono tabular-nums opacity-70">{n(v)}</span></> }))} />
+        {/* the background runs' state unreadable: the "Chưa xong / Đang chạy" tags may be stale, say so */}
+        {jobs.isError && (
+          <p role="alert" className="flex flex-wrap items-center gap-1.5 text-xs text-error">
+            {t("Không đọc được trạng thái lượt chạy nền: {e}", { e: ytFail(jobs.error).msg })}
+            <Button size="xs" variant="outline" disabled={jobs.isFetching} onClick={() => void jobs.refetch()}><RotateCw /> {t("Thử lại")}</Button>
+          </p>
+        )}
         {/* sessions by day: a sticky day header (click: fold / unfold its sessions), the sessions hang under it on a guide line */}
         <div className="min-h-0 flex-1 overflow-y-auto border-t border-rule">
           <DayGroups items={shown} at={(m) => m.at} open={!!q.trim()}

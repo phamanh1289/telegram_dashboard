@@ -103,7 +103,7 @@ function BriefAnswer({ text, groups }: { text: string; groups: BriefingItem[] })
   return <AskPost value={post}><Markdown asks text={md} anchor={anchor} className="text-ink" /></AskPost>;
 }
 
-const askErr = () => ({ briefing_empty: tr("Chưa có bản tóm tắt nào; bấm “Tóm tắt” trước."), ai_not_configured: tr("AI chưa cài hoặc chưa đăng nhập, xem Cài đặt › AI.") });
+const askErr = () => ({ briefing_empty: tr("Chưa có bản tóm tắt nào; bấm “Tóm tắt” trước.") });
 const THINK: Key[] = ["Đang đọc tóm tắt các nhóm", "Đang tìm việc chờ bạn", "Đang xếp theo độ gấp"];
 type Turn = { id: number; q: string; text: string; busy: boolean; error?: string };
 
