@@ -199,7 +199,7 @@ export default {
   "Ẩn các cột đã xong": "Hide done columns",
   "Kéo để đổi thứ tự cột": "Drag to reorder columns",
   "Trạng thái chưa có cột trên board": "States with no column on the board",
-  "Chưa có cột: thả vào để mở cột mới": "No column yet: drop to open one",
+  "Thả vào để mở cột mới": "Drop to open a column",
   "Thả ra để chuyển {id} sang {state}": (v) => `Let go to move ${v.id} to ${v.state}`,
   "Hiện các cột đã xong": "Show done columns",
   "Ẩn đã xong": "Hide done",
