@@ -76,6 +76,9 @@
   {
     "id": "qa-ket-luan-story",
     "tab": "telegram",
+    "roles": [
+      "po"
+    ],
     "area": "Q&A › Kết luận (AI) (PO)",
     "title": "Đưa kết luận của một chuỗi Q&A vào story",
     "what": "Vai trò PO/PM: trong một chuỗi Q&A có nhắc mã ticket, thẻ “Kết luận (AI)” có nút “Cập nhật story”: kết luận hiện ngay trên ô mô tả để bạn đưa vào story. Đã chốt một câu trả lời thì thanh “Đã chốt” trên đầu chuỗi cũng có “Cập nhật story”, đưa thẳng câu trả lời đó vào khung mà không cần chạy AI tóm tắt (khi thẻ “Kết luận (AI)” đang mở thì nút chỉ nằm trên thẻ). Tin báo Telegram trả lời ngay câu trả lời đã chốt (chưa chốt thì ngay câu hỏi). Trong khung: mô tả mở sẵn để sửa tay, AI chỉ là chip “AI” bấm khi cần (bản AI soạn mở ở tab “So sánh”). Ô mô tả có ba tab: “Viết” để sửa, “So sánh” cho thấy dòng thêm / bỏ so với mô tả đang có trên YouTrack, “Xem trước” hiện mô tả như YouTrack sẽ hiển thị. “Lưu” chỉ ghi mô tả lên YouTrack; tick “Thêm bình luận và gửi Telegram” cạnh nút “Lưu” (mặc định tắt) thì “Lưu” gửi luôn bình luận và tin Telegram. Phần “Báo cho ai” gồm hai ô độc lập, không ô nào chờ ô nào và cũng không chờ “Lưu”: “Bình luận trên YouTrack” (nút “Gửi bình luận”) và “Tin nhắn Telegram” (nút “Gửi Telegram”, gửi thẳng vào nhóm). Mỗi ô điền sẵn một câu kèm tag Assignee / QC theo đúng nền tảng (YouTrack tag theo login, Telegram theo @username của thành viên nhóm), sửa thoải mái; gõ @ để chọn người từ danh sách của nền tảng đó. Dưới mỗi ô là các nhóm tag nhanh (mặc định Android, iOS, FE, BE, QA/QC): bấm một nhóm để tag cả nhóm; bấm ⚙ để đổi tên nhóm, thêm / bớt người hoặc thêm nhóm (lưu trên trình duyệt này, riêng cho từng nền tảng). Số cạnh tên nhóm là số người trong nhóm; người đã thêm được nhớ kèm tên nên vẫn hiện khi chưa chọn nhóm Telegram. Tin Telegram bị mất kết nối giữa chừng sẽ báo “chưa rõ đã gửi chưa”: xem nhóm trước khi bấm “Gửi lại”.",
@@ -125,6 +128,9 @@
   {
     "id": "view-ai-agent",
     "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
     "area": "Thanh bên › AI Agent",
     "title": "Trang AI Agent",
     "what": "Danh sách phiên AI: Giao AI Agent từ tin tag, Đối chiếu BE, Trợ lý AI (các lượt hỏi Trợ lý AI trong khung trả lời, mỗi tin một phiên, không cần dự án; nhắn tiếp, gửi câu hỏi vào nhóm, Done như phiên khác) và hội thoại Trợ lý Briefing (mở lại như phiên: hỏi tiếp ở ô hỏi ghim dưới, Saved Messages / Copy trên từng câu trả lời). Phiên xếp theo lần hoạt động gần nhất, nhóm theo Hôm nay / Hôm qua / 7 ngày qua / Cũ hơn; nhãn ngày dính đầu khi cuộn; chỉ mở sẵn Hôm nay (chưa có thì nhóm gần nhất có phiên), bấm nhãn để thu gọn / mở lại. Giờ trên mỗi phiên là lần hoạt động gần nhất. Số trên mục là số phiên đang chạy. Chỉ hiện với vai trò Dev (hoặc khi đã có phiên, kể cả hội thoại Briefing). Link trong việc giao / tin nhắn tiếp được dashboard đọc sẵn cho AI: bài Knowledge Base và ticket YouTrack (của YouTrack đã kết nối), tin của nhóm đang theo dõi, tài liệu đính kèm từ trang Tài liệu (mã #DOC) và tối đa 3 tài liệu trong kho Tài liệu có nhắc ticket phiên đọc; link khác (Zeplin, web) AI không mở được, dán nội dung cần thiết vào tin.",

@@ -2,6 +2,9 @@
   {
     "id": "yt-trang-hom-nay-dev",
     "tab": "youtrack",
+    "roles": [
+      "dev"
+    ],
     "area": "Thanh bên › Hôm nay (Dev)",
     "title": "Hôm nay làm gì (trang chủ Dev)",
     "what": "Danh sách ticket đang mở của bạn xếp theo mức gấp kèm lý do (Blocked, Quá hạn, Sắp tới hạn, priority, Chờ bạn test, Đang làm, Đứng N ngày); ticket đã chuyển QC / chờ test chỉ hiện khi bấm ô \"Chờ QC\"; 3 ticket đầu ở mục “Làm ngay”, còn lại “Tiếp theo”, 20 ticket mỗi trang.",
@@ -21,6 +24,9 @@
   {
     "id": "yt-lens-dev",
     "tab": "youtrack",
+    "roles": [
+      "dev"
+    ],
     "area": "Hôm nay (Dev) › hàng số liệu",
     "title": "Lọc nhanh danh sách hôm nay",
     "what": "Hàng số liệu đồng thời là bộ lọc cho danh sách: Đang mở, Đang làm, Chờ QC, Blocked, Chờ bạn test.",
@@ -97,6 +103,10 @@
   {
     "id": "yt-ai-standup-dev",
     "tab": "youtrack",
+    "roles": [
+      "dev",
+      "qa"
+    ],
     "area": "Hôm nay (Dev) › AI Studio",
     "title": "Standup và Kế hoạch",
     "what": "Standup: Hôm qua / Hôm nay / Vướng mắc từ ticket bạn cập nhật từ ngày làm việc trước và tin bạn đã trả lời trên Telegram. Kế hoạch: AI chọn việc làm ngay, việc cần trả lời, chỗ kẹt. Standup có cho cả Dev và QA/QC (QA: theo ticket bạn làm QC), đọc thêm phiên AI Agent đã xong; nút “Saved Messages” gửi standup vào Telegram của bạn.",
@@ -123,6 +133,9 @@
   {
     "id": "yt-trang-kiem-thu-qa",
     "tab": "youtrack",
+    "roles": [
+      "qa"
+    ],
     "area": "Thanh bên › Kiểm thử (QA)",
     "title": "Hàng đợi test (trang chủ QA)",
     "what": "Ticket chờ test xếp theo mức gấp (Của bạn, Chưa có QC, Test lại · trả N lần, Blocked, Quá hạn, Chờ N ngày…); 3 ticket đầu ở mục “Test ngay”.",
@@ -146,6 +159,9 @@
   {
     "id": "yt-bug-dot-bien",
     "tab": "youtrack",
+    "roles": [
+      "qa"
+    ],
     "area": "Kiểm thử (QA)",
     "title": "Cảnh báo bug tăng đột biến",
     "what": "Khi bug mới 7 ngày qua từ 3 trở lên và vượt 1,5 lần trung bình 4 tuần trước (toàn project hoặc theo module), hiện nút vàng “Bug tăng đột biến” kèm các module nóng.",
@@ -161,6 +177,9 @@
   {
     "id": "yt-ket-qua-test-cua-toi",
     "tab": "youtrack",
+    "roles": [
+      "qa"
+    ],
     "area": "Kiểm thử (QA)",
     "title": "Kết quả test của tôi + Copy standup",
     "what": "Số ticket bạn đã test Hôm nay / 24 giờ qua / 7 ngày, tách pass và trả lại (đọc từ lịch sử state); tạo sẵn đoạn standup QC. Tính mọi kết quả của bạn, không theo bộ lọc Sprint / Người ở đầu trang.",
@@ -180,6 +199,9 @@
   {
     "id": "yt-goi-y-chia-qc",
     "tab": "youtrack",
+    "roles": [
+      "qa"
+    ],
     "area": "Kiểm thử (QA)",
     "title": "Gợi ý chia QC",
     "what": "Ticket chờ test chưa có QC được đề xuất giao cho người đang giữ ít ticket test nhất, ưu tiên ticket gấp.",
@@ -199,6 +221,9 @@
   {
     "id": "yt-bug-7-ngay",
     "tab": "youtrack",
+    "roles": [
+      "qa"
+    ],
     "area": "Kiểm thử (QA)",
     "title": "Bug 7 ngày qua",
     "what": "Ba con số: bug Mới, Đã fix trong 7 ngày và bug Đang mở.",
@@ -210,6 +235,9 @@
   {
     "id": "yt-trang-brief-po",
     "tab": "youtrack",
+    "roles": [
+      "po"
+    ],
     "area": "Thanh bên › Tổng quan (PO)",
     "title": "Tổng quan (trang chủ PO)",
     "what": "Trang chủ của PO: KPI sprint, Tiến độ sprint, Cảnh báo ticket kéo dài, Chờ PO chốt (define / confirm), Cần chú ý, Công việc đang làm (ngưỡng WIP).",
@@ -258,6 +286,9 @@
   {
     "id": "yt-ai-brief-po",
     "tab": "youtrack",
+    "roles": [
+      "po"
+    ],
     "area": "Brief (PO) › AI Studio",
     "title": "AI Brief, Lên sprint, Grooming, Bản tin tuần, Release notes",
     "what": "Brief: AI đọc ticket mở của sprint, nêu việc tiếp theo từng người, chỗ nghẽn, cần chốt và những gì đã đổi từ lần brief trước. Lên sprint: gợi ý ticket kéo vào sprint tới và giao ai. Grooming: rà backlog. Bản tin tuần: 7 ngày qua theo từng người. Release notes: từ ticket đã xong.",

@@ -6,6 +6,7 @@ import { Card, PickPill, picked, quietBtn, Row } from "@/features/settings/compo
 import { Segmented } from "@/shared/components/ui/segmented";
 import { Textarea } from "@/shared/components/ui/textarea";
 import { CharCount } from "@/shared/components/ui/char-count";
+import { Button } from "@/shared/components/ui/button";
 import { type Key, type Lang, saveLang, useT } from "@/shared/lib/i18n";
 import { getPref, INTRO_MAX, onPrefs, type Platform, PLATFORMS, readIntro, readPlatform, readYtRole, saveYtRole, setPref, useRole, YT_ROLES, type YtRole } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
@@ -40,7 +41,7 @@ export function GeneralGroup() {
   </>;
 }
 
-/** The role (Telegram + YouTrack): pick one, or clear it so the YouTrack page asks again. */
+/** The role (Telegram + YouTrack): pick one, or clear it so both ask again. */
 function RoleSection() {
   const t = useT();
   const [role, setRole] = useState(readYtRole);
@@ -63,7 +64,7 @@ function RoleSection() {
         ))}
       </div>
       <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-3">
-        {role ? t("Xóa thì trang YouTrack sẽ hỏi lại; Telegram tạm coi như Dev.") : t("Chưa chọn: Telegram coi như Dev, mở YouTrack sẽ hỏi bạn chọn.")}
+        {role ? t("Bỏ chọn thì Telegram và YouTrack sẽ hỏi lại.") : t("Chưa chọn: Telegram và YouTrack sẽ hỏi bạn chọn.")}
         {role && <button type="button" className={quietBtn} onClick={() => pick(null)}>{t("Bỏ chọn vai trò")}</button>}
       </span>
     </div>
@@ -89,7 +90,10 @@ function IntroSection({ platform }: { platform: Platform }) {
         onChange={(e) => { setText(e.target.value); setPref("aiIntro", e.target.value.trim() ? e.target.value : null); }} />
       <span className="flex items-center justify-between gap-3 text-xs text-ink-3">
         {text.trim() ? <span className="flex items-center gap-1 text-ok"><Check className="size-3.5" aria-hidden /> {t("Đã lưu, AI dùng từ lần chạy kế tiếp")}</span>
-          : <span className="text-signal-2">{t("Chưa có: AI phải đoán bạn làm gì.")}</span>}
+          : <span className="flex flex-wrap items-center gap-2 text-signal-2">{t("Chưa có: AI phải đoán bạn làm gì.")}
+            {/* the example for this role / platform as a start: edit it rather than write from nothing */}
+            <Button type="button" size="xs" variant="outline" onClick={() => { const v = t(introExample(role, platform)).replace(/^[^\n]*\n/, ""); setText(v); setPref("aiIntro", v); }}>{t("Điền mẫu để sửa")}</Button>
+          </span>}
         <CharCount n={text.length} max={INTRO_MAX} />
       </span>
     </div>

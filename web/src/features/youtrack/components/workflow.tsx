@@ -12,7 +12,7 @@ import { Hint } from "@/shared/components/ui/hint";
 import { useT } from "@/shared/lib/i18n";
 import { getPref, put, useRoleOrDev, YT_ROLES } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { resolveProject, stateColor, type Workflow, yt, ytProjectsQuery } from "@/features/youtrack/lib/yt";
+import { resolveProject, stateColor, type Workflow, yt, ytProjectsQuery, ytWorkflowQuery } from "@/features/youtrack/lib/yt";
 
 const W = 150, H = 36, GX = 180, GY = 80, PAD = 24;
 
@@ -61,8 +61,7 @@ function readDraft(at: string): Workflow | null {
 /** The team's workflow for a project and the current role, as "which states can a ticket in `from` move to" (null: no rule, YouTrack decides). */
 export function useFlow(project: string) {
   const role = useRoleOrDev(); // the flow shown / saved / applied; no role yet: Dev, as on the server
-  const q = useQuery({ queryKey: ["yt", "workflow", project, role], queryFn: () => yt.workflow(project), staleTime: 5 * 60_000, enabled: !!project });
-  const wf = q.data;
+  const wf = useQuery({ ...ytWorkflowQuery(project, role), enabled: !!project }).data;
   return (from: string | null): string[] | null => (wf?.on ? wf.edges.filter(([s]) => s === from).map(([, t]) => t) : null);
 }
 
@@ -86,7 +85,7 @@ export function WorkflowSection() {
   const ps = projects.data;
   const p = resolveProject(ps, project); // the same fallback as the YouTrack tab and the ticket form
   const role = useRoleOrDev(); // the flow shown / saved / applied; no role yet: Dev, as on the server
-  const q = useQuery({ queryKey: ["yt", "workflow", p, role], queryFn: () => yt.workflow(p) });
+  const q = useQuery(ytWorkflowQuery(p, role));
   const qc = useQueryClient();
   const at = `${p}:${role}`; // a draft belongs to the project and role it was drawn for
   const [, redraw] = useState(0);
@@ -107,7 +106,7 @@ export function WorkflowSection() {
   };
   const save = useMutation({
     mutationFn: (w: Workflow) => yt.setWorkflow(p, { on: w.on, pos: Object.fromEntries(states.map((s) => [s, w.pos[s]])), edges: w.edges, hidden: w.hidden }),
-    onSuccess: () => { setDraft(null); void qc.invalidateQueries({ queryKey: ["yt", "workflow", p, role] }); },
+    onSuccess: () => { setDraft(null); void qc.invalidateQueries({ queryKey: ytWorkflowQuery(p, role).queryKey }); },
   });
   const fromYt = useMutation({
     mutationFn: (proj: string) => yt.youtrackFlow(proj),

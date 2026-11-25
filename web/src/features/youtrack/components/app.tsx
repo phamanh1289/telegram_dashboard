@@ -17,7 +17,8 @@ import { useNow } from "@/shared/hooks/use-now";
 import { fold } from "@/shared/lib/utils";
 import { Dialog, DialogContent, DialogTitle } from "@/shared/components/ui/dialog";
 import { ShortcutList, YT_KEYS } from "@/shared/components/shortcuts";
-import { getPref, saveYtRole, setPref, YT_ROLES } from "@/shared/lib/prefs";
+import { getPref, setPref, YT_ROLES } from "@/shared/lib/prefs";
+import { RolePicker } from "@/shared/components/role-picker";
 import { cn, durShort } from "@/shared/lib/utils";
 import { AI_MAX, QUICK, rank, riskOf, shortName, shortSp, TIER_LABEL, UNASSIGNED } from "@/features/youtrack/lib/yt";
 import { useAiWait } from "@/shared/components/ai/fetching";
@@ -239,36 +240,6 @@ function useSideSlide(collapsed: boolean) {
     slide.onfinish = slide.oncancel = () => { g.style.overflowX = ""; };
   }, [collapsed]);
   return { asideRef: aside, mainRef: main, markSlide: () => { from.current = aside.current?.offsetWidth ?? 0; } };
-}
-
-const ROLE_ICON: Record<Mode, typeof ListChecks> = { dev: CalendarCheck, qa: FlaskConical, po: ClipboardList };
-
-/** First visit (or after "Xóa vai trò"): the page asks which role it should work for. */
-function RolePicker() {
-  const t = useT();
-  return (
-    <main className="grid place-items-center px-4 py-10">
-      <div className="grid w-full max-w-3xl gap-5">
-        <div className="grid gap-1 text-center">
-          <h1 className="text-xl font-bold">{t("Bạn dùng YouTrack với vai trò nào?")}</h1>
-          <p className="text-sm text-ink-2">{t("Trang chủ, góc nhìn Ticket, Dashboard và AI (cả tóm tắt bên Telegram) sẽ theo vai trò này. Đổi bất cứ lúc nào ở ô Vai trò trên thanh bên, hoặc xóa trong Cài đặt › Chung.")}</p>
-        </div>
-        <div role="radiogroup" aria-label={t("Vai trò")} className="grid gap-3 sm:grid-cols-3">
-          {YT_ROLES.map(([r, name, what]) => {
-            const Icon = ROLE_ICON[r];
-            return (
-              <button key={r} type="button" role="radio" aria-checked={false} onClick={() => saveYtRole(r)}
-                className="grid content-start justify-items-start gap-2 rounded-[var(--radius-card)] border border-rule bg-cotton p-4 text-left shadow-stock transition-colors duration-(--dur-micro) hover:border-hl hover:bg-hl-wash">
-                <span className="grid size-9 place-items-center rounded-full bg-hl-wash text-hl-2"><Icon className="size-5" aria-hidden /></span>
-                <b className="text-base">{t(name)}</b>
-                <span className="text-sm text-ink-2">{t(what)}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </main>
-  );
 }
 
 /** A person in the Người filter and its chip: the short name; the "no assignee" key in the UI's own words. */

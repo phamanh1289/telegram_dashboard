@@ -67,6 +67,9 @@
   {
     "id": "yt-luu-vao-mo-ta",
     "tab": "youtrack",
+    "roles": [
+      "po"
+    ],
     "area": "Side panel › AI session › Tidy up description (PO)",
     "title": "Tidy up the description, then save it on the ticket",
     "what": "PO/PM role: the answer of “Tidy up description” in a one-ticket AI session has “Save to description”. It opens Update story on the new text: see the changes against the current description, edit if needed, then “Save” (blocked when the description changed after the AI read it). A description too long for the AI to read whole only offers Copy.",
@@ -141,6 +144,9 @@
   {
     "id": "yt-trace-code",
     "tab": "youtrack",
+    "roles": [
+      "dev"
+    ],
     "area": "Side panel › AI session › Code folder",
     "title": "Trace code in the project folder (Dev)",
     "what": "Dev role only (QA / PO: the AI reads tickets only). Choose a project folder so the AI reads the code when answering. Turn on \"Run commands\" to let the AI build / test / run gradle in a sandbox (writes only inside that folder, network only to package registries, no code edits). The Dev role can hand a free-form question to the AI Agent to trace the code, choosing \"Analyze only\" or \"Allow code edits\".",

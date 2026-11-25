@@ -111,6 +111,9 @@
   {
     "id": "composer-ai-code",
     "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
     "area": "Khung Trả lời › Trả lời từ code",
     "title": "Trả lời câu hỏi từ code dự án",
     "what": "Ai đó hỏi bạn về logic, nghiệp vụ hay tiến độ: chọn dự án ở ô prompt, AI đọc code (chỉ đọc) và trả lời kèm căn cứ file / hàm, độ chắc chắn, điều cần xác nhận, cùng 2 bản nháp \"Ngắn gọn\" / \"Đầy đủ\" viết theo vai trò người hỏi (PO / QA: không nêu tên file, API). Câu hỏi tiến độ: AI đọc thêm commit 14 ngày gần nhất và ticket YouTrack liên quan. Lượt đọc code chạy nền: đóng khung trả lời vẫn chạy tiếp, mở lại tin đó sẽ thấy tiến độ / kết quả; \"Hủy\" mới dừng hẳn. Chỉ có với vai trò Dev; dự án được nhớ cho lần sau.",
@@ -167,6 +170,9 @@
   {
     "id": "composer-ask-missing",
     "tab": "telegram",
+    "roles": [
+      "qa"
+    ],
     "area": "Khung Trả lời › Tóm tắt (QA)",
     "title": "Hỏi thông tin còn thiếu",
     "what": "Với vai trò QA, khi tóm tắt đánh dấu [cần bổ sung], chèn câu hỏi xin các thông tin đó (build, thiết bị, bước tái hiện…).",
@@ -193,6 +199,9 @@
   {
     "id": "composer-ai-agent",
     "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
     "area": "Khung Trả lời › AI Agent",
     "title": "Giao AI Agent",
     "what": "Giao tin tag cho AI làm trong một dự án code (sửa bug, thêm tính năng); chọn chế độ Chỉ đọc (khuyên dùng) hoặc Được sửa file. Dashboard tải sẵn cho AI nội dung ticket YouTrack mà tin nhắc tới (link hoặc chỉ mã, vd. VA-123), tài liệu Knowledge Base ticket đó dẫn link và link tin Telegram; AI phải đọc hết trước khi soạn câu hỏi / ý cần confirm. Chỉ có với vai trò Dev.",

@@ -223,6 +223,19 @@ export const readDigestTeams = () => {
   return readList("digestTeams", DEFAULT_DIGEST_TEAMS, isString).filter((t) => t !== other);
 };
 
+/** Setup suggestions (Cài đặt › Trợ lý biết tuốt › Gợi ý cài đặt): the bot's "Nên làm" list, the hints beside a feature that
+ *  needs a setting (State without a workflow, AI not installed, an AI answer with no intro); one hint closed by "Để sau"
+ *  stays closed (`tipOff:<id>`). Off: only what the app cannot run without is still listed. */
+const readTips = () => getPref("setupTips") !== "0";
+export const useSetupTips = () => useSyncExternalStore(onPrefs, readTips, () => false);
+export const useTipShown = (id: string) => useSyncExternalStore(onPrefs, () => readTips() && getPref(`tipOff:${id}`) !== "1", () => false);
+export const closeTip = (id: string) => setPref(`tipOff:${id}`, "1");
+/** Show again every hint closed by "Để sau". */
+export function reopenTips() {
+  try { Object.keys(localStorage).filter((k) => k.startsWith("tipOff:")).forEach((k) => localStorage.removeItem(k)); } catch {}
+  dispatchEvent(new Event("prefs"));
+}
+
 /** The role (Cài đặt chung › Hệ thống): YouTrack's home, views, dashboard and AI, and Telegram's AI angle and AI Agent follow it. null = not chosen yet. */
 export type YtRole = "dev" | "qa" | "po";
 export const YT_ROLES: [YtRole, Key, Key][] = [

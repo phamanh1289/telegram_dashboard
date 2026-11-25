@@ -67,6 +67,9 @@
   {
     "id": "yt-luu-vao-mo-ta",
     "tab": "youtrack",
+    "roles": [
+      "po"
+    ],
     "area": "Bảng bên › Phiên AI › Chuẩn hoá mô tả (PO)",
     "title": "Chuẩn hoá mô tả rồi lưu thẳng vào ticket",
     "what": "Vai trò PO/PM: câu trả lời của nút “Chuẩn hoá mô tả” trong phiên AI một ticket có nút “Lưu vào mô tả”. Bấm để mở khung Cập nhật story với bản mới: xem thay đổi so với mô tả hiện tại, sửa nếu cần, rồi “Lưu” (bị chặn nếu mô tả đã đổi sau khi AI đọc). Mô tả quá dài để AI đọc hết thì chỉ còn Copy.",
@@ -141,6 +144,9 @@
   {
     "id": "yt-trace-code",
     "tab": "youtrack",
+    "roles": [
+      "dev"
+    ],
     "area": "Bảng bên › Phiên AI › Thư mục code",
     "title": "Trace code trong thư mục dự án (Dev)",
     "what": "Chỉ ở vai trò Dev (QA / PO: AI chỉ đọc ticket). Chọn thư mục dự án để AI đọc code khi trả lời. Bật \"Chạy lệnh\" để AI được build / test / chạy gradle trong sandbox (chỉ ghi trong thư mục đó, mạng chỉ tới kho thư viện, không sửa code). Vai trò Dev có thể giao câu hỏi tự do cho AI Agent trace code, chọn “Chỉ phân tích” hoặc “Cho phép sửa code”.",

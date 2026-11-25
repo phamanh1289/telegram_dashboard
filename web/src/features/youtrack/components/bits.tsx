@@ -173,7 +173,7 @@ export function Picker({ label, title, value, values, options, onPick, search, f
               ))}
               {!shown.length && <p className="px-2 py-1.5 text-sm text-ink-3 italic">{t("Không thấy “{q}”", { q })}</p>}
             </div>
-            {foot && <p className="shrink-0 border-t px-3 py-1.5 text-xs text-ink-3">{foot}</p>}
+            {foot && <div className="shrink-0 border-t px-3 py-1.5 text-xs text-ink-3 empty:hidden">{foot}</div>}
           </div>
         )}
       </div>

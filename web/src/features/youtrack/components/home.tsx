@@ -16,6 +16,7 @@ import { AI_MAX, type AiReq, bucket, bugSpike, DAY, type Focus, isBlocked, isBug
 import { Card, Label, Markdown, Prio, StatePill, Title } from "./bits";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { Hint } from "@/shared/components/ui/hint";
+import { AiLocked } from "@/shared/components/ai/setup-tip";
 import { day0 } from "@/features/youtrack/lib/yt-stats";
 import { Aging, Attention, Kpis, Progress, QcState, useQc, useStats, Wip } from "./dashboard";
 import { AskedMe } from "./asked-me";
@@ -72,7 +73,12 @@ type Tab = { k: string; label: string; busy: string; hint: string; disabled?: st
 
 /** Every scope-level AI of a home in one card: a tab per job, each answer kept for the day (weekly: the week) per browser,
  *  so opening the tab spends no quota; "Làm lại" reruns. */
-function AiStudio({ id, tabs }: { id: string; tabs: Tab[] }) {
+/** The home page's AI card; no AI CLI on this machine: what it would do and how to set one up. */
+function AiStudio(p: { id: string; tabs: Tab[] }) {
+  const t = useT();
+  return useYt().aiOn ? <Studio {...p} /> : <AiLocked title="AI Studio" what={t("Một chỗ cho các việc AI theo vai trò: kế hoạch, standup, test case, bug triage, brief sprint, grooming… đọc từ ticket của bạn, lưu lại trong ngày.")} />;
+}
+function Studio({ id, tabs }: { id: string; tabs: Tab[] }) {
   const y = useYt();
   const [k, setK] = useState(() => { const v = getPref(`ytAiTab:${id}`); return tabs.some((x) => x.k === v) ? v! : tabs[0].k; });
   const t = useT();
@@ -182,7 +188,7 @@ export function DevHome() {
         </Card>
       </div>
       <div className="grid content-start gap-4">
-        {y.aiOn && (
+        {(
           <AiStudio key={`dev:${y.project}`} id={`dev:${y.project}`} tabs={[
             { k: "today", label: t("Kế hoạch"), busy: t("AI đang đọc {n} ticket", { n: Math.min(list.length, AI_MAX) }), disabled: list.length ? undefined : t("Không có ticket nào để lập kế hoạch."),
               hint: t("AI đọc mô tả, bình luận và tin Telegram của các ticket trên để chọn việc làm ngay, việc cần trả lời, chỗ đang kẹt."),
@@ -350,7 +356,7 @@ export function QaHome() {
         </Card>
       </div>
       <div className="grid content-start gap-4">
-        {y.aiOn && (
+        {(
           <AiStudio key={`qa:${y.project}`} id={`qa:${y.project}`} tabs={[
             standupTab(t, y.rows, y.me, true, now),
             { k: "testcases", label: "Test case", busy: t("AI đang viết test case cho {n} ticket", { n: testIds.length }), disabled: testIds.length ? undefined : t("Không có ticket nào chờ test."),
@@ -414,7 +420,7 @@ export function PoHome() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
         <div className="grid content-start gap-4">
           <ReportCard />
-          {y.aiOn && (
+          {(
             <AiStudio key={`po:${y.project}:${d.per.label}`} id={`po:${y.project}:${d.per.label}`} tabs={[
               { k: "brief", label: "Brief", busy: t("AI đang đọc {n} ticket đang mở", { n: Math.min(d.sprintOpen.length, AI_MAX) }), disabled: d.sprintOpen.length ? undefined : t("Sprint đang xem không có ticket mở."),
                 hint: t("AI đọc các ticket đang mở của {s}: việc tiếp theo từng người, chỗ nghẽn, cần chốt, cần ping ai, và những gì đã đổi từ lần brief trước.", { s: d.per.label }),

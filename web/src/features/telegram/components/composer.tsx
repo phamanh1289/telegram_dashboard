@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useEffect, useEffectEvent, useRef, useState } from "react";
 import { ModelEffortPicker, useAiPrefs } from "@/shared/components/ai";
 import { AiBotIcon, AiIdle, AiPromptBox, AiSend, type AiSkill, useFollow } from "@/shared/components/ai/chat";
+import { AiLocked, SetupTip } from "@/shared/components/ai/setup-tip";
 import { AiOptions, AiTurns, type AskVars, askMissing, JOB_KEEP_MS, LEVELS, logTurns, readJob, RelatedTickets, TICKET_ID, TICKET_IDS, type Turn } from "@/features/telegram/components/composer-assist";
 import { IssueDialog, TaskPage } from "@/features/telegram/components/composer-dialogs";
 import { ReplyHead, TagCard } from "@/features/telegram/components/composer-head";
@@ -28,7 +29,7 @@ import { api, ApiError, apiStream, errorText, type AiResult, type Message, type 
 import { draftKey, msgKey, remind, saveDraft, typing, useSessionOn } from "@/features/telegram/lib/inbox";
 import { fitsSend, SEND_ERRORS, SEND_MAX, sendLost, sendLostText } from "@/features/telegram/lib/send";
 import { toast } from "@/shared/lib/notifications";
-import { getPref, put, readIntro, setPref, readPlatform, readReplyCode, saveReplyCode, useRole, usesCode, type YtRole } from "@/shared/lib/prefs";
+import { getPref, put, readIntro, setPref, readPlatform, readReplyCode, saveReplyCode, useIntro, useRole, usesCode, type YtRole } from "@/shared/lib/prefs";
 import { cn, MOD } from "@/shared/lib/utils";
 import { type Key, useT } from "@/shared/lib/i18n";
 
@@ -124,7 +125,7 @@ export function Composer({
     if (old.length) setTurns((l) => [...old, ...l]); // eslint-disable-line react-hooks/set-state-in-effect -- seeded once from the saved log
   }, [sessionQ.isSuccess, session, savedLog.isFetchedAfterMount, savedLog.data, replyTo]);
   const aiName = useAiPrefs().nameOf();
-  const role = useRole();
+  const role = useRole(), intro = useIntro();
   const example = ROLE_ASK[role ?? "dev"];
   const missing = role === "qa" ? askMissing(analysis) : "";
   const [picked, setPicked] = useState(0); // which AI option is in the textarea
@@ -463,9 +464,13 @@ export function Composer({
                 <AiOptions options={options} picked={picked} answerMode={answerMode} name={name} edited={edited} ready={ready}
                   onPick={pickOption} onSend={(i) => { setPicked(i); setText(options[i]); submit(options[i]); }} />
               )}
+              <SetupTip id="ai-intro" when={!!turns.length && !ask.isPending && !intro} tour="settings-ai-intro" go={t("Thêm giới thiệu")}
+                text={t("AI chưa biết bạn làm gì, rành gì, cần gì nên đang đoán. Thêm Giới thiệu bản thân cho AI (có mẫu theo vai trò) để tóm tắt và bản nháp sát việc của bạn hơn.")} />
             </section>
           )}
           {aiConfigured && !turns.length && <AiIdle skills={skills} className="flex-1" />}
+          {!aiConfigured && <AiLocked title={t("Trợ lý AI")} className="my-auto"
+            what={t("Tóm tắt tin và cả luồng, gợi ý bản trả lời theo vai trò người nhận, chỉ ra thông tin còn thiếu; với Dev còn trả lời từ code dự án và giao việc cho AI Agent.")} />}
           </div>
 
           {aiConfigured && (

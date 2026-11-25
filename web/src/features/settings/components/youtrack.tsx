@@ -6,7 +6,7 @@ import { useState, useSyncExternalStore } from "react";
 import { Card, linkCls, Row, StatusLine, Switch, tMap } from "@/features/settings/components/parts";
 import { PromptManager } from "@/features/youtrack/components/prompts";
 import { WorkflowSection } from "@/features/youtrack/components/workflow";
-import { yt } from "@/features/youtrack/lib/yt";
+import { yt, ytNotesQuery } from "@/features/youtrack/lib/yt";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Segmented } from "@/shared/components/ui/segmented";
@@ -48,7 +48,7 @@ export function YouTrackGroup({ view, setView }: { view: YtView; setView: (v: Yt
       </Card>
     </>}
     {view === "workflow" && (
-      <Card advanced title="Workflow" info="Luồng State cho từng project và vai trò đang chọn (Cài đặt › Chung): Dev, QA, PO mỗi vai trò một luồng, dùng chung cả team (data/). Kéo ô để di chuyển, kéo chấm tròn sang ô khác để nối mũi tên, bấm mũi tên rồi Delete (hoặc ×) để xóa; × ở góc ô để ẩn state khỏi workflow, hiện lại ở dòng Đã ẩn. Bật Áp dụng thì menu State và kéo thả trên Board chỉ cho đi theo mũi tên; YouTrack vẫn kiểm tra luồng của nó.">
+      <Card title="Workflow" info="Luồng State cho từng project và vai trò đang chọn (Cài đặt › Chung): Dev, QA, PO mỗi vai trò một luồng, dùng chung cả team (data/). Kéo ô để di chuyển, kéo chấm tròn sang ô khác để nối mũi tên, bấm mũi tên rồi Delete (hoặc ×) để xóa; × ở góc ô để ẩn state khỏi workflow, hiện lại ở dòng Đã ẩn. Bật Áp dụng thì menu State và kéo thả trên Board chỉ cho đi theo mũi tên; YouTrack vẫn kiểm tra luồng của nó.">
         <div className="pt-1"><WorkflowSection /></div>
       </Card>
     )}
@@ -131,12 +131,12 @@ const NOTES_HINT: Record<YtRole, Key> = {
 /** Team instructions per role, kept on the server; this box edits the role picked in Chung. */
 function NotesSection({ role }: { role: YtRole | null }) {
   const t = useT();
-  const q = useQuery({ queryKey: ["yt", "notes"], queryFn: () => yt.notes() });
+  const q = useQuery(ytNotesQuery);
   const qc = useQueryClient();
   const [edit, setEdit] = useState<{ role: YtRole; text: string } | null>(null); // null: showing the saved text
   const save = useMutation({
     mutationFn: (text: string) => yt.setNotes({ ...q.data!, [role!]: text }),
-    onSuccess: (d) => { qc.setQueryData(["yt", "notes"], d); setEdit(null); },
+    onSuccess: (d) => { qc.setQueryData(ytNotesQuery.queryKey, d); setEdit(null); },
   });
   if (!role) return <p className="pt-1 text-sm text-ink-3">{t("Chọn vai trò ở Cài đặt › Chung trước.")}</p>;
   if (!q.data) return (

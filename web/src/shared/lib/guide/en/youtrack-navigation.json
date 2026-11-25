@@ -4,7 +4,7 @@
     "tab": "youtrack",
     "area": "First screen",
     "title": "Choose the Dev / QA/QC / PO/PM role",
-    "what": "The first time you open the YouTrack page (or after clearing your role), it asks which role you work in. The home page, the Ticket view, the Dashboard and the AI all follow this role.",
+    "what": "Right after you first sign in (on Telegram), or when you open the YouTrack page with no role (or after clearing it), the app asks which role you work in. The home page, the Ticket view, the Dashboard and the AI all follow this role.",
     "how": [
       {
         "t": "Click the \"Settings\" icon at the right of the top bar",

@@ -6,7 +6,8 @@ import { ModelEffortPicker } from "@/shared/components/ai";
 import { AiBot } from "@/shared/components/ai/chat";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { type Key, useT } from "@/shared/lib/i18n";
-import { type BotCorner, type BotMode, type BotSize, setPref, useBotDock, useBotMode, useBotShow, useBotSize } from "@/shared/lib/prefs";
+import { type BotCorner, type BotMode, type BotSize, reopenTips, setPref, useBotDock, useBotMode, useBotShow, useBotSize, useSetupTips } from "@/shared/lib/prefs";
+import { Button } from "@/shared/components/ui/button";
 
 const BOT_SIZE_ITEMS: [BotSize, Key, string][] = [["s", "Nhỏ", "size-3.5"], ["m", "Vừa", "size-4"], ["l", "Lớn", "size-5"]];
 const BOT_CORNERS: [BotCorner, Key, typeof Move][] = [["tl", "Trên trái", ArrowUpLeft], ["tr", "Trên phải", ArrowUpRight], ["bl", "Dưới trái", ArrowDownLeft], ["br", "Dưới phải", ArrowDownRight]];
@@ -20,7 +21,7 @@ const BOT_MODES: [BotMode, Key, Key][] = [
 /** The know-it-all bot (components/guide): shown or F1 only, how it shows, size, where it docks (it never reads the app's code). */
 export function BotSection() {
   const t = useT();
-  const show = useBotShow(), mode = useBotMode(), size = useBotSize(), dock = useBotDock();
+  const show = useBotShow(), mode = useBotMode(), size = useBotSize(), dock = useBotDock(), tips = useSetupTips();
   const corner = BOT_CORNERS.some(([c]) => c === dock) ? (dock as BotCorner) : null; // docked mid-edge: no corner lit
   return <>
     <Card title="Hiển thị">
@@ -39,6 +40,14 @@ export function BotSection() {
       <Segmented id="set-bot-corner" variant="card" label={t("Vị trí")} value={corner} onChange={(v) => setPref("botCorner", v === "br" ? null : v)}
         items={BOT_CORNERS.map(([v, name, Icon]) => ({ value: v, label: <><Icon className="size-3.5" aria-hidden />{t(name)}</> }))} />
     </Row>}
+    </Card>
+    <Card title="Gợi ý cài đặt" info="Bot liệt kê các bước nên làm theo vai trò (Giới thiệu bản thân cho AI, thông báo, thư mục dự án, workflow, Instructions cho AI). Cạnh tính năng cần một cài đặt cũng có gợi ý: menu State khi vai trò chưa bật workflow, chỗ của tính năng AI khi máy chưa có AI, dòng dưới câu trả lời AI khi chưa có giới thiệu / instructions. Bấm gợi ý để được chỉ tận nơi.">
+    <Row label={t("Hiện gợi ý cài đặt")} desc={t("Tắt: bot chỉ còn báo các bước bắt buộc (Telegram, AI, YouTrack); tính năng AI chưa cài thì ẩn như cũ.")}>
+      <Switch label={t("Hiện gợi ý cài đặt")} checked={tips} onChange={(v) => setPref("setupTips", v ? null : "0")} />
+    </Row>
+    <Row label={t("Gợi ý đã ẩn")} desc={t("Hiện lại các gợi ý đã bấm “Để sau”.")}>
+      <Button type="button" size="sm" variant="outline" disabled={!tips} onClick={reopenTips}>{t("Hiện lại")}</Button>
+    </Row>
     </Card>
     <Card title="Cách trả lời">
     <Row label={t("Model cho trợ lý")} desc={t("Riêng cho bot. “Như tóm tắt”: dùng model/effort của tóm tắt, soạn nháp (Cài đặt › AI). Model nhanh trả lời gọn hơn.")} stack>
