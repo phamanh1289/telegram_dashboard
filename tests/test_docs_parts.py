@@ -41,13 +41,18 @@ def test_tickets_unique_in_order():
 
 def test_snippet_keeps_accents_and_marks_the_words():
     text, marks = snippet("Điều kiện giải ngân khoản vay", "giai ngan")
-    assert [text[a:b] for a, b in marks] == ["giải", "ngân"]
+    assert [text[a:b] for a, b in marks] == ["giải ngân"]
+
+
+def test_snippet_marks_the_phrase_only():
+    text, marks = snippet("Admin có quyền; tư vấn giá. Admin / vận hành", "Admin vận")
+    assert [text[a:b] for a, b in marks] == ["Admin / vận"]
 
 
 def test_snippet_window_and_marks_are_relative_to_returned_text():
     body = "x" * 500 + " Đơn vị cho vay " + "y" * 500
     text, marks = snippet(body, "don vi", width=60)
-    assert len(text) <= 60 and [text[a:b] for a, b in marks] == ["Đơn", "vị"]
+    assert len(text) <= 60 and [text[a:b] for a, b in marks] == ["Đơn vị"]
 
 
 def test_snippet_without_match_is_the_start():
@@ -103,4 +108,4 @@ def test_a_big_text_file_is_read_only_up_to_the_cut(tmp_path, monkeypatch):
 
 def test_snippet_reads_a_table_cells_br_as_a_space():
     text, marks = snippet("VA-12083 — CLOSED<br>24h · VA-12396<br/>giải ngân", "giai ngan")
-    assert "<br" not in text and text[marks[0][0] : marks[0][1]] == "giải"
+    assert "<br" not in text and text[marks[0][0] : marks[0][1]] == "giải ngân"

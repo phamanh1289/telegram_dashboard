@@ -80,7 +80,7 @@ def test_search_returns_marked_text_and_the_ask_size(client):
     got = r.json()
     hit = got["hits"][0]
     assert "giải ngân" in hit["text"]
-    assert [hit["text"][a:b] for a, b in hit["marks"]] == ["giải", "ngân"]
+    assert [hit["text"][a:b] for a, b in hit["marks"]] == ["giải ngân"]
     assert hit["doc"]["source"] == "youtrack" and hit["doc"]["ref"] == "VA-A-1"
     assert got["messages"] == []
     assert got["ask_parts"] == 1 and got["ask_chars"] == len(text)
@@ -131,12 +131,14 @@ def test_telegram_hits_join_the_context_and_cite_the_message(client, ai):
     add(client, "VA-A-1", "Điều kiện giải ngân")
     s.store.set_tracking(A, True, title="BE Thông báo", kind="supergroup")
     s.store.apply_message(msg(A, 5, "API giải ngân đổi field amount"))
-    got = done(client.post("/api/docs/ask", json={"question": "field nào đổi", "q": "giai ngan"}))
-    assert {"n": 2, "doc": None, "part": None, "chat_id": A, "message_id": 5} in got["cites"]
+    every = client.get("/api/docs/search", params={"q": "giai ngan"}).json()
+    assert every["messages"] == [] and len(every["hits"]) == 1  # Tất cả: documents only
+    got = done(client.post("/api/docs/ask", json={"question": "field nào đổi", "q": "giai ngan", "source": "telegram"}))
+    assert {"n": 1, "doc": None, "part": None, "chat_id": A, "message_id": 5} in got["cites"]
     assert "API giải ngân đổi field amount" in ai.calls[0] and "BE Thông báo" in ai.calls[0]
     tg = client.get("/api/docs/search", params={"q": "giai ngan", "source": "telegram"}).json()
     assert tg["hits"] == [] and tg["messages"][0]["chat_title"] == "BE Thông báo"
-    assert tg["messages"][0]["text"][slice(*tg["messages"][0]["marks"][0])] == "giải"
+    assert tg["messages"][0]["text"][slice(*tg["messages"][0]["marks"][0])] == "giải ngân"
     yt = client.get("/api/docs/search", params={"q": "giai ngan", "source": "youtrack"}).json()
     assert yt["messages"] == [] and len(yt["hits"]) == 1
     assert client.get("/api/docs/search", params={"q": "x", "source": "yt_article"}).status_code == 422

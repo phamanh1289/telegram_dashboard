@@ -34,7 +34,8 @@ def scope(s, source: str | None, *, doc: int | None = None) -> dict:
 
 async def find(s, body: DocAskBody) -> tuple[list[dict], list[dict]]:
     """(parts, messages) matching `q` (every word) or, without it, any word of the question. Messages only with a `q`
-    (they match on every word, a whole question never would) and not inside one open document. One open document and
+    (they match on every word, a whole question never would), under the Telegram source (Tất cả: documents only) and
+    not inside one open document. One open document and
     no `q` (Hỏi AI on that document): its parts matching the question first, then the rest in order, so a question in
     other words than the text ("điểm chính là gì?") still reads the document, up to DOC_ASK_CHARS."""
     q = body.q.strip()
@@ -45,8 +46,8 @@ async def find(s, body: DocAskBody) -> tuple[list[dict], list[dict]]:
         rest = [{**p, "doc_id": body.doc} for p in await s.db.read(s.store.doc_parts, body.doc) if p["part"] not in got]
         parts += rest
     msgs = []
-    if q and body.source in (None, "telegram") and body.doc is None:
-        msgs = await s.db.read(s.store.search_tracked, f"{q} {body.ticket or ''}")
+    if q and body.source == "telegram" and body.doc is None:
+        msgs = await s.db.read(s.store.search_tracked, q, ticket=body.ticket)
     return parts, msgs
 
 

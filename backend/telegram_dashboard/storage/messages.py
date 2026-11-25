@@ -566,12 +566,14 @@ class Messages:
             )
             return [dict(r) for r in itertools.islice((r for r in rows if word.search(r["text"])), limit)]
 
-    def search_tracked(self, q: str, limit: int = 20) -> list[dict]:
-        """Kept messages of tracked chats holding every word of `q` (accent-less, whole words, the last one a prefix:
-        message_fts), newest first."""
+    def search_tracked(self, q: str, limit: int = 20, *, ticket: str | None = None) -> list[dict]:
+        """Kept messages of tracked chats holding `q` as a phrase (accent-less, the last word a prefix: message_fts),
+        and `ticket` anywhere in them, newest first."""
         match = _fts_query(q, False)
         if not match:
             return []
+        if ticket:
+            match = f"{match} {_fts_query(ticket, True)}"
         with self._conn() as c:
             rows = c.execute(
                 "SELECT m.chat_id, m.message_id, m.sender_name, m.text, m.date, m.outgoing, m.reply_to_id, c.title "
