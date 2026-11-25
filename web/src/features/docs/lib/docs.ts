@@ -193,11 +193,13 @@ export function syncErrorText(e: DocSourceError) {
   return `${e.ref}: ${why}`;
 }
 
-/** Highlight ranges of the words of `q` in `text`, matched without accents (the server's snippet rule, parts.py):
- *  [start, end) in UTF-16 units of `text`. */
+const SEP = /[^\p{L}\p{N}]+/u; // what FTS5's tokenizer splits words on
+/** Highlight ranges of `q` as a phrase in `text` (its words in order, anything not a letter or digit between them),
+ *  matched without accents (the server's search and snippet rule, parts.py): [start, end) in UTF-16 units of `text`. */
 export function findTerms(text: string, q: string): [number, number][] {
-  const words = fold(q).split(/\s+/).filter((w) => w.length > 1);
-  if (!words.length) return [];
+  const words = fold(q).split(SEP).filter(Boolean); // letters / digits only: nothing to escape
+  if (words.join("").length < 2) return [];
+  const re = new RegExp(words.join(SEP.source), "gu");
   let flat = "";
   const pos: number[] = [];
   for (let i = 0; i < text.length; i++) {
@@ -205,9 +207,7 @@ export function findTerms(text: string, q: string): [number, number][] {
     flat += f;
     for (let k = 0; k < f.length; k++) pos.push(i);
   }
-  const out: [number, number][] = [];
-  for (const w of words) for (let at = flat.indexOf(w); at >= 0; at = flat.indexOf(w, at + w.length)) out.push([pos[at], pos[at + w.length - 1] + 1]);
-  return out;
+  return [...flat.matchAll(re)].map((m) => [pos[m.index], pos[m.index + m[0].length - 1] + 1]);
 }
 
 /** Yêu thích: the documents starred in the reader, per browser, as "source:ref" (kept across syncs, a doc's id is not). */

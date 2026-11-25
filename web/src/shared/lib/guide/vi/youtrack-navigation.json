@@ -4,7 +4,7 @@
     "tab": "youtrack",
     "area": "Màn hình đầu tiên",
     "title": "Chọn vai trò Dev / QA/QC / PO/PM",
-    "what": "Lần đầu mở trang YouTrack (hoặc sau khi xóa vai trò), trang hỏi bạn làm vai trò nào. Trang chủ, góc nhìn Ticket, Dashboard và AI đều chạy theo vai trò này.",
+    "what": "Lần đầu đăng nhập xong (bên Telegram) hoặc mở trang YouTrack khi chưa có vai trò (hoặc sau khi xóa vai trò), app hỏi bạn làm vai trò nào. Trang chủ, góc nhìn Ticket, Dashboard và AI đều chạy theo vai trò này.",
     "how": [
       {
         "t": "Bấm biểu tượng \"Cài đặt\" ở góc phải thanh trên",

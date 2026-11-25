@@ -230,17 +230,20 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
  *  centred on the board. Fixed to the window, not the board: the board gets shorter when the card leaves its column, the dock must not move. */
 function Dock({ id, states, target, at, still }: { id: string; states: string[]; target: string | null; at: [number, number]; still: boolean }) {
   const t = useT();
+  // up to 3 states a row (5 → 3 + 2), each row splitting the dock's width evenly; the dock is 20rem a state wide, narrower boards shrink every state alike
+  const cols = Math.min(states.length, 3);
   return (
     <motion.div initial={{ opacity: 0, y: still ? 0 : 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: still ? 0 : 24 }} transition={DND}
       style={{ left: at[0], width: at[1] }} className="pointer-events-none fixed bottom-6 z-40 flex justify-center px-4">
-      <div data-dock className="pointer-events-auto grid max-w-5xl gap-4 rounded-[var(--radius-card)] bg-cotton/95 p-6 shadow-stock backdrop-blur">
+      <div data-dock style={{ width: `min(100%, ${cols * 20 + (cols - 1) * 0.75 + 3}rem)` }}
+        className="pointer-events-auto grid gap-4 rounded-[var(--radius-card)] bg-cotton/95 p-6 shadow-stock backdrop-blur">
         {/* the header says what letting go does: above every zone, the dragged card (under the pointer) never covers it */}
         <span className="grid px-1 text-sm">
           <span className={cn("[grid-area:1/1] text-ink-3 transition-opacity duration-(--dur-short)", target && "opacity-0")}>{t("Trạng thái chưa có cột trên board")}</span>
           <span className={cn("[grid-area:1/1] font-medium text-ink transition-opacity duration-(--dur-short)", !target && "opacity-0")}>
             {target && t("Thả ra để chuyển {id} sang {state}", { id, state: target })}</span>
         </span>
-        <div className="flex flex-wrap gap-3">
+        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
           {states.map((s, k) => {
             const on = s === target;
             // the one under the card grows (its hit area too, so it stays picked while the pointer wobbles)
@@ -248,10 +251,10 @@ function Dock({ id, states, target, at, still }: { id: string; states: string[];
               <motion.div key={s} data-col={s} aria-label={s}
                 initial={{ opacity: 0, y: still ? 0 : 10 }} animate={{ opacity: 1, y: still || !on ? 0 : -6, scale: still || !on ? 1 : 1.1 }}
                 transition={{ ...DND, opacity: { duration: 0.2, delay: 0.04 * k }, y: { ...DND, delay: on ? 0 : 0.04 * k } }}
-                className={cn("relative grid min-w-80 content-center gap-2 rounded-[var(--radius-input)] border-2 border-dashed px-6 py-7 transition-[background-color,border-color,box-shadow] duration-(--dur-short) ease-(--ease-out)",
+                className={cn("relative grid min-w-0 content-center gap-2 rounded-[var(--radius-input)] border-2 border-dashed px-6 py-7 transition-[background-color,border-color,box-shadow] duration-(--dur-short) ease-(--ease-out)",
                   on ? "z-10 border-hl bg-hl-wash shadow-stock" : "border-hl/45 bg-paper-2")}>
                 <StatePill state={s} />
-                <span className="text-xs text-ink-3">{t("Chưa có cột: thả vào để mở cột mới")}</span>
+                <span className="truncate text-xs text-ink-3">{t("Thả vào để mở cột mới")}</span>
               </motion.div>
             );
           })}

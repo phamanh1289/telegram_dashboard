@@ -18,8 +18,8 @@ import { DocTree } from "./doc-tree";
 import { FavStar } from "./fav-star";
 import { type Doc, type DocFilter, type DocHit, docErrors, docListQuery, docSearchQuery, type DocMsgHit, useDocFavs } from "@/features/docs/lib/docs";
 
-// Left column of Tài liệu: the documents (nothing typed) or the matching parts grouped by document, then the
-// tracked-chat messages. A click opens the document at the part; a message opens in its Telegram group. Nothing typed:
+// Left column of Tài liệu: the documents (nothing typed) or the matching parts grouped by document, then (source
+// Telegram only) the tracked-chat messages. A click opens the document at the part; a message opens in its Telegram group. Nothing typed:
 // the documents as a tree (project / folder) or newest first, as picked (kept per browser).
 
 // group/row: the open row is hl-wash (its marks stay the red hit, readable on it)

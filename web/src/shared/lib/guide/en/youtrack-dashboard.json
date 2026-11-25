@@ -201,6 +201,9 @@
   {
     "id": "yt-ket-qua-kiem-thu",
     "tab": "youtrack",
+    "roles": [
+      "qa"
+    ],
     "area": "Dashboard › Test results",
     "title": "QC numbers: Test runs, First-pass, Returned, Reopened",
     "what": "Read from the state history: test runs, % passed on the first try, runs returned by QC, reopens; test results per day; by tester; returns by dev; tickets returned several times / reopened.",

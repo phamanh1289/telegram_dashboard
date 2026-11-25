@@ -76,6 +76,9 @@
   {
     "id": "qa-ket-luan-story",
     "tab": "telegram",
+    "roles": [
+      "po"
+    ],
     "area": "Q&A › Conclusion (AI) (PO)",
     "title": "Put a Q&A thread's conclusion into the story",
     "what": "PO/PM role: in a Q&A thread naming a ticket, the “Conclusion (AI)” card has “Update story”: the conclusion is shown above the description box for you to put into the story. Once an answer is accepted, the “Accepted” bar at the top of the thread also has “Update story”, bringing that answer straight into the dialog with no AI summary (while the “Conclusion (AI)” card is open, the button is on the card only). The Telegram message replies to the accepted answer (or to the question when none is accepted). In the dialog: the description opens ready to edit by hand, AI is just the “AI” chip to click when needed (its draft opens on the “Compare” tab). The description box has three tabs: “Write” to edit, “Compare” for the lines added / removed against what YouTrack has, “Preview” for the description as YouTrack will show it. “Save” only writes the description to YouTrack; tick “Add the comment and send to Telegram” next to “Save” (off by default) and “Save” also sends the comment and the Telegram message. “Who to tell” has two independent boxes, neither waits for the other nor for “Save”: “Comment on YouTrack” (“Send comment”) and “Telegram message” (“Send to Telegram”, posted straight to the group). Each box starts with a ready line tagging the Assignee / QC the platform's own way (YouTrack by login, Telegram by the group member's @username), freely editable; type @ to pick from that platform's people. Under each box are quick-tag groups (Android, iOS, FE, BE, QA/QC by default): click one to tag the whole group; ⚙ renames groups, adds / removes people or adds a group (kept in this browser, per platform). The number beside a group is how many people it has; people are remembered with their names, so they still show before a Telegram group is picked. A Telegram send that loses the connection midway reads “not sure it was sent”: check the group before “Send again”.",
@@ -125,6 +128,9 @@
   {
     "id": "view-ai-agent",
     "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
     "area": "Sidebar › AI Agent",
     "title": "AI Agent page",
     "what": "The list of AI sessions: Give to AI Agent from a tag, Check vs BE, AI assistant (the AI assistant asks in the reply panel, one session per message, no project needed; ask on, post questions to the group, Done like any session), and Briefing assistant chats (reopened like a session: ask on in the question box pinned at the bottom, Saved Messages / Copy on each answer). Sessions are ordered by their latest activity and grouped into Today / Yesterday / Last 7 days / Older; the day label sticks to the top while scrolling; only Today starts open (or the nearest group with sessions), click a label to fold / unfold. The time on each session is its latest activity. The number on the item is how many sessions are running. Shown only for the Dev role (or once there are sessions, Briefing chats included). Links in the task or a follow-up are read for the AI by the dashboard: Knowledge Base articles and YouTrack tickets (of the connected YouTrack), messages of tracked groups, documents attached from Documents (a #DOC code) and up to 3 library documents that mention a ticket the session reads; other links (Zeplin, web) the AI can't open, so paste what it needs into the message.",

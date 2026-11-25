@@ -57,6 +57,8 @@ def test_filters_and_any_word(store):
     assert [r["doc_id"] for r in store.doc_search("alpha", ticket="VA-1")] == [a]
     assert [r["doc_id"] for r in store.doc_search("alpha", doc=b)] == [b]
     assert store.doc_search("beta gamma") == []
+    assert store.doc_search("beta alpha") == []  # a phrase: the words next to each other, in order
+    assert [r["doc_id"] for r in store.doc_search("alpha be")] == [a]
     assert {r["doc_id"] for r in store.doc_search("beta gamma", any_word=True)} == {a, b}
     assert [d["id"] for d in store.doc_list(ticket="VA-1")] == [a]
 
@@ -87,6 +89,9 @@ def test_search_tracked_folds_and_skips_untracked_and_deleted(env):
     assert env.store.search_tracked("xong") == [] and [r["message_id"] for r in env.store.search_tracked("doi")] == [2]
     env.store.compact()  # rebuilt after VACUUM
     assert [r["message_id"] for r in env.store.search_tracked("dieu kien")] == [1]
+    assert env.store.search_tracked("kien dieu") == []
+    env.store.apply_message(msg(A, 4, "VA-7 giải ngân chậm"))
+    assert [r["message_id"] for r in env.store.search_tracked("giai ngan", ticket="VA-7")] == [4]
 
 
 def test_parts_of_the_first_docs_schema_survive_the_move_to_doc_ranges(tmp_path):

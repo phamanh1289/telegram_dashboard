@@ -111,6 +111,9 @@
   {
     "id": "composer-ai-code",
     "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
     "area": "Reply panel › Answer from code",
     "title": "Answer a question from the project's code",
     "what": "Someone asks you about logic, a business rule or progress: pick a project in the prompt box, the AI reads the code (read-only) and answers with the files / functions it rests on, how sure it is and what needs confirming, plus 2 drafts \"Short\" / \"Complete\" written for the asker's role (PO / QA: no file or API names). Progress questions: the AI also reads the last 14 days of commits and related YouTrack tickets. The code read runs in the background: closing the reply panel leaves it running, opening that message again shows its progress / result; only \"Cancel\" stops it. Dev role only; the project is remembered.",
@@ -167,6 +170,9 @@
   {
     "id": "composer-ask-missing",
     "tab": "telegram",
+    "roles": [
+      "qa"
+    ],
     "area": "Reply panel › Summary (QA)",
     "title": "Ask for missing information",
     "what": "With the QA role, when the summary flags [needs more info], it inserts a question asking for it (build, device, repro steps…).",
@@ -193,6 +199,9 @@
   {
     "id": "composer-ai-agent",
     "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
     "area": "Reply panel › AI Agent",
     "title": "Give to AI Agent",
     "what": "Hands the tag to the AI to work on in a code project (fix a bug, add a feature); choose Read only (recommended) or Can edit files. The dashboard loads for the AI the YouTrack tickets the message names (a link or just the ID, e.g. VA-123), the Knowledge Base articles those tickets link to, and Telegram message links; the AI must read them all before writing questions / points to confirm. Dev role only.",

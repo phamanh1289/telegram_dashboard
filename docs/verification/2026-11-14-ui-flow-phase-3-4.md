@@ -20,7 +20,7 @@ Code creates stable screen/button IDs, canonical design URLs, known metadata and
 
 ## Synthetic performance
 
-Same Apple M5/24 GB/arm64, headless Chromium 156, 1440×900, 5/20/60-screen datasets. Raw samples: `uiflow-phase4-before.json`, `uiflow-phase4-after.json`. One cold/warm pair per size is a local baseline, not a statistical speed claim.
+Same Apple M5/24 GB/arm64, headless Chromium 156, 1440×900, 5/20/60-screen datasets. Raw samples: [`uiflow-bench/uiflow-phase4-before.json`](uiflow-bench/uiflow-phase4-before.json), [`uiflow-bench/uiflow-phase4-after.json`](uiflow-bench/uiflow-phase4-after.json). One cold/warm pair per size is a local baseline, not a statistical speed claim.
 
 60 screens / 300 links, milliseconds (cold / warm):
 
@@ -36,7 +36,7 @@ Pan/drag p95 remained about 17 ms, below the 32 ms baseline target. Cold packing
 
 Final test results are recorded below. All production builds and browser tests run in scratch at `/tmp/uiflow-integration-2IfIB5`, app/control ports 8873/8874. The running app's `web/out` and port 8765 are untouched during this task.
 
-Synthetic source corpus (`tests/test_flow_prompt.py`, raw `uiflow-phase3-corpus.json`):
+Synthetic source corpus (`tests/test_flow_prompt.py`, raw [`uiflow-bench/uiflow-phase3-corpus.json`](uiflow-bench/uiflow-phase3-corpus.json)):
 
 | Screens / links retained | Before estimated payload tokens | After estimated total input tokens |
 |---|---:|---:|

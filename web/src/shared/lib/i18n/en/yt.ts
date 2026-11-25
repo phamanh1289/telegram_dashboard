@@ -481,8 +481,6 @@ export default {
   "Đang tải tất cả ticket": "Loading all tickets",
   "Đang tải ticket": "Loading tickets",
   "Phím tắt YouTrack": "YouTrack shortcuts",
-  "Bạn dùng YouTrack với vai trò nào?": "Which role do you use YouTrack in?",
-  "Trang chủ, góc nhìn Ticket, Dashboard và AI (cả tóm tắt bên Telegram) sẽ theo vai trò này. Đổi bất cứ lúc nào ở ô Vai trò trên thanh bên, hoặc xóa trong Cài đặt › Chung.": "Home, the Tickets view, Dashboard and AI (Telegram summaries too) follow this role. Change it anytime in the Role box on the sidebar, or clear it in Settings › General.",
   "Không liên lạc được dashboard local. Kiểm tra app còn chạy rồi thử lại.": "Could not reach the local dashboard. Check the app is still running, then try again.",
   "Chưa rõ đã tạo ticket chưa": "Not sure the ticket was created",
   "Mất kết nối giữa chừng: tìm ticket trên YouTrack trước khi tạo lại.": "The connection dropped midway: look for the ticket in YouTrack before creating it again.",

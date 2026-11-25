@@ -9,3 +9,9 @@ export function goApp(router: ReturnType<typeof useRouter>, href: string) {
   else if (u.hash) location.hash = u.hash;
   else dispatchEvent(new CustomEvent("guide-go", { detail: u.searchParams }));
 }
+
+/** Walk a guide feature (`id` in shared/lib/guide, on module `tab`) from a hint beside another feature: the top bar's guide
+ *  (app/_components/guide) takes it ("guide-tour"), goes straight to that module (a dialog open here closes with the
+ *  page) and walks the steps there. */
+export const openTour = (id: string, tab: "telegram" | "youtrack" | "docs" | "settings" = "settings") =>
+  dispatchEvent(new CustomEvent("guide-tour", { detail: { id, tab } }));

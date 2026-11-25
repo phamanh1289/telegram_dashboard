@@ -2,6 +2,9 @@
   {
     "id": "yt-trang-hom-nay-dev",
     "tab": "youtrack",
+    "roles": [
+      "dev"
+    ],
     "area": "Sidebar › Today (Dev)",
     "title": "What to do today (Dev home page)",
     "what": "Your open tickets sorted by urgency with the reason (Blocked, Overdue, Due soon, priority, Waiting for your test, In progress, Stale N days); tickets moved to QC / waiting for test show only when you click the \"In QC\" box; the top 3 tickets are under \"Do now\", the rest under \"Next\", 20 tickets per page.",
@@ -21,6 +24,9 @@
   {
     "id": "yt-lens-dev",
     "tab": "youtrack",
+    "roles": [
+      "dev"
+    ],
     "area": "Today (Dev) › Stats row",
     "title": "Quick-filter today's list",
     "what": "The stats row also filters the list: Open, In progress, Awaiting QC, Blocked, Waiting for your test.",
@@ -97,6 +103,10 @@
   {
     "id": "yt-ai-standup-dev",
     "tab": "youtrack",
+    "roles": [
+      "dev",
+      "qa"
+    ],
     "area": "Today (Dev) › AI Studio",
     "title": "Standup and Plan",
     "what": "Standup: Yesterday / Today / Blockers from the tickets you updated since the previous workday and the messages you answered on Telegram. Plan: the AI picks what to do now, what to answer, and where you are stuck. Standup is available for both Dev and QA/QC (QA: from the tickets you QC) and also reads finished AI Agent sessions; the \"Saved Messages\" button sends the standup to your Telegram.",
@@ -123,6 +133,9 @@
   {
     "id": "yt-trang-kiem-thu-qa",
     "tab": "youtrack",
+    "roles": [
+      "qa"
+    ],
     "area": "Sidebar › Testing (QA)",
     "title": "Test queue (QA home page)",
     "what": "Tickets waiting for test, sorted by urgency (Yours, No QC yet, Retest · returned N times, Blocked, Overdue, Waiting N days…); the top 3 tickets are under \"Test now\".",
@@ -146,6 +159,9 @@
   {
     "id": "yt-bug-dot-bien",
     "tab": "youtrack",
+    "roles": [
+      "qa"
+    ],
     "area": "Testing (QA)",
     "title": "Bug spike alert",
     "what": "When new bugs in the last 7 days reach 3 or more and exceed 1.5 times the average of the previous 4 weeks (project-wide or per module), a yellow \"Bug spike\" button appears with the hot modules.",
@@ -161,6 +177,9 @@
   {
     "id": "yt-ket-qua-test-cua-toi",
     "tab": "youtrack",
+    "roles": [
+      "qa"
+    ],
     "area": "Testing (QA)",
     "title": "My test results + Copy standup",
     "what": "How many tickets you tested Today / the last 24 hours / 7 days, split into passed and returned (read from the state history); a ready-made QC standup paragraph. Counts all your verdicts, regardless of the Sprint / People filter at the top.",
@@ -180,6 +199,9 @@
   {
     "id": "yt-goi-y-chia-qc",
     "tab": "youtrack",
+    "roles": [
+      "qa"
+    ],
     "area": "Testing (QA)",
     "title": "QC assignment suggestions",
     "what": "Tickets waiting for test without a QC are suggested for the person holding the fewest test tickets, urgent tickets first.",
@@ -199,6 +221,9 @@
   {
     "id": "yt-bug-7-ngay",
     "tab": "youtrack",
+    "roles": [
+      "qa"
+    ],
     "area": "Testing (QA)",
     "title": "Bugs in the last 7 days",
     "what": "Three numbers: New bugs, Fixed within 7 days and Open bugs.",
@@ -210,6 +235,9 @@
   {
     "id": "yt-trang-brief-po",
     "tab": "youtrack",
+    "roles": [
+      "po"
+    ],
     "area": "Sidebar › Overview (PO)",
     "title": "Overview (PO home page)",
     "what": "The PO home page: sprint KPIs, Sprint progress, Long-running tickets, Waiting for PO sign-off (define / confirm), Needs attention, Work in progress (WIP limit).",
@@ -258,6 +286,9 @@
   {
     "id": "yt-ai-brief-po",
     "tab": "youtrack",
+    "roles": [
+      "po"
+    ],
     "area": "Brief (PO) › AI Studio",
     "title": "AI Brief, Sprint planning, Grooming, Weekly digest, Release notes",
     "what": "Brief: the AI reads the sprint's open tickets and gives each person's next step, bottlenecks, decisions needed and what changed since the last brief. Sprint planning: suggests tickets to pull into the next sprint and who takes them. Grooming: reviews the backlog. Weekly digest: the last 7 days per person. Release notes: from finished tickets.",

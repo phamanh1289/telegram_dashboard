@@ -43,7 +43,7 @@
     "tab": "settings",
     "area": "Settings › General › Role",
     "title": "Choose a role (Dev / QA/QC / PO/PM)",
-    "what": "The role decides the home page, the Dashboard and the AI's point of view when summarizing and creating tickets; QA and PO don't use the AI Agent. Without a role, Telegram acts as Dev.",
+    "what": "The role decides the home page, the Dashboard and the AI's point of view when summarizing and creating tickets; QA and PO don't use the AI Agent. Without one (or after \"Clear role\"), Telegram and YouTrack ask again as soon as they open. The know-it-all assistant's suggested questions and the order of the user guide follow the role too.",
     "how": [
       {
         "t": "Click a role: \"Dev\", \"QA/QC\" or \"PO/PM\"",
@@ -432,5 +432,90 @@
       "Or press ? while in the Inbox"
     ],
     "keys": "shortcuts keyboard shortcut sheet search shortcuts youtrack"
+  },
+  {
+    "id": "settings-ai-intro",
+    "tab": "settings",
+    "area": "Settings › General › About you, for the AI",
+    "title": "About you, for the AI",
+    "what": "A few lines about you (role, platform, what you know, what the AI should focus on or skip) for the Telegram-side AI: summaries, drafts, Briefing, tickets from messages, BE check, AI Agent. The empty box shows an example for your role and platform; \"Fill in the example to edit\" puts it in the box so you can adjust it. Saved as you type, in this browser. Without it, a hint \"Add an intro\" shows under the AI assistant's answers on the reply page.",
+    "how": [
+      {
+        "t": "Choose \"General\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#general\"]"
+      },
+      {
+        "t": "Click \"Fill in the example to edit\" (or type straight into the box)",
+        "at": [
+          "Điền mẫu để sửa",
+          "Giới thiệu bản thân cho AI"
+        ]
+      },
+      {
+        "t": "Edit \"About you, for the AI\" to fit your work",
+        "at": "Giới thiệu bản thân cho AI"
+      },
+      {
+        "t": "Choose \"Summarize for platform\"",
+        "at": "css:[aria-label=\"Tóm tắt theo nền tảng\"]"
+      }
+    ],
+    "keys": "intro introduce yourself about me ai guesses example context profile"
+  },
+  {
+    "id": "settings-yt-instructions",
+    "tab": "settings",
+    "area": "Settings › YouTrack › AI and prompts",
+    "title": "AI instructions per role (YouTrack)",
+    "what": "The team's own instructions per role (ticket conventions, how to write AC, test environments, tone…); the AI follows them in every YouTrack feature (AI sessions, test cases, triage, reports, ticket drafts), except ticket filtering. One per role, saved on this machine (data/). Without them, YouTrack AI sessions show a hint \"Add instructions\"; with them, the prompt box shows \"{role} instructions on\".",
+    "how": [
+      {
+        "t": "Choose \"YouTrack\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
+      },
+      {
+        "t": "Choose the \"AI and prompts\" group",
+        "at": "AI và prompt"
+      },
+      {
+        "t": "Write in the instructions box of your current role",
+        "at": "css:textarea[aria-label^=\"Instructions cho AI\"]"
+      },
+      {
+        "t": "Click \"Save\"",
+        "at": "Lưu"
+      }
+    ],
+    "keys": "instructions ai guidance team conventions youtrack prompt ac"
+  },
+  {
+    "id": "settings-workflow",
+    "tab": "settings",
+    "area": "Settings › YouTrack › Workflow",
+    "title": "Draw a State workflow for your role",
+    "what": "The State flow for the chosen project and role: boxes are States, arrows the allowed next steps. With \"Apply in the app\" on, the State menu, Board drag and drop and bulk changes only follow the arrows (YouTrack still checks its own flow). \"Get from YouTrack\" copies the flow YouTrack allows today, the quickest start. Dev starts with a default flow when the project has its states; QA/QC and PO/PM start empty. While it is off, the State menu shows every State, with a hint \"Draw the workflow\".",
+    "how": [
+      {
+        "t": "Choose \"YouTrack\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
+      },
+      {
+        "t": "Choose the \"Workflow\" group",
+        "at": "Workflow"
+      },
+      {
+        "t": "Click \"Get from YouTrack\" (or drag a box's dot onto another to draw an arrow)",
+        "at": "Lấy từ YouTrack"
+      },
+      {
+        "t": "Tick \"Apply in the app\"",
+        "at": "Áp dụng trong app"
+      },
+      {
+        "t": "Click \"Save\"",
+        "at": "Lưu"
+      }
+    ],
+    "keys": "workflow state flow arrows apply draw workflow change state wrong flow"
   }
 ]

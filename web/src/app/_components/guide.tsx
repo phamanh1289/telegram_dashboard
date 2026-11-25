@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, BookOpen, BookOpenText, ChevronDown, MousePointerClick, RotateCcw, Search, Send, Settings, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useRouter } from "next/navigation";
-import { type CSSProperties, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { type CSSProperties, useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AiBot, AiBubble, AiPromptBox, AiSend, AiThinking, UserBubble, useFollow } from "@/shared/components/ai/chat";
 import { Markdown } from "@/shared/components/markdown";
 import { Button } from "@/shared/components/ui/button";
@@ -17,11 +17,12 @@ import { useTodayWork, workText } from "@/features/telegram/components/today-pag
 import { apiStream, errorText, statusQuery } from "@/shared/lib/api";
 import { type Key, type Lang, type T, tr, useLang, useT } from "@/shared/lib/i18n";
 import { fold } from "@/shared/lib/utils";
-import { BOT_SIZES, type BotCorner, type BotMode, readYtRole, setPref, useBotDock, useBotMode, useBotShow, useBotSize } from "@/shared/lib/prefs";
+import { BOT_SIZES, type BotCorner, type BotMode, readYtRole, setPref, useBotDock, useRoleOrDev, type YtRole, useBotMode, useBotShow, useBotSize } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 import { POP, POP_EXIT, POP_OUT, POP_SPRING } from "@/shared/lib/motion";
 import { shortName, ytMeQuery } from "@/features/youtrack/lib/yt";
 import { GuideTour, readTour, saveTour, type TourState } from "./guide-tour";
+import { CHIP, SetupBubble } from "./guide-setup";
 
 // In-app user guide as a floating "know-it-all" bot: a chat with the AI over every feature of the Telegram / YouTrack / Tài liệu tabs
 // (shared/lib/guide/vi, English: shared/lib/guide/en), never the app's own code; each answer ends in buttons that take
@@ -32,9 +33,13 @@ export type Module = "telegram" | "youtrack" | "settings" | "docs";
 type Tab = Module;
 /** A step: text with UI labels in quotes; `at` names the control the live guide lights (a label, or `css:<selector>`; several: first found). */
 export type Step = string | { t: string; at?: string | string[] };
-export type Feature = { id: string; tab: Tab; area: string; title: string; what: string; how: Step[]; keys?: string };
+/** `roles`: only for these roles (a QC's test queue, a PO's story update…); none = everyone's. */
+export type Feature = { id: string; tab: Tab; roles?: YtRole[]; area: string; title: string; what: string; how: Step[]; keys?: string };
+/** Your role's features ahead of everyone's, other roles' last. */
+const forRole = (f: Feature, role: YtRole) => !f.roles ? 1 : f.roles.includes(role) ? 1.5 : 0.6;
 export const stepText = (s: Step) => (typeof s === "string" ? s : s.t);
 const TAB: Record<Tab, Key> = { telegram: "Telegram", youtrack: "YouTrack", docs: "Tài liệu", settings: "Cài đặt" };
+const HOME: Record<Tab, string> = { telegram: "/", youtrack: "/youtrack/", docs: "/docs/", settings: "/settings/" };
 
 
 /** A step with its quoted UI labels drawn as little keys. */
@@ -65,7 +70,7 @@ function build(all: Feature[], lang: Lang): Catalog {
  *  words counting more, and word pairs in the title (6) or keys (4) (Vietnamese words are mostly two syllables). `strict`
  *  (the chips shown while typing): as good as every word in the title / keys, so a vague question (folded "cái này" also
  *  reads "cài", "nay") shows none. */
-function rank(cat: Catalog, text: string, n: number, strict = false): Feature[] {
+function rank(cat: Catalog, text: string, n: number, role: YtRole, strict = false): Feature[] {
   const all = words(text), terms = all.filter((w) => w.length > 1 && !STOP.has(w));
   if (!terms.length) return [];
   const pairs = all.slice(1).map((w, i) => ` ${all[i]} ${w} `).filter((p) => !p.trim().split(" ").every((w) => STOP.has(w)));
@@ -73,15 +78,15 @@ function rank(cat: Catalog, text: string, n: number, strict = false): Feature[] 
     let raw = 0, s = 0;
     for (const w of terms) { const p = e.title.includes(` ${w} `) ? 5 : e.top.has(w) ? 3 : e.body.has(w) ? 1 : 0; raw += p; s += p * cat.rare(w); }
     for (const p of pairs) { const v = e.title.includes(p) ? 6 : e.head.includes(p) ? 4 : 0; raw += v; s += v; }
-    return { f: e.f, raw, s };
+    return { f: e.f, raw, s: s * forRole(e.f, role) };
   }).filter((x) => x.raw >= (strict ? 3 * terms.length : 3)).sort((a, b) => b.s - a.s).slice(0, n).map((x) => x.f);
 }
 const SENT = 12; // features sent whole with a question
 /** The guide a question is answered from (`ids`: the features sent whole): the features it (and the turn before) is about,
  *  whole, then every other one by name only — a sixth of the whole guide. Too few matches (a vague question): the whole
  *  guide. `seen` (a session carried on, which holds those already): only the matches it has not got yet. */
-function guideFor(cat: Catalog, question: string, last?: Pick<Turn, "q" | "a">, seen?: string[]) {
-  const hits = new Set([...rank(cat, `${question} ${last?.q ?? ""}`, SENT), ...[...(last?.a ?? "").matchAll(REF)].flatMap((m) => cat.byId.get(m[1]) ?? [])]);
+function guideFor(cat: Catalog, question: string, role: YtRole, last?: Pick<Turn, "q" | "a">, seen?: string[]) {
+  const hits = new Set([...rank(cat, `${question} ${last?.q ?? ""}`, SENT, role), ...[...(last?.a ?? "").matchAll(REF)].flatMap((m) => cat.byId.get(m[1]) ?? [])]);
   const whole = seen ? cat.all.filter((e) => hits.has(e.f) && !seen.includes(e.f.id)) : hits.size < 3 ? cat.all : cat.all.filter((e) => hits.has(e.f));
   const rest = seen || whole.length === cat.all.length ? [] : [INDEX, ...cat.all.filter((e) => !hits.has(e.f)).map((e) => e.name)];
   return { text: [...whole.map((e) => e.full), ...rest].join("\n"), ids: whole.map((e) => e.f.id) };
@@ -217,6 +222,14 @@ export function GuideBot({ module }: { module: Module }) {
   const [book, setBook] = useState(false); // the header's guide: every feature to browse, no AI
   const { cat, failed } = useCatalog(open || !!tour || warm || book);
   const touring = tour && cat?.byId.get(tour.id); // a saved walk-through of a feature the guide no longer has: nothing
+  const router = useRouter();
+  // a hint asked for it: no "click the gear" step, the walk starts on the feature's own module (the page it opens there)
+  const tourFrom = useEffectEvent(({ id, tab }: { id: string; tab: Module }) => {
+    if (tab === module) return start({ id });
+    setBot({ open: false });
+    saveTour({ id, from: tab, i: 0 });
+    goApp(router, HOME[tab]); // the guide on that page carries the saved walk on
+  });
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.key === "F1") { e.preventDefault(); toggleBot(); }
@@ -225,10 +238,12 @@ export function GuideBot({ module }: { module: Module }) {
         && !document.activeElement?.closest("[role=dialog], [role=menu], [role=listbox], input, textarea, [contenteditable]")) { e.preventDefault(); setBot({ open: false }); } // taken: the page's own Esc (Settings: back) stays put
     };
     document.addEventListener("keydown", k);
+    const go = (e: Event) => tourFrom((e as CustomEvent<{ id: string; tab: Module }>).detail); // openTour (shared/lib/nav): a hint beside a feature
+    addEventListener("guide-tour", go);
     // a walk-through going on (it moved here through a link): carry on once the page has rendered
     const saved = readTour();
     const tm = saved ? setTimeout(() => setTour(saved), 300) : undefined;
-    return () => { document.removeEventListener("keydown", k); clearTimeout(tm); };
+    return () => { document.removeEventListener("keydown", k); removeEventListener("guide-tour", go); clearTimeout(tm); };
   }, []);
   // closed: the focus the chat held goes back to the bot it opened from
   const wasOpen = useRef(open);
@@ -238,7 +253,7 @@ export function GuideBot({ module }: { module: Module }) {
       document.querySelector<HTMLElement>("[data-gb-launcher]")?.focus({ preventScroll: true });
     wasOpen.current = open;
   }, [open]);
-  function start(f: Feature) {
+  function start(f: Pick<Feature, "id">) {
     setBot({ open: false });
     setBook(false);
     const s = { id: f.id, from: module, i: 0 };
@@ -316,11 +331,19 @@ export function GuideBot({ module }: { module: Module }) {
 }
 
 /** A chip in the chat: a question to start from, a feature that matches what is being typed. */
-const CHIP = "rounded-full border border-rule-2 bg-cotton px-3 py-1 text-left text-xs text-ink shadow-stock transition-[translate,border-color,background-color] duration-(--dur-short) hover:-translate-y-0.5 hover:border-hl hover:bg-hl-wash disabled:opacity-50";
 /** Questions to start from, for the module you are on. */
-const STARTERS: Record<Module, Key[]> = {
-  telegram: ["Làm sao tóm tắt một nhóm?", "Vì sao một tin không hiện trong Việc cần xử lý?", "Giao việc cho AI Agent thế nào?"],
-  youtrack: ["Làm sao tạo ticket từ tin Telegram?", "Vì sao ticket không hiện trên Dashboard?", "Báo cáo release tự chạy khi nào?"],
+// first questions: Telegram / YouTrack by role (a QC never needs the AI Agent, a PO lives in Briefing and stories)
+const STARTERS: Record<Module, Key[] | Record<YtRole, Key[]>> = {
+  telegram: {
+    dev: ["Làm sao tóm tắt một nhóm?", "Vì sao một tin không hiện trong Việc cần xử lý?", "Giao việc cho AI Agent thế nào?"],
+    qa: ["Tạo bug từ một tin Telegram thế nào?", "Tin nào đang cần tôi retest?", "Hỏi lại thông tin còn thiếu của một bug ra sao?"],
+    po: ["Xem Briefing các nhóm ở đâu?", "Đưa điều đã chốt trong nhóm vào story thế nào?", "Theo dõi câu tôi đã hỏi trong nhóm ra sao?"],
+  },
+  youtrack: {
+    dev: ["Việc hôm nay của tôi xem ở đâu?", "Làm sao tạo ticket từ tin Telegram?", "Viết standup bằng AI thế nào?"],
+    qa: ["Hàng đợi test của tôi ở đâu?", "Copy kết quả test cho standup thế nào?", "Gợi ý chia QC dùng ra sao?"],
+    po: ["Ticket nào đang chờ tôi chốt?", "Cập nhật story rồi báo nhóm thế nào?", "Xem tải việc của team ở đâu?"],
+  },
   settings: ["Đổi model AI cho tóm tắt ở đâu?", "Bật thông báo khi có tag mới thế nào?", "Cập nhật app ra sao?"],
   docs: ["Thêm thư mục tài liệu vào kho thế nào?", "Vì sao tìm không ra một tài liệu?", "Tìm tài liệu nhắc một ticket ra sao?"],
 };
@@ -334,6 +357,7 @@ function Bot({ cat, failed, module, turns, name, state, mode, box, from, onClose
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);
   const { ref: feedRef, onScroll } = useFollow(live?.a ?? turns.length, turns.length);
+  const role = useRoleOrDev(), first = STARTERS[module], starters = Array.isArray(first) ? first : first[role];
   const work = useTodayWork(); // "còn tin nào chờ?": Hôm nay's list, read while the panel is open (mostly the shell's cache)
 
   // ponytail: a question in flight stops when the page reloads or changes (the panel remounts); a background job if that bites
@@ -347,7 +371,7 @@ function Bot({ cat, failed, module, turns, name, state, mode, box, from, onClose
       const history = turns.filter((x) => !x.error).slice(-6).map(({ q, a }) => ({ q, a: a.slice(0, 8000) }));
       // a follow-up carries the AI session on: only the features it has not got, no history (it holds both)
       const run = async (sid?: string) => {
-        const g = guideFor(cat, question, history.at(-1), sid ? (BOT_STATE.seen ?? []) : undefined);
+        const g = guideFor(cat, question, role, history.at(-1), sid ? (BOT_STATE.seen ?? []) : undefined);
         const r = await apiStream<{ text: string; sid?: string }>("/ai/guide", { question, guide: g.text, history: sid ? [] : history, page: location.pathname + location.search + location.hash, name, state, sid, work: workText(work, t).slice(0, 12_000) },
           ctl.signal, (a) => setLive({ q: question, a }));
         return { text: r.text, sid: r.sid || undefined, seen: [...(sid ? (BOT_STATE.seen ?? []) : []), ...g.ids] };
@@ -386,7 +410,7 @@ function Bot({ cat, failed, module, turns, name, state, mode, box, from, onClose
     } : { initial: POP.shut, animate: POP.open, exit: POP.shut };
   const you = name ? shortName(name) : t("anh/chị");
   // while typing: the features the words match, at once and with no AI — a click walks through it on the page
-  const hits = cat && !live ? rank(cat, q, 3, true) : [];
+  const hits = cat && !live ? rank(cat, q, 3, role, true) : [];
 
   return (
     <motion.section role="dialog" data-gb-panel aria-label={t("Trợ lý biết tuốt")} {...anim}
@@ -417,9 +441,10 @@ function Bot({ cat, failed, module, turns, name, state, mode, box, from, onClose
         <AiBubble className="gb-in" style={{ animationDelay: "0.25s" }}>
           <p>{t("Chào {name}! 👋 Em biết mọi tính năng, rule và chỗ ẩn / hiện của Radar. Hỏi em gì cũng được nha: em chỉ cách làm rồi dẫn tới tận nơi.", { name: you })}</p>
         </AiBubble>
+        {!turns.length && !live && cat && <SetupBubble byId={cat.byId} onTour={onTour} />}
         {!turns.length && !live && (
           <div className="flex flex-wrap gap-1.5 pl-9">
-            {STARTERS[module].map((s, i) => (
+            {starters.map((s, i) => (
               <button key={s} type="button" disabled={!cat} onClick={() => ask(t(s))} style={{ animationDelay: `${0.4 + i * 0.08}s` }}
                 className={cn("gb-in", CHIP)}>{t(s)}</button>
             ))}
@@ -461,8 +486,9 @@ function Guide({ cat, failed, onTour, onAsk, t }: { cat: Catalog | null; failed:
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<Tab | "all">("all");
   const [open, setOpen] = useState<string | null>(null);
+  const role = useRoleOrDev();
   const dq = useDeferredValue(q).trim();
-  const hits = useMemo(() => !cat ? [] : (dq ? rank(cat, dq, cat.all.length) : cat.all.map((e) => e.f)).filter((f) => tab === "all" || f.tab === tab), [cat, dq, tab]);
+  const hits = useMemo(() => !cat ? [] : (dq ? rank(cat, dq, cat.all.length, role) : cat.all.map((e) => e.f).sort((a, b) => forRole(b, role) - forRole(a, role))).filter((f) => tab === "all" || f.tab === tab), [cat, dq, tab, role]);
   return (
     <>
       <DialogTitle className="flex items-center gap-2"><GuideBulb className="size-5" />{t("Hướng dẫn sử dụng")}</DialogTitle>

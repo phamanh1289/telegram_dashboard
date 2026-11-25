@@ -84,6 +84,9 @@
   {
     "id": "yt-cap-nhat-story",
     "tab": "youtrack",
+    "roles": [
+      "po"
+    ],
     "area": "Chi tiết ticket › Mô tả (PO)",
     "title": "Cập nhật story (thêm AC, sửa nghiệp vụ) rồi báo nhóm",
     "what": "Vai trò PO/PM: icon bút \"Cập nhật story\" trong hàng icon tính năng phía trên mục Mô tả (cạnh AI và UI flow; rê chuột để hiện tên) mở mô tả đang có trên YouTrack để sửa (AC còn thiếu, quyết định mới), giữ nguyên link và ảnh. Nếu ai đó sửa mô tả trên YouTrack sau khi bạn mở (hoặc sau khi AI đọc), lưu bị chặn để không ghi đè: bấm \"Lấy bản mới để sửa\". Tin Telegram trả lời tin gần nhất trong nhóm có nhắc ticket; ticket chưa được nhắc ở nhóm nào thì chọn một hoặc nhiều nhóm ngay trong ô Telegram (\"Chọn nhóm\"): danh sách @ gộp thành viên các nhóm đó và tin gửi thành tin mới trong từng nhóm (có @tên thì kèm mã #QA để Q&A theo dõi trả lời). Trong khung: mô tả mở sẵn để sửa tay, AI chỉ là chip “AI” bấm khi cần (bản AI soạn mở ở tab “So sánh”). Ô mô tả có ba tab: “Viết” để sửa, “So sánh” cho thấy dòng thêm / bỏ so với mô tả đang có trên YouTrack, “Xem trước” hiện mô tả như YouTrack sẽ hiển thị. “Lưu” chỉ ghi mô tả lên YouTrack; tick “Thêm bình luận và gửi Telegram” cạnh nút “Lưu” (mặc định tắt) thì “Lưu” gửi luôn bình luận và tin Telegram. Phần “Báo cho ai” gồm hai ô độc lập, không ô nào chờ ô nào và cũng không chờ “Lưu”: “Bình luận trên YouTrack” (nút “Gửi bình luận”) và “Tin nhắn Telegram” (nút “Gửi Telegram”, gửi thẳng vào nhóm). Mỗi ô điền sẵn một câu kèm tag Assignee / QC theo đúng nền tảng (YouTrack tag theo login, Telegram theo @username của thành viên nhóm), sửa thoải mái; gõ @ để chọn người từ danh sách của nền tảng đó. Dưới mỗi ô là các nhóm tag nhanh (mặc định Android, iOS, FE, BE, QA/QC): bấm một nhóm để tag cả nhóm; bấm ⚙ để đổi tên nhóm, thêm / bớt người hoặc thêm nhóm (lưu trên trình duyệt này, riêng cho từng nền tảng). Số cạnh tên nhóm là số người trong nhóm; người đã thêm được nhớ kèm tên nên vẫn hiện khi chưa chọn nhóm Telegram. Tin Telegram bị mất kết nối giữa chừng sẽ báo “chưa rõ đã gửi chưa”: xem nhóm trước khi bấm “Gửi lại”.",
@@ -157,7 +160,7 @@
     "tab": "youtrack",
     "area": "Bảng bên › Ticket",
     "title": "Đổi State / Priority / Assignee",
-    "what": "Đổi trực tiếp State, Priority, Assignee của ticket trên YouTrack (State theo workflow); thông báo có nút hoàn tác. Ticket của project khác thì danh sách Assignee / QC là team của project đó.",
+    "what": "Đổi trực tiếp State, Priority, Assignee của ticket trên YouTrack (State theo workflow; vai trò chưa bật workflow thì menu hiện mọi State, kèm gợi ý \"Vẽ workflow\"); thông báo có nút hoàn tác. Ticket của project khác thì danh sách Assignee / QC là team của project đó.",
     "how": [
       {
         "t": "Bấm \"Ticket\"",

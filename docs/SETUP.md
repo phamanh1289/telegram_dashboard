@@ -207,7 +207,7 @@ Mở **http://127.0.0.1:8765** — phải dùng `127.0.0.1`, **không dùng `loc
 
 ### 8.1 Telegram Inbox (`/`)
 
-- Không cần chọn nhóm: khi ai đó **tag** hoặc **reply** bạn trong nhóm, tin hiện ngay. App chỉ lưu tin tag bạn, không nạp lịch sử cũ — nên lúc mới cài inbox sẽ trống, chờ có tag mới.
+- Không cần chọn nhóm: khi ai đó **tag** hoặc **reply** bạn trong nhóm, tin hiện ngay. App chỉ lưu tin tag / reply bạn: lần đầu đăng nhập nó gom các tin đó trong 14 ngày gần nhất, ngoài ra không nạp lịch sử nhóm.
 - **Việc cần xử lý** (mục đầu): mọi tin tag chưa xử lý, chờ lâu nhất lên đầu; quá 4 giờ thì đỏ.
 - Tin được tính **đã xử lý** khi bạn reply nó (từ dashboard, điện thoại hay máy khác) hoặc bấm **Xong** (Shift+bấm: không thả reaction).
 - Mỗi tin có: xem ngữ cảnh, hoãn (nhắc lại sau), ghim, link mở trong Telegram.

@@ -134,6 +134,9 @@
   {
     "id": "msg-auto-be",
     "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
     "area": "Tag › Snooze › BE automation",
     "title": "BE automation: AI sessions take BE's answers by themselves",
     "what": "Two per-sender rules so you no longer pass answers on by hand. \"Pass {name}'s answers on to the AI session\": when that person answers a question an AI Agent session posted (found up the reply chain by its #REF-… or #QA… code), that session goes on with the answer attached: it does what is now clear and drafts the next questions for the rest; it edits code only if the session was ever allowed to, a running session waits for its turn to end, a Done one is left alone. A short holding reply (like \"noted, BE is on it, will report back\" or \"got more info, BE is still looking\") runs nothing: the session notes it is only an acknowledgement, not a confirmation, so it stops and waits for the real confirmation; the message stays in To do and the real answer that follows runs. An answer in a Q&A thread no open session holds opens a read-only session (with the thread's question attached) in the project you last picked in Assign AI Agent when the rule was set; the thread's later answers go on in that session. \"Always assign {name}'s messages to AI Agent\": each new message from that person opens a read-only session in the project you picked last in Assign AI Agent. Every session answer ends with a Status (Awaiting reply / Ready for Done / Needs you), shown in the AI Agent list and Today. Nothing is sent to Telegram by itself. Remove the rules in Settings › Telegram › Priority and automation. Dev role only. An automatic turn uses the session's model at medium effort at most. When Claude's quota (5-hour or weekly window) reaches 80%, the BE loop spares quota. With \"Step down the model near the quota limit\" (Settings › AI) on, an automatic turn steps down to Sonnet instead of the session's model, the session notes it, and the loop only pauses once a window is 100% used. With it off, the BE loop pauses from 80%. While paused, answers wait in a queue, the session notes why, and the app tries again the moment the quota resets (every 10 minutes at the latest) until they run; turns you type still run. The queue is saved, so restarting the app does not lose it.",
@@ -368,6 +371,9 @@
   {
     "id": "deep-thinking",
     "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
     "area": "Message row, Briefing › Check vs BE",
     "title": "Check vs BE (check BE's answer against the code)",
     "what": "The AI reads the question sent to BE and BE's answer, then inspects the project code: is it done right, what is missing, what needs fixing. Start it from the brain button on any message (that message is the answer; the question is picked for you: the message it replies to, otherwise the latest message from someone else), or the \"Check code\" button under Settled / Changes in Briefing and Summary, or the \"Check vs BE\" button on the Settled bar of a Q&A thread (question = the question message, answer = the decided message). The dialog stays open, showing the AI inspecting the code (the current step) and then the result in place; close it any time, the session keeps running in the background under AI Agent › Check vs BE; the message gets a \"Checking vs BE\" label, then \"View BE check\", click the label to open the result. The result uses the same template as Give to AI Agent sessions (Summary · Current state · To do · Risks · Questions to ask; several topics open with a ✅ / ⚠️ / ❌ / ⏳ table), and Questions to ask points have copy and send-to-group buttons as in AI Agent. Dev role only.",
@@ -405,6 +411,9 @@
   {
     "id": "digest-be-filter",
     "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
     "area": "Briefing › With BE · Group page › Summary",
     "title": "With BE: Q&A with BE grouped by topic",
     "what": "The AI marks the questions / answers / decisions with BE (API, fields, data) and groups them by topic: each card is a topic with a summary and a status \"Awaiting reply\" / \"Settled\" (waiting cards first); inside a card, each question (with who asked) is paired with BE's answer, or \"Awaiting BE's answer\" if there is none, with the background below: the issue and how it was settled. Each line names who raised it (if the AI left it blank, the sender of the first message; items carried over from an older summary may lack a name, click \"Re-read 7 days\" to get it). In Briefing, click \"Source · n\" under a line to read the messages the AI relied on (with sender and time; the asker's messages are highlighted \"asker\"); on a group's Summary page click the #id chip to jump to the message. An older summary without pairs: click Summarize again. When BE just replied to a question that was not summarized again yet, the card shows \"New reply\" with the reply (click Summarize again for the AI to settle it), and that question no longer counts as waiting; when the person who must answer writes after the question without using reply, the card shows \"Maybe answered\" (only a guess, still counted as waiting). The group could not be read on Telegram (offline, an error): a waiting card shows \"Could not read\" instead of \"Awaiting reply\" and the header says \"Could not check for new replies\" with a retry button. The number on the tab counts only topics still waiting on BE. Items marked handled, or that you answered on Telegram, leave With BE by themselves. In Briefing it is the \"With BE\" tab across all groups; on a group's Summary page, choose \"With BE\". Summaries made before this feature have no BE items: the With BE tab shows a \"Re-read 7 days\" button for the AI to read again and group by topic. Dev role only (QA / PO see these items in the To confirm / Settled tabs).",
@@ -423,6 +432,9 @@
   {
     "id": "deep-bulk",
     "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
     "area": "Briefing › With BE · Group page › Summary",
     "title": "Check the code per topic discussed with BE",
     "what": "Inspects the project code against each topic discussed with BE (the button at the top of the tab sends the topics BE has answered / settled, up to 20 topics at a time; topics still waiting on BE are checked from their own card): settled topics are checked ✅ adapted / ⚠️ off / ❌ not done, topics still waiting on BE get ⏳ what the code does now and what to change depending on the answer; with path:line evidence. It runs in the background as a Read only session under AI Agent › Check vs BE. Each topic card has an ID #… (the message that opened the topic, click to jump to it in Summary): it stays the same when the AI re-summarizes or renames the topic, so the check result stays on the right topic. When done, each topic card in With BE shows a verdict label \"Code: adapted / off / not done / waiting on BE\" (click to open the session) and the top of the tab totals the verdicts; a topic with new messages since the check shows \"old\", so check it again. A topic that comes out ✅ adapted (with no new messages) has its items marked handled by themselves and leaves With BE; marking a Check vs BE session (AI Agent) Done also closes the topics it checked, along with their tags and Q&A; click \"Undo\" in the notice or untick to reopen. Leaving the page while it runs: a notice with the verdict totals appears when done (plus a system notification if enabled in Settings and the tab is hidden). Reopening the Check code page: if it is running you see the AI scene again; if there is a result there is a \"Last check\" line with a \"View table\" button, and a \"Skip N adapted topics\" button to recheck only the rest. Handled items are not sent. Dev role only.",

@@ -2,6 +2,9 @@
   {
     "id": "agent-filters",
     "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
     "area": "AI Agent › Filters",
     "title": "Filter AI Agent sessions",
     "what": "Switch between the session types \"Give to AI Agent\", \"Check vs BE\" and \"Briefing\" (in the header; Briefing: Briefing assistant chats kept in the browser for 14 days, reread / delete / ask on right here, question box pinned at the bottom like other sessions), filter \"All\" / \"Doing\" / \"Done\" (Done = the tag marked handled; only replying to the tag (the session's asks included) keeps the session in Doing; marking a session Done, or its tag Done from the list, also marks its attached messages done (Check vs BE sessions: the messages of the checked topics too), the tags answering the asks the session posted (with #REF-…) or sitting in its Q&A threads, along with Q&A threads with a #QA… code in the tag / attached / checked messages / the session's posted asks; reopening undoes them too); shows how many sessions are running. The QA / PO roles only see AI assistant and Briefing (Give to AI Agent / Check vs BE show only when such a session already exists).",
@@ -32,6 +35,9 @@
   {
     "id": "agent-session-chat",
     "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
     "area": "AI Agent › Session › Follow-up",
     "title": "Message the AI again, with a queue",
     "what": "See the session log (Read/Edit/Search… steps grouped, click to see the output) and message the AI again; while the AI is working you can queue messages to run in turn. Each message, Result and Dashboard note shows its time (like \"16:08, today\"); a turn BE automation sent when the person asked answered is labelled \"Auto\".",
@@ -70,6 +76,9 @@
   {
     "id": "agent-accept-edit",
     "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
     "area": "AI Agent › Session › Allow code edits",
     "title": "Let the next turn edit files (approve a plan)",
     "what": "For a Read only session, turn this on so the follow-up turn may edit files, e.g. approve a plan and tell the AI to go ahead. Ticking it on an empty message box writes the approval for you: \"Approved. Make the changes in the to-do list.\", or, while the session is Awaiting reply, \"Do the part that can be done now first; leave the part that waits for an answer as it is.\"; edit it before sending, and unticking with the line untouched clears the box. The plan of a session with questions still unanswered splits its to-do list into two groups: what can be done now and what waits for an answer. File-editing turns run commands in a sandbox (writes only inside the project folder, network only to package registries); if the session holds someone else's messages or links, a warning icon shows beside the checkbox (hover to read it). On Windows (Claude has no sandbox there) an edit turn only edits files and runs no commands: the AI lists the build / test commands for you to run. Edit turns (including sessions given in Can edit files mode and turns the BE loop sends on its own) also use the YouTrack, Zeplin and context7 MCP servers you installed for the session's CLI (Claude, Codex; Antigravity loads no MCP and gets no shell command, since it can only load your whole MCP setup)s; the \"Use MCP / plugins\" checkbox shows once \"Allow code edits\" is ticked, on by default, untick it to turn off and the app remembers it; a turn the BE loop sends on its own follows the choice of the last edit turn you sent yourself in that session (off there: the BE loop uses no MCP either). They run outside the sandbox with your logins: for a session holding someone else's messages / links the warning icon says so. Other MCP servers (markitdown, lean-ctx, context-mode, serena, node_repl, computer-use…) are not loaded, since they read files or run commands outside the sandbox; the codegraph MCP is not loaded either (its server runs git outside the sandbox); the AI still runs `codegraph sync` in the sandbox like any command. No Claude AI run of the dashboard loads your personal CLAUDE.md, skills, plugins or hooks (Codex / Antigravity still read your personal AGENTS.md / GEMINI.md, but the app's scope rule stands above them). Every AI turn works only in the project folder: it never reads or edits the dashboard's own code, and never writes the project's .git, .gitmodules, .claude, .github, .vscode, .husky, .envrc or .mcp.json. The app's own folder, a folder holding it, your home folder or the app's data can't be added as a project. Read only turns use no MCP; ticket and Knowledge Base content (a link or just the ID, e.g. VA-123, VA-A-134) is loaded by the dashboard for every turn. A Zeplin link (zpl.io, app.zeplin.io) in the session: every turn, Read only ones too, on Claude and Codex, reads the design through the Zeplin MCP you set up (Antigravity loads no MCP, so it cannot read Zeplin), with only the tools that read screens / components / design tokens.",
@@ -97,6 +106,9 @@
   {
     "id": "agent-session-actions",
     "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
     "area": "AI Agent › Session › Actions",
     "title": "Done, stop, delete a session, open the group, per-session model",
     "what": "Manage a session: mark the tag Done (with / without a reaction), stop the running AI (the chat is kept), delete the session, open the group scrolled to the assigned message, use the result as a reply draft; pick a model and effort just for the session right in the message box. The \"Changes\" button at the top of a session (any session type, Check vs BE too once you allow file edits in the message box) opens the Changes page, only the files changed since the session started (your edits or another session's from before are left out; sessions from older versions still compare the whole folder with the last commit; files inside a submodule show too, their path starting with the submodule's name, but “Branch + PR” only commits the main repo's files): the top shows the number of changed files and total +/− lines; the left column is a folder tree (a folder holding just one folder merges into one row a/b/c, click a folder to fold / unfold it, the A / M / R / D by a file means new / edited / renamed / deleted, click a file to jump to it), on the right the files sit under the same folders, each file is a card you click to collapse / expand (the arrow button at the top collapses / expands all; long files start collapsed); view \"Side by side\" (Before on the left, After on the right) or \"One column\" (red − is before, green + is after), changed words within a line are bold; the \"Sessions\" button goes back. \"Branch + PR\" at the bottom (click twice to confirm) commits just those files (other files you are editing or staged stay as they are) on branch ai/<session>, pushes to the remote and opens a PR with gh. The dashboard runs git without the repo's hooks (pre-commit, pre-push…), fsmonitor or textconv, so nothing an AI may have planted in the repo runs outside the sandbox: commit / push by hand when you need the hooks. Once the PR is open, the bottom of the page has \"Tell group\" (opens the reply to the session's tag with the PR link written in; you read it before sending) and \"Comment on <ticket ID>\" for each ticket the tag names (posts the PR link as a YouTrack comment right away). Files that look like secrets (.env, keys, certificates) are never committed. A turn that was cut off (server restart, stop) has a \"Continue\" button. The top of the chat shows the number of turns and the session's estimated cost; each turn shows its own cost (at the API price the CLI reports; subscription plans are not charged by this number). If a file the session edited already carried your edits from before it (or the session has no starting point), the Changes page shows a yellow warning listing the files: the PR will carry those edits too, and the confirming click accepts that.",
@@ -190,5 +202,31 @@
       "Allow notifications when the browser asks"
     ],
     "keys": "notification new tag desktop push browser"
+  },
+  {
+    "id": "agent-project",
+    "tab": "telegram",
+    "roles": [
+      "dev"
+    ],
+    "area": "Telegram › Reply page › AI assistant",
+    "title": "Add a project folder for the AI to read code",
+    "what": "The AI Agent, Answer from code, BE check and YouTrack's code trace only read code in the project folders you add. Add one once and every project picker lists it. The app's own folder, a folder holding the app and your home folder can't be picked.",
+    "how": [
+      "Dev role only.",
+      {
+        "t": "Click a message to open the reply page",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Click the project box in the prompt box",
+        "at": "Dự án tham chiếu cho AI"
+      },
+      {
+        "t": "Choose \"Add folder…\" and pick a code folder on this machine",
+        "at": "Thêm thư mục…"
+      }
+    ],
+    "keys": "project folder code ai agent add folder read code"
   }
 ]

@@ -31,8 +31,17 @@ async function startReply(page: Page, id: number, text: string) {
   await reply(page).fill(text);
 }
 
-test.beforeEach(async () => {
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("ytMode", "dev")); // signed in with no role: Telegram asks first
   await ctl("/set", { send: "ok", slow_chat: null, slow_ms: 0, fail_changes: 0 });
+});
+
+test("signed in with no role: Telegram asks the role first, then opens the inbox", async ({ page }) => {
+  await page.addInitScript(() => localStorage.removeItem("ytMode"));
+  await page.goto("/?chat=__all__");
+  await page.getByRole("radio", { name: /QA\/QC/ }).click();
+  await expect(page.getByTestId("message").first()).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("ytMode"))).toBe("qa");
 });
 
 test("telegram text renders as text only (no XSS)", async ({ page }) => {

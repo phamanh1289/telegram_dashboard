@@ -5,6 +5,7 @@ import { ChevronRight, LibraryBig, SquareTerminal, MessageSquareText, Plus, Rota
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { AiPromptBox, AiSend, SessionCode, UserBubble, useFollow } from "@/shared/components/ai/chat";
+import { SetupTip } from "@/shared/components/ai/setup-tip";
 import { Button } from "@/shared/components/ui/button";
 import { ProjectPicker, useProjects } from "@/shared/components/project-picker";
 import { Hint } from "@/shared/components/ui/hint";
@@ -12,7 +13,7 @@ import { useT } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
 import { setPref, usePrefValue } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { AI_MAX, type Ticket, yt } from "@/features/youtrack/lib/yt";
+import { AI_MAX, type Ticket, yt, ytNotesQuery } from "@/features/youtrack/lib/yt";
 import { AiBox, StatePill, useAi, YtPicks } from "./bits";
 import { type AiSession, useHistory } from "./history";
 import { type AiAuto, type AiStart, useYt } from "./state";
@@ -54,7 +55,7 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
     void ai.run({ label: p.label, q: p.q, run: (sig) => yt.aiAgain(r, sig) });
   }
   const ps = useProjects();
-  const notes = useQuery({ queryKey: ["yt", "notes"], queryFn: () => yt.notes(), staleTime: 60_000 });
+  const notes = useQuery(ytNotesQuery);
   const noted = !!notes.data?.[y.mode]?.trim(); // this role's team instructions go into every prompt
   const [prompt, setPrompt] = useState("");
   const [saved, setSaved] = useState(false); // the saved-prompts popup
@@ -224,6 +225,8 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
         <AiBox ai={ai} stop={false} close={false} onUse={one && !y.config?.mock ? (text) => y.setSheet({ kind: "ticket", id: one, nav: [], comment: text }) : undefined}
           // a PO tool, as Cập nhật story (the story is their spec)
           onDescribe={one && !y.config?.mock && y.mode === "po" ? (text, base) => setStory({ text, base }) : undefined} />
+        <SetupTip id="yt-instructions" when={chatting && !busy && !!notes.data && !noted} tour="settings-yt-instructions" go={t("Thêm instructions")}
+          text={t("Team chưa có Instructions cho AI của vai trò {role} (quy ước ticket, cách viết AC, môi trường test…), nên AI trả lời theo kiểu chung.", { role: ({ dev: "Dev", qa: "QA/QC", po: "PO/PM" })[y.mode] })} />
         {retry && ai.s.status !== "busy" && <>
           {retry.q && <UserBubble>{retry.q}</UserBubble>}
           <p className="flex flex-wrap items-center gap-2 text-sm text-ink-3">

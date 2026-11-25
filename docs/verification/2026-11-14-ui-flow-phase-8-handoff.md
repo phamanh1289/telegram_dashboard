@@ -1,6 +1,6 @@
 # UI Flow — Phase 8: hoàn thiện và bàn giao
 
-Ngày: 14/11/2026 · nhánh `features/refactor-ui-diagram` · chưa commit. Phase 0–8 của [kế hoạch](../UI-FLOW-REVIEW-PLAN.md) đã triển khai; backlog (mục 12) không thuộc phạm vi.
+Ngày: 14/11/2026 · nhánh `features/refactor-ui-diagram` · chưa commit. Phase 0–8 của [kế hoạch](../reviews/2026-11-14-ui-flow-review.md) đã triển khai; backlog (mục 12) không thuộc phạm vi.
 
 ## Phase 8 đã làm
 
@@ -11,7 +11,7 @@ Ngày: 14/11/2026 · nhánh `features/refactor-ui-diagram` · chưa commit. Phas
 | Reduced-motion | Rule CSS có sẵn tắt mọi transition/animation; tìm/goto dùng `reduced` (test có sẵn) |
 | Container hẹp | Thanh công cụ wrap, ô tìm co tới 140 px, khung thuộc tính có `max-height` + cuộn; test 390 px |
 | Hint/Segmented | Dialog dashboard đã dùng `Hint`/`Segmented` (`flow.tsx`); engine độc lập giữ nút/seg của nó, không kéo React |
-| Hiệu năng | Benchmark lặp lại (`docs/uiflow-phase8-after.json`): p95 pan/drag 16,7–18,0 ms (mục tiêu < 32 ms); commit thuộc tính ≤ 4,9 ms ở 60 màn; mount 60 màn 18 ms cold. Tìm trên 60 màn: mỗi phím < 100 ms (test). Một mẫu mỗi cỡ, cùng máy với phase 4: chỉ là đối chiếu, không phải thống kê |
+| Hiệu năng | Benchmark lặp lại ([`uiflow-bench/uiflow-phase8-after.json`](uiflow-bench/uiflow-phase8-after.json)): p95 pan/drag 16,7–18,0 ms (mục tiêu < 32 ms); commit thuộc tính ≤ 4,9 ms ở 60 màn; mount 60 màn 18 ms cold. Tìm trên 60 màn: mỗi phím < 100 ms (test). Một mẫu mỗi cỡ, cùng máy với phase 4: chỉ là đối chiếu, không phải thống kê |
 | guide / context / CodeGraph | `guide.json` + `guide.en.json` cập nhật (tìm, Zeplin, vùng bấm, ghi chú, phím, bàn phím); repo không có `WORKING-CONTEXT.md`; `codegraph sync` đã chạy |
 
 ## Kiểm chứng toàn bộ (lần chạy cuối)
@@ -23,7 +23,7 @@ Ngày: 14/11/2026 · nhánh `features/refactor-ui-diagram` · chưa commit. Phas
 
 ## Tài liệu từng mốc
 
-[phase 0–2](UI-FLOW-PHASE-0-2-VERIFICATION.md) · [phase 3–4](UI-FLOW-PHASE-3-4-VERIFICATION.md) · [phase 5](UI-FLOW-PHASE-5-VERIFICATION.md) · [phase 6–7](UI-FLOW-PHASE-6-7-VERIFICATION.md)
+[phase 0–2](2026-11-14-ui-flow-phase-0-2.md) · [phase 3–4](2026-11-14-ui-flow-phase-3-4.md) · [phase 5](2026-11-14-ui-flow-phase-5.md) · [phase 6–7](2026-11-14-ui-flow-phase-6-7.md)
 
 ## Giới hạn còn lại (gộp)
 

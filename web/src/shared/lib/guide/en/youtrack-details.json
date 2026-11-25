@@ -84,6 +84,9 @@
   {
     "id": "yt-cap-nhat-story",
     "tab": "youtrack",
+    "roles": [
+      "po"
+    ],
     "area": "Ticket details › Description (PO)",
     "title": "Update story (add an AC, change a business rule), then tell the group",
     "what": "PO/PM role: the \"Update story\" pen icon in the row of feature icons above the Description (next to AI and UI flow; hover to see its name) opens the description as it is on YouTrack to edit (a missing AC, a new decision), links and images kept. If someone edits the description on YouTrack after you opened it (or after the AI read it), saving is blocked so nothing is overwritten: press \"Load the latest to edit\". The Telegram message replies to the latest group message naming the ticket; for a ticket no group mentions yet, pick one or more groups right in the Telegram box (\"Pick a group\"): the @ list joins those groups' members and the message is posted as a new one in each (with an @name it gets a #QA code so Q&A follows the answer). In the dialog: the description opens ready to edit by hand, AI is just the “AI” chip to click when needed (its draft opens on the “Compare” tab). The description box has three tabs: “Write” to edit, “Compare” for the lines added / removed against what YouTrack has, “Preview” for the description as YouTrack will show it. “Save” only writes the description to YouTrack; tick “Add the comment and send to Telegram” next to “Save” (off by default) and “Save” also sends the comment and the Telegram message. “Who to tell” has two independent boxes, neither waits for the other nor for “Save”: “Comment on YouTrack” (“Send comment”) and “Telegram message” (“Send to Telegram”, posted straight to the group). Each box starts with a ready line tagging the Assignee / QC the platform's own way (YouTrack by login, Telegram by the group member's @username), freely editable; type @ to pick from that platform's people. Under each box are quick-tag groups (Android, iOS, FE, BE, QA/QC by default): click one to tag the whole group; ⚙ renames groups, adds / removes people or adds a group (kept in this browser, per platform). The number beside a group is how many people it has; people are remembered with their names, so they still show before a Telegram group is picked. A Telegram send that loses the connection midway reads “not sure it was sent”: check the group before “Send again”.",
@@ -157,7 +160,7 @@
     "tab": "youtrack",
     "area": "Side panel › Ticket",
     "title": "Change State / Priority / Assignee",
-    "what": "Changes the ticket's State, Priority and Assignee directly on YouTrack (State follows the workflow); the notice has an undo button. For a ticket from another project, the Assignee / QC list is that project's team.",
+    "what": "Changes the ticket's State, Priority and Assignee directly on YouTrack (State follows the workflow; while your role has no workflow on, the menu lists every State with a hint \"Draw the workflow\"); the notice has an undo button. For a ticket from another project, the Assignee / QC list is that project's team.",
     "how": [
       {
         "t": "Click \"Tickets\"",

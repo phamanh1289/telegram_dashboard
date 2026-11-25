@@ -25,6 +25,7 @@ import { PendingInbox, type PendingTab } from "@/features/telegram/components/pe
 import { Kbd } from "@/shared/components/ui/kbd";
 import { ShortcutsDialog } from "@/shared/components/shortcuts";
 import { Toaster, TopBar, useDashboardDown } from "@/app/_components/shell";
+import { RolePicker } from "@/shared/components/role-picker";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery, readTagRange, saveTagRange } from "@/shared/components/date-range";
 import { Button } from "@/shared/components/ui/button";
 import { Skeleton } from "@/shared/components/ui/skeleton";
@@ -84,6 +85,7 @@ function SideHeading({ label, extra, fade, rail }: { label: string; extra?: Reac
 export function App() {
   const t = useT();
   const status = useQuery({ ...statusQuery, retry: 1 });
+  const role = useRole();
 
   if (status.isPending) {
     return (
@@ -123,6 +125,13 @@ export function App() {
       </main>
     );
   }
+  // signed in, no role yet: ask first, like YouTrack (before login the inbox sends you to Telegram's setup)
+  if (!role && status.data.state !== "setup_required" && status.data.state !== "login_required") return (
+    <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)]">
+      <div className="sticky top-0 z-30"><TopBar module="telegram" /></div>
+      <RolePicker />
+    </div>
+  );
   return <Inbox status={status.data} />;
 }
 

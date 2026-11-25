@@ -201,6 +201,9 @@
   {
     "id": "yt-ket-qua-kiem-thu",
     "tab": "youtrack",
+    "roles": [
+      "qa"
+    ],
     "area": "Dashboard › Kết quả kiểm thử",
     "title": "Số liệu QC: Lượt test, Pass lần đầu, Bị trả lại, Reopen",
     "what": "Đọc từ lịch sử state: lượt test, % pass ngay lần đầu, lượt bị QC trả lại, reopen; kết quả test mỗi ngày; theo người test; bị trả lại theo dev; ticket trả lại nhiều lần / reopen.",

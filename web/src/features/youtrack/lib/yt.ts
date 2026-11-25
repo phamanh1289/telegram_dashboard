@@ -251,6 +251,11 @@ export const AI_MAX = 40; // the server's cap on tickets in one review
 export const ytProjectsQuery = { queryKey: ["yt", "projects"], queryFn: yt.projects, staleTime: Infinity, retry: false } as const;
 export const ytFieldsQuery = (project: string) => ({ queryKey: ["yt", "fields", project], queryFn: () => yt.fields(project), staleTime: Infinity }) as const;
 export const ytPeopleQuery = (project: string) => ({ queryKey: ["yt", "people", project], queryFn: () => yt.people(project), staleTime: 10 * 60_000 }) as const;
+/** The team's instructions for the AI, per role (Cài đặt › YouTrack › Instructions cho AI): one cache for the settings, the AI session and the bot's setup list. */
+export const ytNotesQuery = { queryKey: ["yt", "notes"], queryFn: () => yt.notes(), staleTime: 60_000 } as const;
+/** A project's workflow for a role with its States (Cài đặt › YouTrack › Workflow): one cache for the State menu, the Board, the settings and the bot. */
+export const ytWorkflowQuery = (project: string, role: string) =>
+  ({ queryKey: ["yt", "workflow", project, role], queryFn: () => yt.workflow(project), staleTime: 5 * 60_000 }) as const;
 export const ytMeQuery = { queryKey: ["yt", "me"], queryFn: yt.me, staleTime: Infinity, retry: false } as const;
 export const ytDetailQuery = (id: string) => ({ queryKey: ["yt", "detail", id], queryFn: () => yt.detail(id), staleTime: 60_000 });
 

@@ -43,7 +43,7 @@
     "tab": "settings",
     "area": "Cài đặt › Chung › Vai trò",
     "title": "Chọn vai trò (Dev / QA/QC / PO/PM)",
-    "what": "Vai trò quyết định trang chủ, Dashboard và góc nhìn của AI khi tóm tắt và tạo ticket; QA, PO không dùng AI Agent. Chưa chọn thì Telegram coi như Dev.",
+    "what": "Vai trò quyết định trang chủ, Dashboard và góc nhìn của AI khi tóm tắt và tạo ticket; QA, PO không dùng AI Agent. Chưa chọn (hoặc bấm \"Bỏ chọn vai trò\") thì Telegram và YouTrack hỏi lại ngay khi mở. Gợi ý câu hỏi của Trợ lý biết tuốt và thứ tự mục trong Hướng dẫn sử dụng cũng theo vai trò.",
     "how": [
       {
         "t": "Bấm một vai trò: \"Dev\", \"QA/QC\" hoặc \"PO/PM\"",
@@ -432,5 +432,90 @@
       "Hoặc nhấn ? khi đang ở Inbox"
     ],
     "keys": "phim tat shortcuts bang phim tat keyboard tim phim tat youtrack"
+  },
+  {
+    "id": "settings-ai-intro",
+    "tab": "settings",
+    "area": "Cài đặt › Chung › Giới thiệu bản thân cho AI",
+    "title": "Giới thiệu bản thân cho AI",
+    "what": "Vài dòng về bạn (vai trò, nền tảng, rành gì, muốn AI tập trung vào đâu, bỏ qua gì) cho AI phía Telegram: tóm tắt, soạn nháp, Briefing, tạo ticket từ tin, Đối chiếu BE, AI Agent. Ô trống có mẫu theo vai trò và nền tảng; nút \"Điền mẫu để sửa\" đổ mẫu đó vào ô để sửa lại cho đúng mình. Lưu ngay khi gõ, trên trình duyệt này. Chưa có thì dưới câu trả lời của Trợ lý AI ở trang trả lời có dòng gợi ý \"Thêm giới thiệu\".",
+    "how": [
+      {
+        "t": "Chọn mục \"Chung\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#general\"]"
+      },
+      {
+        "t": "Bấm \"Điền mẫu để sửa\" (hoặc gõ thẳng vào ô)",
+        "at": [
+          "Điền mẫu để sửa",
+          "Giới thiệu bản thân cho AI"
+        ]
+      },
+      {
+        "t": "Sửa ô \"Giới thiệu bản thân cho AI\" cho đúng việc của bạn",
+        "at": "Giới thiệu bản thân cho AI"
+      },
+      {
+        "t": "Chọn \"Tóm tắt theo nền tảng\"",
+        "at": "css:[aria-label=\"Tóm tắt theo nền tảng\"]"
+      }
+    ],
+    "keys": "gioi thieu ban than giới thiệu bản thân intro ai doan ai đoán mau mẫu ve minh về mình ngu canh ngữ cảnh"
+  },
+  {
+    "id": "settings-yt-instructions",
+    "tab": "settings",
+    "area": "Cài đặt › YouTrack › AI và prompt",
+    "title": "Instructions cho AI theo vai trò (YouTrack)",
+    "what": "Hướng dẫn riêng của team cho từng vai trò (quy ước ticket, cách viết AC, môi trường test, giọng văn…); AI làm theo ở mọi tính năng YouTrack (phiên AI, test case, triage, báo cáo, tạo ticket), trừ lọc ticket. Mỗi vai trò một bản, lưu trên máy (data/). Chưa có thì phiên AI YouTrack có dòng gợi ý \"Thêm instructions\"; có rồi thì ô prompt hiện nhãn \"Có instructions\".",
+    "how": [
+      {
+        "t": "Chọn mục \"YouTrack\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
+      },
+      {
+        "t": "Chọn nhóm \"AI và prompt\"",
+        "at": "AI và prompt"
+      },
+      {
+        "t": "Viết vào ô Instructions của vai trò đang chọn",
+        "at": "css:textarea[aria-label^=\"Instructions cho AI\"]"
+      },
+      {
+        "t": "Bấm \"Lưu\"",
+        "at": "Lưu"
+      }
+    ],
+    "keys": "instructions huong dan ai hướng dẫn ai quy uoc quy ước team youtrack prompt ac"
+  },
+  {
+    "id": "settings-workflow",
+    "tab": "settings",
+    "area": "Cài đặt › YouTrack › Workflow",
+    "title": "Vẽ workflow State cho vai trò",
+    "what": "Luồng State cho project và vai trò đang chọn: ô là State, mũi tên là bước được đi tiếp. Bật \"Áp dụng trong app\" thì menu State, kéo thả trên Board và đổi hàng loạt chỉ cho đi theo mũi tên (YouTrack vẫn kiểm luồng của nó). \"Lấy từ YouTrack\" chép luồng YouTrack đang cho phép, nhanh nhất để bắt đầu. Dev có sẵn luồng mặc định khi project đủ state; QA/QC, PO/PM bắt đầu trống. Chưa bật thì menu State hiện mọi State, kèm dòng gợi ý \"Vẽ workflow\".",
+    "how": [
+      {
+        "t": "Chọn mục \"YouTrack\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
+      },
+      {
+        "t": "Chọn nhóm \"Workflow\"",
+        "at": "Workflow"
+      },
+      {
+        "t": "Bấm \"Lấy từ YouTrack\" (hoặc kéo chấm tròn từ ô này sang ô kia để nối mũi tên)",
+        "at": "Lấy từ YouTrack"
+      },
+      {
+        "t": "Tick \"Áp dụng trong app\"",
+        "at": "Áp dụng trong app"
+      },
+      {
+        "t": "Bấm \"Lưu\"",
+        "at": "Lưu"
+      }
+    ],
+    "keys": "workflow luong state luồng state mui ten mũi tên ap dung áp dụng ve workflow vẽ workflow doi state đổi state sai luong sai luồng"
   }
 ]

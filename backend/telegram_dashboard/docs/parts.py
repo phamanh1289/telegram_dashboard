@@ -84,11 +84,13 @@ def split_parts(text: str) -> list[tuple[int, str, str]]:
 
 
 _BR = re.compile(r"<br\s*/?>", re.I)
+_SEP = re.compile(r"[\W_]+")  # what FTS5's tokenizer splits words on
 
 
 def snippet(text: str, q: str, width: int = 200) -> tuple[str, list[tuple[int, int]]]:
-    """Original text (accents kept) of `width` chars around the first hit of a word of `q`, and the (start, end)
-    ranges of the hits in the returned string. Matching is on fold(), which can change the length, so a map from
+    """Original text (accents kept) of `width` chars around the first hit of `q`, and the (start, end) ranges of the
+    hits in the returned string. `q` is a phrase, as the search (storage/docs.py `_fts_query`): its words in order,
+    anything not a letter or digit between them. Matching is on fold(), which can change the length, so a map from
     folded to original positions is built per character. `<br>` (a line break in a YouTrack table cell) reads as
     a space."""
     text = _BR.sub(" ", text)
@@ -98,8 +100,8 @@ def snippet(text: str, q: str, width: int = 200) -> tuple[str, list[tuple[int, i
         folded.append(f)
         pos.extend([i] * len(f))
     flat = "".join(folded)
-    words = [w for w in fold(q).split() if w]
-    hits = [(m.start(), m.end()) for w in words for m in re.finditer(re.escape(w), flat)]
+    words = [w for w in _SEP.split(fold(q)) if w]  # letters / digits only: nothing to escape
+    hits = [(m.start(), m.end()) for m in re.finditer(_SEP.pattern.join(words), flat)] if words else []
     if not hits:
         return text[:width], []
     first = min(h[0] for h in hits)

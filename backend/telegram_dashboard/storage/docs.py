@@ -45,15 +45,15 @@ def _drop_parts(c, doc_id: int) -> None:
 
 
 def _fts_query(q: str, any_word: bool) -> str:
-    """Every word as a quoted FTS5 string (so `a:b`, `-`, `OR` are plain words). Typed words (all of them): the last
-    one is a prefix, as it may be half typed. A question (any word): whole words, "gì" must not match "giai"."""
+    """Quoted FTS5 strings (so `a:b`, `-`, `OR` are plain words). Typed words: one phrase, the words next to each other
+    in that order ("Admin vận" is not "Admin" here and "tư vấn" there), the last one a prefix, as it may be half typed.
+    A question (any word): whole words, "gì" must not match "giai"."""
     words = [w for w in (x.replace('"', "") for x in fold(q).split()) if w]
     if not words:
         return ""
-    terms = [f'"{w}"' for w in words]
     if not any_word:
-        terms[-1] += "*"
-    return (" OR " if any_word else " ").join(terms)
+        return f'"{" ".join(words)}"*'
+    return " OR ".join(f'"{w}"' for w in words)
 
 
 def ai_key(question: str) -> str:

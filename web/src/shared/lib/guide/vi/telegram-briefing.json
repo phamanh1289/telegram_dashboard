@@ -117,6 +117,9 @@
   {
     "id": "briefing-story",
     "tab": "telegram",
+    "roles": [
+      "po"
+    ],
     "area": "Briefing › Cập nhật story (PO)",
     "title": "Đưa điều đã chốt trong nhóm vào story (Cập nhật story)",
     "what": "Vai trò PO/PM: mục Cần confirm / Đã chốt / Thay đổi trong Briefing có nút “Cập nhật story”. Nội dung của mục (kèm bối cảnh) hiện ngay trên ô mô tả để bạn đưa vào story, và là thay đổi điền sẵn nếu nhờ AI soạn. Mục đã lưu hiện “Đã vào story VA-1” và tự sang đã xử lý; bấm lại để cập nhật lần nữa. Tin báo Telegram trả lời ngay tin đã chốt. Trong khung: mô tả mở sẵn để sửa tay, AI chỉ là chip “AI” bấm khi cần (bản AI soạn mở ở tab “So sánh”). Ô mô tả có ba tab: “Viết” để sửa, “So sánh” cho thấy dòng thêm / bỏ so với mô tả đang có trên YouTrack, “Xem trước” hiện mô tả như YouTrack sẽ hiển thị. “Lưu” chỉ ghi mô tả lên YouTrack; tick “Thêm bình luận và gửi Telegram” cạnh nút “Lưu” (mặc định tắt) thì “Lưu” gửi luôn bình luận và tin Telegram. Phần “Báo cho ai” gồm hai ô độc lập, không ô nào chờ ô nào và cũng không chờ “Lưu”: “Bình luận trên YouTrack” (nút “Gửi bình luận”) và “Tin nhắn Telegram” (nút “Gửi Telegram”, gửi thẳng vào nhóm). Mỗi ô điền sẵn một câu kèm tag Assignee / QC theo đúng nền tảng (YouTrack tag theo login, Telegram theo @username của thành viên nhóm), sửa thoải mái; gõ @ để chọn người từ danh sách của nền tảng đó. Dưới mỗi ô là các nhóm tag nhanh (mặc định Android, iOS, FE, BE, QA/QC): bấm một nhóm để tag cả nhóm; bấm ⚙ để đổi tên nhóm, thêm / bớt người hoặc thêm nhóm (lưu trên trình duyệt này, riêng cho từng nền tảng). Số cạnh tên nhóm là số người trong nhóm; người đã thêm được nhớ kèm tên nên vẫn hiện khi chưa chọn nhóm Telegram. Tin Telegram bị mất kết nối giữa chừng sẽ báo “chưa rõ đã gửi chưa”: xem nhóm trước khi bấm “Gửi lại”.",

@@ -202,11 +202,11 @@ Xong là dùng được ngay; lần sau không hỏi lại. Chỉ nhập mã / 2
 
 ### 3. Chọn vai trò
 
-**Cài đặt › Chung › Vai trò**: **Dev**, **QA/QC** hoặc **PO/PM**. Vai trò quyết định trang chủ, dashboard YouTrack và cách AI tóm tắt / tạo ticket. Các tính năng đọc code (AI Agent, Đối chiếu BE, Trả lời từ code, Vòng BE tự chạy) chỉ có với Dev, nên QA và PO không cần thư mục code. Cùng chỗ: **Ngôn ngữ** (Theo máy / Tiếng Việt / English) và **Giới thiệu bản thân cho AI** (nền tảng Android / iOS / Mobile để AI tóm tắt đúng phần của bạn).
+Đăng nhập xong, app hỏi ngay: **Dev**, **QA/QC** hoặc **PO/PM** (đổi sau ở **Cài đặt › Chung › Vai trò**). Vai trò quyết định trang chủ, dashboard YouTrack và cách AI tóm tắt / tạo ticket. Các tính năng đọc code (AI Agent, Đối chiếu BE, Trả lời từ code, Vòng BE tự chạy) chỉ có với Dev, nên QA và PO không cần thư mục code. Cùng chỗ: **Ngôn ngữ** (Theo máy / Tiếng Việt / English) và **Giới thiệu bản thân cho AI** (nền tảng Android / iOS / Mobile để AI tóm tắt đúng phần của bạn).
 
-### 4. Chờ tag đầu tiên
+### 4. Xem tag gần đây
 
-App **không nạp lịch sử cũ**: lúc mới cài inbox trống. Khi có người tag hoặc reply bạn trong nhóm, tin hiện ngay. Không cần chọn nhóm.
+Đăng nhập xong, app tự gom các tin **tag hoặc reply bạn trong 14 ngày gần nhất** (ở mọi nhóm) vào **Việc cần xử lý**; ngoài các tin đó app không nạp lịch sử nhóm. Từ đó, tag mới hiện ngay khi có. Không cần chọn nhóm.
 
 ### 5. (Tùy chọn) Nối thêm
 

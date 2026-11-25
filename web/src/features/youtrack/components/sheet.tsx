@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, ExternalLink, FilePenLine, MessageCircleQuestion, Sparkles, Workflow, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, FilePenLine, Lock, MessageCircleQuestion, Sparkles, Workflow, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -16,9 +16,11 @@ import { fmtNum, type Key, t as tNow, useT } from "@/shared/lib/i18n";
 import { useNow } from "@/shared/hooks/use-now";
 import { toast } from "@/shared/lib/notifications";
 import { goApp } from "@/shared/lib/nav";
-import { useRoleOrDev } from "@/shared/lib/prefs";
+import { useRoleOrDev, useSetupTips, YT_ROLES } from "@/shared/lib/prefs";
+import { openTour } from "@/shared/lib/nav";
+import { SetupTip } from "@/shared/components/ai/setup-tip";
 import { cn } from "@/shared/lib/utils";
-import { AI_MAX, type Detail, type Field, fileUrl, useFlowRunning, issueUrl, type Ticket, type UserField, when, yt, ytDetailQuery, ytFieldsQuery, ytPeopleQuery } from "@/features/youtrack/lib/yt";
+import { AI_MAX, type Detail, type Field, fileUrl, useFlowRunning, issueUrl, type Ticket, type UserField, when, yt, ytDetailQuery, ytFieldsQuery, ytPeopleQuery, ytWorkflowQuery } from "@/features/youtrack/lib/yt";
 import { Avatar, Label, Markdown, Person, Picker, Prio, StatePill, Title, TypeTag } from "./bits";
 import { Comments, ENTRY, Rail, Who } from "./comments";
 import { saveTicket, useYt, type Yt, YtProvider } from "./state";
@@ -164,7 +166,7 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
   const i: Ticket | Detail | undefined = d.data ?? row;
   const [flowOpen, setFlowOpen] = useState(false);
   const [storyOpen, setStoryOpen] = useState(false);
-  const role = useRoleOrDev(), po = role === "po";
+  const role = useRoleOrDev(), po = role === "po", tips = useSetupTips();
   // who a reply about this ticket tags, by role: QC tells the Assignee (the dev), a Dev the QC, the PO both; never me
   const notify = (i ? role === "qa" ? [i.assignee] : role === "dev" ? [i.qc] : [i.assignee, i.qc] : []).filter((p): p is string => !!p && p !== y.me);
   const router = useRouter();
@@ -211,12 +213,15 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
       </motion.dl>
 
 
-      {(y.aiOn || write) && ( // the ticket's features, one row, one look; Cập nhật story last, so an icon sits in the same place for every role
+      {(y.aiOn || write || tips) && ( // the ticket's features, one row, one look; Cập nhật story last, so an icon sits in the same place for every role
         <motion.div variants={fade}>
           <GrowRow className="flex w-fit max-w-full flex-wrap gap-2">
-            {y.aiOn && (
+            {y.aiOn ? (
               <Spot label={t("AI cho ticket này")} hint={t("Hỏi AI về ticket này, có thể thêm ticket khác hoặc trace code")} className="ai-chip"
                 onClick={() => y.setSheet({ kind: "work", title: "AI", ids: [id] })}><Sparkles aria-hidden /></Spot>
+            ) : tips && ( // no AI CLI here: the spot stays, locked, and shows how to set one up
+              <Spot label={t("AI cho ticket này")} hint={t("Máy này chưa có AI CLI. Bấm để được chỉ cách cài, rồi hỏi AI về ticket, viết test case, trace code…")} className="bg-paper-3 text-ink-3 hover:bg-paper-2"
+                onClick={() => openTour("settings-ai-accounts")}><Lock aria-hidden /></Spot>
             )}
             {write && ( // reads and saves the ticket's attachment: needs a token like the other writes
               <Spot label={t("UI flow")} hint={flowRun ? t("Đang render UI flow — mở để xem") : t("Sơ đồ màn hình và luồng bấm của ticket này")} className={TONE.code}
@@ -387,6 +392,9 @@ function FieldSelect({ ticket, name }: { ticket: Ticket; name: Field }) {
   const { key, node } = FIELD[name], cur = ticket[key] ?? "";
   const flowOf = useFlow(project);
   const flow = name === "State" ? flowOf(cur) : null; // the team's arrows out of this state; null: no rule
+  const role = useRoleOrDev();
+  const wf = useQuery({ ...ytWorkflowQuery(project, role), enabled: name === "State" && !y.config?.mock }).data; // useFlow's cache
+  const roleName = t(YT_ROLES.find(([r]) => r === role)![1]);
   const all = opts.data?.[name] ?? [];
   const values = flow ? all.filter((v) => v === cur || flow.includes(v)) : all;
   // the values could not be read (a token without rights, YouTrack down): say why the field cannot be changed here
@@ -398,7 +406,8 @@ function FieldSelect({ ticket, name }: { ticket: Ticket; name: Field }) {
     if (await go(ticket, v)) toast({ text: `${ticket.id} ${name} → ${v}`, undo: cur ? () => void go({ ...ticket, [key]: v }, cur) : undefined });
   }
   return <Picker label={node(ticket[key])} title={t("Đổi {field} {id}", { field: name, id: ticket.id })} value={cur} options={options} onPick={(v) => void change(v)}
-    foot={flow && all.length > values.length ? t(flow.length ? "Theo workflow của team: chỉ hiện các bước đi tiếp từ {state}" : "Workflow của team: {state} là bước cuối", { state: cur || "—" }) : undefined} />;
+    foot={flow && all.length > values.length ? t(flow.length ? "Theo workflow của team: chỉ hiện các bước đi tiếp từ {state}" : "Workflow của team: {state} là bước cuối", { state: cur || "—" })
+      : wf && !wf.on ? <SetupTip id="workflow" when text={t("Vai trò {role} chưa bật workflow nên menu hiện mọi State, kể cả bước sai luồng.", { role: roleName })} go={t("Vẽ workflow")} tour="settings-workflow" /> : undefined} />;
 }
 
 /** A feature's own colour (AI has `ai-chip`): tinted at rest, filled under the pointer. */
