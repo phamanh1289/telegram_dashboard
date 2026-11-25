@@ -33,3 +33,6 @@ docs/security/
 # copied from packaging/{macos,windows} at npm prepack
 packaging/npm/install-*
 packaging/npm/*.tgz
+
+# context-mode session stats (tool output)
+.github/context-mode/

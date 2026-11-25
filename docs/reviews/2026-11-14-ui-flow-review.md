@@ -1,7 +1,7 @@
 # UI Flow — Deep review và kế hoạch cải thiện
 
 Ngày: 14/11/2026  
-Trạng thái: đã triển khai phase 0–8 và backlog mục 12 trên `features/refactor-ui-diagram`. Bàn giao: [phase 8](docs/UI-FLOW-PHASE-8-HANDOFF.md), [backlog](docs/UI-FLOW-BACKLOG-VERIFICATION.md). Bằng chứng và giới hạn kiểm chứng: [phase 0–2](docs/UI-FLOW-PHASE-0-2-VERIFICATION.md), [phase 3–4](docs/UI-FLOW-PHASE-3-4-VERIFICATION.md), [phase 5](docs/UI-FLOW-PHASE-5-VERIFICATION.md), [phase 6–7](docs/UI-FLOW-PHASE-6-7-VERIFICATION.md).
+Trạng thái: đã triển khai phase 0–8 và backlog mục 12 trên `features/refactor-ui-diagram`. Bàn giao: [phase 8](../verification/2026-11-14-ui-flow-phase-8-handoff.md), [backlog](../verification/2026-11-14-ui-flow-backlog.md). Bằng chứng và giới hạn kiểm chứng: [phase 0–2](../verification/2026-11-14-ui-flow-phase-0-2.md), [phase 3–4](../verification/2026-11-14-ui-flow-phase-3-4.md), [phase 5](../verification/2026-11-14-ui-flow-phase-5.md), [phase 6–7](../verification/2026-11-14-ui-flow-phase-6-7.md).
 
 ## 1. Mục tiêu và giới hạn bằng chứng
 
@@ -314,7 +314,7 @@ Backend đã dùng một lượt AI, REST Zeplin, cache 1 giờ; validate/layout
 | 5 | Cập nhật nguồn có chọn lọc | Báo ticket/Zeplin đổi, giữ chỉnh tay |
 | 6 | Checklist test từ graph | Code liệt kê nhánh/đường đi; AI diễn giải khi được yêu cầu |
 
-Đã triển khai cả 6 mục (xem [kiểm chứng backlog](docs/UI-FLOW-BACKLOG-VERIFICATION.md)). Backlog chưa bao gồm realtime collaboration, threaded comments, wireframe tổng quát hoặc renderer mới.
+Đã triển khai cả 6 mục (xem [kiểm chứng backlog](../verification/2026-11-14-ui-flow-backlog.md)). Backlog chưa bao gồm realtime collaboration, threaded comments, wireframe tổng quát hoặc renderer mới.
 
 ## 13. Mốc bàn giao và phân công song song
 

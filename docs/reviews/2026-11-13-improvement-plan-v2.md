@@ -1,6 +1,6 @@
 # Telegram Dashboard — plan cải tiến v2 (theo số liệu dùng thật)
 
-Ngày: 13/11/2026. Thay cho `REVIEW-IMPROVEMENT-PLAN.md` (giữ lại làm phụ lục finding). Chưa triển khai mục nào.
+Ngày: 13/11/2026. Thay cho [2026-11-13-dashboard-review.md](2026-11-13-dashboard-review.md) (giữ lại làm phụ lục finding). Chưa triển khai mục nào.
 
 ## Trạng thái (13/11/2026, sau khi triển khai)
 

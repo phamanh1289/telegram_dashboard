@@ -17,7 +17,7 @@ Fixture timings are local code/browser timings. They do not establish real YouTr
 
 ## Synthetic dataset timings
 
-Artifacts: `uiflow-baseline-before.json` and `uiflow-baseline-after.json`; reproduce with `node web/tests/uiflow-benchmark.cjs`. One cold and one warm run per size, same Apple M5 / 24 GB / arm64 machine, headless Chromium 156.0.8078.4 at 1440×900. Times below are milliseconds. This sample count is a baseline, not a statistically established performance improvement.
+Artifacts: [`uiflow-bench/uiflow-baseline-before.json`](uiflow-bench/uiflow-baseline-before.json) and [`uiflow-bench/uiflow-baseline-after.json`](uiflow-bench/uiflow-baseline-after.json); reproduce with `node web/tests/uiflow-benchmark.cjs`. One cold and one warm run per size, same Apple M5 / 24 GB / arm64 machine, headless Chromium 156.0.8078.4 at 1440×900. Times below are milliseconds. This sample count is a baseline, not a statistically established performance improvement.
 
 | Screens / links | Before mount cold / warm | After mount cold / warm | Before pack cold / warm | After pack cold / warm | After drag frame p95 cold / warm |
 |---|---:|---:|---:|---:|---:|
