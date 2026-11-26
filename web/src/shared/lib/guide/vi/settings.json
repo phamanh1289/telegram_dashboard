@@ -346,6 +346,29 @@
     "keys": "cap nhat update github tu dong cap nhat auto update phien ban moi"
   },
   {
+    "id": "settings-uninstall",
+    "tab": "settings",
+    "area": "Cài đặt › Cập nhật",
+    "title": "Gỡ bỏ ứng dụng khỏi máy",
+    "what": "Chỉ có ở bản cài (lệnh cài, Setup.exe, zip), không có ở bản chạy từ source. Bấm \"Gỡ bỏ ứng dụng\" mở hộp xác nhận liệt kê những gì bị xóa; bấm \"Gỡ bỏ\" thì app đăng xuất phiên Telegram, tắt server rồi xóa app, toàn bộ dữ liệu (kể cả thư mục dữ liệu đã đổi chỗ), lệnh myradar, shortcut và mã mở khóa API. Không hoàn tác được: muốn giữ dữ liệu thì chép thư mục data ra chỗ khác trước. Đang có task AI Agent thì đợi task xong.",
+    "how": [
+      {
+        "t": "Chọn mục \"Cập nhật\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#github\"]"
+      },
+      {
+        "t": "Bấm \"Gỡ bỏ ứng dụng\"",
+        "at": "Gỡ bỏ ứng dụng"
+      },
+      {
+        "t": "Đọc danh sách sẽ bị xóa, bấm \"Gỡ bỏ\"",
+        "at": "css:[role=\"alertdialog\"]"
+      },
+      "Đóng tab trình duyệt (macOS: đóng cả cửa sổ Terminal của server)"
+    ],
+    "keys": "go bo go cai dat xoa app uninstall remove xoa du lieu dang xuat telegram"
+  },
+  {
     "id": "settings-contact",
     "tab": "settings",
     "area": "Cài đặt › Liên hệ",

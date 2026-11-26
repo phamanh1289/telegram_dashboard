@@ -346,7 +346,8 @@ def build_router(settings) -> APIRouter:
                 ver = await _run(settings.root, "git", "rev-parse", "--short", "HEAD")
             except ApiError:
                 ver = ""
-        return {"version": ver, "behind": behind, "error": last_error, "pending": pending}
+        # packaged: Cài đặt › Cập nhật offers "Gỡ bỏ ứng dụng" (uninstall.py); a checkout is the user's own folder
+        return {"version": ver, "behind": behind, "error": last_error, "pending": pending, "packaged": bool(home())}
 
     @r.post("")
     async def post_update(request: Request) -> dict:

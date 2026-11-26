@@ -189,7 +189,7 @@ export const OFFLINE_TEXT = () => t("Không liên lạc được dashboard local
 /** Newer versions on GitHub (the server checks hourly) and the running one; the shell's badge and Liên hệ share it. */
 export const updateStateQuery = {
   queryKey: ["update-state"],
-  queryFn: ({ signal }: { signal: AbortSignal }) => api<{ version: string; behind: number; pending?: string }>("/update/state", { signal }), // pending: installed, awaiting a restart
+  queryFn: ({ signal }: { signal: AbortSignal }) => api<{ version: string; behind: number; pending?: string; packaged?: boolean }>("/update/state", { signal }), // pending: installed, awaiting a restart; packaged: not a git checkout
 };
 
 /** The backend's status (Telegram, AI, YouTrack); one cache shared by the shell, Settings and the Digest actions. */

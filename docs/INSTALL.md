@@ -81,7 +81,4 @@ hoặc Antigravity (`agy`). Không có thì inbox vẫn chạy, chỉ ẩn AI.
 
 ## Gỡ cài đặt
 
-- Windows: Settings › Apps › **Radar** › Uninstall. Dữ liệu (`data\` trong thư mục cài, gồm session
-  Telegram) được giữ lại; xóa tay nếu muốn sạch hẳn.
-- macOS: xóa thư mục `~/Applications/Telegram Dashboard`.
-- Nên thu hồi phiên: Telegram › Settings › Devices › kết thúc phiên của dashboard.
+Hướng dẫn từng bước (macOS, Windows, npm, dữ liệu đã chuyển chỗ, file phụ): [README › Gỡ cài đặt](../README.md#gỡ-cài-đặt).
