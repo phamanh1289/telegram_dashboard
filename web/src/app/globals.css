@@ -215,26 +215,31 @@
 .hue-range:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
 .hue-range:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* Effort slider (ai.tsx EffortSlider): the accent fill (--hl-fill / --hl-glow, so it follows the chosen look) + step dots + a drawn
-   thumb, all on --pct. While dragged ([data-drag]) it follows the pointer freely; on release it glides to the nearest step.
+/* Effort slider (ai/effort-slider.tsx): the accent fill (--hl-fill / --hl-glow, so it follows the chosen look) + step notches + a drawn
+   thumb, all on --pct, which motion springs (no CSS transition on it): after the finger while dragged ([data-drag]), into the
+   nearest step on release. A ripple under the thumb at each notch, a bubble naming the level while dragged.
    The native range underneath (no pointer events) takes the keyboard and a11y. */
 @property --pct { syntax: "<number>"; inherits: true; initial-value: 0; }
-.effort { --t: 1.25rem; --track: 8px; position: relative; display: block; flex: 1 1 auto; min-width: 6rem; height: 2rem; cursor: pointer; touch-action: none; transition: --pct var(--dur-long) var(--ease-out); }
-.effort[data-drag] { cursor: grabbing; transition: none; }
+.effort { --t: 1.25rem; --track: 8px; position: relative; display: block; flex: 1 1 auto; min-width: 6rem; height: 2rem; cursor: pointer; touch-action: none; }
+.effort[data-drag] { cursor: grabbing; }
 .effort::before, .effort::after { content: ""; position: absolute; top: 50%; left: calc(var(--t) / 2); height: var(--track); margin-top: calc(var(--track) / -2); border-radius: var(--radius-pill); }
-.effort::before { right: calc(var(--t) / 2); background: color-mix(in oklch, var(--color-rule-2) 55%, transparent); }
+.effort::before { right: calc(var(--t) / 2); background: color-mix(in oklch, var(--color-rule-2) 55%, transparent); transition: background-color var(--dur-short); }
+.effort:hover::before, .effort[data-drag]::before { background: color-mix(in oklch, var(--color-rule-2) 80%, transparent); }
 /* The fill is the whole track's light-to-deep ramp, clipped at --pct: a higher effort reveals a deeper accent. */
 .effort::after { right: calc(var(--t) / 2); background: linear-gradient(90deg, color-mix(in oklch, var(--color-hl) 28%, var(--color-hl-wash)), var(--color-hl) 65%, var(--color-hl-2)); box-shadow: var(--hl-glow); clip-path: inset(0 calc((1 - var(--pct)) * 100%) 0 0 round var(--radius-pill)); }
 .effort-tick, .effort-thumb { position: absolute; top: 50%; z-index: 1; border-radius: 50%; translate: -50% -50%; pointer-events: none; }
 /* Step dots: the accent in light, white in dark; dimmer past the thumb, full on the fill. */
 .effort { --tick: var(--color-hl); }
 :is(.dark, [data-theme="dark"]) .effort { --tick: oklch(100% 0 0); }
-.effort-tick { left: calc(var(--t) / 2 + (100% - var(--t)) * var(--k)); width: 5px; height: 5px; background: var(--tick); opacity: 0.45; transition: opacity var(--dur-short); }
-.effort-tick[data-on] { opacity: 1; }
+.effort-tick { left: calc(var(--t) / 2 + (100% - var(--t)) * var(--k)); width: 5px; height: 5px; background: var(--tick); opacity: 0.45; transition: opacity var(--dur-short), scale var(--dur-short) var(--ease-out); }
+.effort-tick[data-on] { opacity: 1; scale: 1.3; }
 .effort-thumb { left: calc(var(--t) / 2 + (100% - var(--t)) * var(--pct)); width: var(--t); height: var(--t); background: color-mix(in oklch, var(--color-hl-2) calc(var(--pct) * 100%), color-mix(in oklch, var(--color-hl) 55%, var(--color-hl-wash))); border: 3px solid var(--color-cotton); box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-hl) 40%, transparent), 0 1px 4px oklch(0% 0 0 / 0.3); transition: scale var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out); }
 .effort:hover .effort-thumb { scale: 1.12; box-shadow: 0 0 0 6px color-mix(in oklch, var(--color-hl) 16%, transparent), 0 1px 4px oklch(0% 0 0 / 0.3); }
 .effort[data-drag] .effort-thumb { scale: 1.25; box-shadow: 0 0 0 8px color-mix(in oklch, var(--color-hl) 20%, transparent), 0 2px 6px oklch(0% 0 0 / 0.3); }
 .effort:has(input:focus-visible) .effort-thumb { box-shadow: 0 0 0 2px var(--color-cotton), 0 0 0 4px var(--color-focus); }
+.effort-ripple { position: absolute; inset: -3px; border-radius: 50%; background: var(--color-hl); opacity: 0; }
+.effort-bubble { position: absolute; bottom: calc(50% + var(--t) * 0.625 + 6px); left: calc(var(--t) / 2 + (100% - var(--t)) * var(--pct)); z-index: 2; translate: -50% 0; transform-origin: 50% 100%; overflow: hidden;
+  padding: 2px 8px; border-radius: var(--radius-pill); background: var(--color-cotton); color: var(--color-ink); font-size: var(--text-2xs); font-weight: 500; line-height: 1.4; white-space: nowrap; pointer-events: none; box-shadow: var(--shadow-pop); }
 .effort input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .effort, .effort-tick, .effort-thumb { transition: none; } }
 

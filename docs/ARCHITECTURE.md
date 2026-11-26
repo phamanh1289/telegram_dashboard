@@ -71,7 +71,7 @@ web/
         lib/             # query/action Telegram, draft, brief, mention adapter…
       youtrack/
         components/      # tickets, dashboard (biểu đồ chung: charts.tsx), flow, release, ticket form…
-        lib/             # YouTrack client/query, flow draft, stats, mention adapter, watch (ticket mới, Báo lại, retest)
+        lib/             # YouTrack client/query, flow draft, stats, mention adapter, watch (ticket mới, Báo lại, retest), workflow-graph (Tự xếp, mũi tên vuông góc)
         flow-engine/     # ES modules: model/layout, geometry, renderer, camera, player, editor/inspector, finder, styles
       docs/
         components/      # app (thanh tìm, lọc nguồn, dải lỗi đồng bộ), results, reader, sources, ask (ô hỏi AI)

@@ -395,14 +395,16 @@ function YtPlug({ fade }: { fade: string }) {
   const y = useYt();
   const t = useT();
   const failed = !!y.configError || (y.issues.isError && !y.issues.data);
-  const pose = y.config?.mock || failed ? "off" : y.issues.data ? "on" : "try";
+  const retrying = useIsFetching({ queryKey: ["yt"] }) > 0 && failed; // Thử lại (card / banner) or a retry on its own
+  const pose = y.config?.mock ? "off" : retrying ? "try" : failed ? "off" : y.issues.data ? "on" : "try";
   const [title, sub] = y.config?.mock ? [t("Chưa kết nối YouTrack"), t("Bấm để thêm token")]
     : failed ? [t("Mất kết nối YouTrack"), t("Không gọi được YouTrack, đang thử lại")]
     : pose === "try" ? [t("Đang kết nối YouTrack…"), t("Đang tải ticket")]
     : [t("Đã kết nối YouTrack"), y.me ? t("Bạn: {x}", { x: y.me }) : t("Cập nhật mỗi phút")];
   return (
     <AiPlug testId="yt" icon={<YtLogo className="size-6" />} sock="bg-paper-3" textClass={fade} pose={pose} live={!y.issues.isError}
-      title={title} sub={sub} subWarn={pose === "off"} href={y.config?.mock ? "/settings/#youtrack" : undefined}
-      hint={{ title: t("Kết nối YouTrack"), text: pose === "on" ? t("Đã kết nối {x}, ticket tự làm mới mỗi phút.", { x: y.config?.base ?? "YouTrack" }) : sub }} />
+      title={title} sub={sub} subWarn={pose === "off"} href={y.config?.mock || pose === "on" ? "/settings/#youtrack" : undefined}
+      onClick={failed && !retrying ? y.refresh : undefined}
+      hint={{ title: t("Kết nối YouTrack"), text: pose === "on" ? `${t("Đã kết nối {x}, ticket tự làm mới mỗi phút.", { x: y.config?.base ?? "YouTrack" })} ${t("Bấm để mở Cài đặt YouTrack.")}` : failed ? `${sub}. ${t("Bấm để thử lại ngay.")}` : sub }} />
   );
 }

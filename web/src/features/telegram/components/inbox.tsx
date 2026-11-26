@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, History, House as Home, Inbox as InboxIcon, LayoutDashboard, ListChecks, type LucideIcon, Menu, MessageCircleQuestion, MessageSquare, Pin, Rocket, RotateCw, Search, Send, Sparkles, Sun, UserSearch, X } from "lucide-react";
 import { AiBotIcon } from "@/shared/components/ai/chat";
 import { type ReactNode, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
@@ -30,7 +30,7 @@ import { DateRangePicker, type DayRange, rangeLabel, rangeQuery, readTagRange, s
 import { Button } from "@/shared/components/ui/button";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { type StreamState, useSync } from "@/features/telegram/hooks/use-events";
-import { errorText, isOffline, type Message, type Status, statusQuery } from "@/shared/lib/api";
+import { api, errorText, isOffline, type Message, type Status, statusQuery } from "@/shared/lib/api";
 import { WarnBar } from "@/shared/components/ui/warn-bar";
 import type { View } from "@/features/telegram/hooks/use-chat-messages";
 import { ALL, askInQa, BRIEFING, groupsQuery, TODAY, goKey, msgKey, openQa, openReplyById, openTask, PINNED, QA, QaCodes, scrollToRow, TASKS, taskToast, typing, useTaskList } from "@/features/telegram/lib/inbox";
@@ -139,7 +139,7 @@ const NO_CODES: ReadonlyMap<string, string> = new Map(); // Q&A page: its cards 
 
 function Inbox({ status }: { status: Status }) {
   const t = useT();
-  const stream = useSync(status.cursor);
+  const [stream, retryStream] = useSync(status.cursor);
   const taskList = useTaskList().data ?? [];
   const bulk = useBulk(); // "Đối chiếu code N chủ đề": a detail page over the list, like a reply
   const runningTasks = taskList.filter((t) => t.running).length;
@@ -197,6 +197,17 @@ function Inbox({ status }: { status: Status }) {
     setCollapsed(!collapsed);
   }
   const qc = useQueryClient();
+  // The sidebar card and the banner's Thử lại: one retry. Telegram down: the bridge tries now, not after its wait.
+  const tgDown = status.state === "degraded" || status.state === "stopped";
+  const canRetry = tgDown || stream !== "open";
+  const reconnect = useMutation({
+    mutationFn: async () => {
+      retryStream();
+      if (tgDown) await api("/telegram/reconnect", { method: "POST" });
+      await qc.invalidateQueries();
+    },
+    onError: (e) => toast({ text: errorText(e, {}, t("Không kết nối lại được, thử lại")) }),
+  });
   const flashMessage = (text: string) => toast({ text });
   const [shortcuts, setShortcuts] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -512,11 +523,12 @@ function Inbox({ status }: { status: Status }) {
         </div>
         <div className="-mx-3 border-t px-3 pt-2">
           <AiPlug testId="tg" icon={<Send className="size-4 -translate-x-px translate-y-px" aria-hidden />} sock="bg-info text-cotton" textClass={fade}
-            pose={status.state === "connected" ? "on" : status.state === "connecting" ? "try" : "off"} live={stream === "open"}
+            pose={status.state === "connecting" || reconnect.isPending ? "try" : status.state === "connected" ? "on" : "off"} live={stream === "open"}
             title={t(PLUG_LINE[status.state][0])} sub={t(status.state === "connected" ? STREAM_LABEL[stream] : PLUG_LINE[status.state][1])}
             subWarn={status.state === "connected" ? stream !== "open" : status.state !== "connecting"}
-            href={status.state === "setup_required" || status.state === "login_required" ? "/settings/#telegram" : undefined}
-            hint={{ title: t("Kết nối Telegram"), text: `${t(STATE_LABEL[status.state])}. ${t(STREAM_LABEL[stream])}.` }} />
+            href={status.state === "setup_required" || status.state === "login_required" || (status.state === "connected" && !canRetry) ? "/settings/#telegram" : undefined}
+            onClick={canRetry && !reconnect.isPending ? () => reconnect.mutate() : undefined}
+            hint={{ title: t("Kết nối Telegram"), text: `${t(STATE_LABEL[status.state])}. ${t(STREAM_LABEL[stream])}.${canRetry ? ` ${t("Bấm để thử lại ngay.")}` : status.state === "connected" ? ` ${t("Bấm để mở Cài đặt Telegram.")}` : ""}` }} />
         </div>
       </aside>
       <div className="hidden md:block" aria-hidden />
@@ -570,7 +582,7 @@ function Inbox({ status }: { status: Status }) {
             else as a detail page over it; the list stays mounted (hidden) so its scroll and "next tag" order survive. */}
         <WarnBar open={banner} action={status.state === "setup_required" || status.state === "login_required"
           ? <Link href="/settings/#telegram" className="font-bold underline underline-offset-4">{t("Mở Cài đặt Telegram")}</Link>
-          : <Button size="xs" variant="outline" onClick={() => void qc.invalidateQueries()}><RotateCw /> {t("Thử lại")}</Button>}>
+          : <Button size="xs" variant="outline" aria-busy={reconnect.isPending} disabled={reconnect.isPending} onClick={() => reconnect.mutate()}><RotateCw /> {t("Thử lại")}</Button>}>
           {t(status.state !== "connected" ? STATE_LABEL[status.state] : STREAM_LABEL[stream])}. {t("Danh sách có thể chưa mới.")}
         </WarnBar>
         <div className="min-h-0 min-w-0 p-2 sm:p-4 lg:p-5">

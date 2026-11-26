@@ -236,6 +236,8 @@
     "what": "Cho biết đã kết nối Telegram chưa (Đã kết nối / Mất kết nối, đang thử lại / Cần đăng nhập…) và luồng cập nhật trực tiếp có đang chạy không.",
     "how": [
       "Xem cuối thanh bên: một dòng có chấm xanh \"Đã kết nối Telegram · Cập nhật trực tiếp\" là mọi thứ ổn; khi có vấn đề nó thành thẻ robot AI cắm dây (dây tuột, xám là mất kết nối; robot với tới là đang kết nối)",
+      "Khi mất kết nối hoặc luồng cập nhật tạm dừng, bấm thẻ để thử lại ngay thay vì chờ lượt tự thử (nút Thử lại trên dải cảnh báo làm cùng việc); thẻ YouTrack ở trang YouTrack cũng vậy khi không gọi được YouTrack. Mạng có lại (Wi-Fi, VPN) thì luồng cập nhật tự nối lại, không cần bấm",
+      "Khi đã kết nối, bấm thẻ để mở Cài đặt Telegram (thẻ YouTrack mở Cài đặt YouTrack)",
       "Nếu báo \"AI chờ bạn đăng nhập\" hoặc \"Chưa có dây Telegram\", bấm vào thẻ đó để mở Cài đặt Telegram",
       "Làm theo mục \"Tài khoản Telegram\": nhập API ID/Hash rồi đăng nhập"
     ],

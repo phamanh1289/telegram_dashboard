@@ -32,3 +32,15 @@ test("asks: a quote under a list item takes the item's role and is posted alone"
   renderToStaticMarkup(h(AskPost.Provider, { value: (text, role) => void got.push([text, role]) }, h(Markdown, { text: md, asks: true })));
   expect(got).toEqual([["Chưa sửa: luồng V1.", null], ["@be_bot\n1. `x` có đi thẳng được không?", "BE"]]);
 });
+
+// "**Cần hỏi lại**" then "**BE:**" on the next line, no blank line (one paragraph): the asks under it are still BE's,
+// and the "**BE:**" line is a label, not an ask with its own send button.
+test("asks: a role label right under the ask label (no blank line) still sets the role", async () => {
+  const { createElement: h } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { AskPost, Markdown } = await import("../src/shared/components/markdown");
+  const md = "**Cần hỏi lại**\n**BE:**\n> @be_bot\n> 1. x?\n\n**PO:**\n> @po\n> 1. y?";
+  const got: [string, string | null][] = [];
+  renderToStaticMarkup(h(AskPost.Provider, { value: (text, role) => void got.push([text, role]) }, h(Markdown, { text: md, asks: true })));
+  expect(got).toEqual([["@be_bot\n1. x?", "BE"], ["@po\n1. y?", "PO"]]);
+});

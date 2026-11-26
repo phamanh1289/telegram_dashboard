@@ -15,41 +15,8 @@ import { getPref, useRoleOrDev, YT_ROLES } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 import { StatePill } from "@/features/youtrack/components/bits";
 import { GoneBanner, GonePanel } from "@/features/youtrack/components/workflow-gone";
+import { arrange, GX, H, key, layout, PAD, routes, W } from "@/features/youtrack/lib/workflow-graph";
 import { goneStates, liveEdges, nextStates, resolveProject, type Workflow, yt, ytFail, ytProjectsQuery, ytWorkflowQuery } from "@/features/youtrack/lib/yt";
-
-const W = 150, H = 36, GX = 180, GY = 68, PAD = 24;
-
-const START = /^(open|opened|new|submitted|backlog|to ?do)$/i;
-
-/** Boxes in layers down the flow (BFS), `cols` per row; boxes with no arrow go last. A flow is often a loop (Closed → Open),
- * so each part starts at a state named like a start, else the one fewest arrows lead to.
- * ponytail: BFS layers, no crossing minimisation; drag boxes by hand for the rest. */
-function layout(states: string[], edges: [string, string][], cols: number) {
-  edges = edges.filter(([s, t]) => s !== t && states.includes(s) && states.includes(t));
-  const inN = (s: string) => edges.filter(([, t]) => t === s).length;
-  const level = new Map<string, number>();
-  for (;;) {
-    const left = states.filter((s) => !level.has(s) && edges.some((e) => e.includes(s)));
-    if (!left.length) break;
-    const start = left.find((s) => START.test(s.trim())) ?? left.reduce((a, b) => (inN(b) < inN(a) ? b : a));
-    const queue = [start];
-    level.set(start, 0);
-    for (let k = 0; k < queue.length; k++)
-      for (const [a, b] of edges) if (a === queue[k] && !level.has(b)) { level.set(b, level.get(a)! + 1); queue.push(b); }
-  }
-  const last = Math.max(0, ...level.values()) + 1;
-  const rows: string[][] = [];
-  for (const s of states) (rows[level.get(s) ?? last] ??= []).push(s);
-  const pos: Record<string, [number, number]> = {};
-  let y = PAD;
-  for (const row of rows.filter(Boolean))
-    for (let k = 0; k < row.length; k += cols) {
-      row.slice(k, k + cols).forEach((s, i) => { pos[s] = [PAD + i * GX, y]; });
-      y += GY;
-    }
-  return pos;
-}
-const key = (e: [string, string]) => `${e[0]}\u0000${e[1]}`;
 
 /** The team's workflow for a project and the current role (no role yet: Dev, as on the server). */
 function useWorkflow(project: string) {
@@ -88,18 +55,6 @@ export function WorkflowTip({ project, className }: { project: string; className
 const drafts = new Map<string, Workflow>();
 export const dropWorkflowDrafts = () => drafts.clear();
 
-/** Where an arrow from box a to box b starts / ends: on each box's border, bent sideways when b → a also exists. */
-function arrow(a: [number, number], b: [number, number], bend: boolean) {
-  const c1 = [a[0] + W / 2, a[1] + H / 2], c2 = [b[0] + W / 2, b[1] + H / 2];
-  const dx = c2[0] - c1[0], dy = c2[1] - c1[1], len = Math.hypot(dx, dy) || 1;
-  const edge = (sign: number) => { const t = Math.min(W / 2 / Math.abs(dx || 1e-9), H / 2 / Math.abs(dy || 1e-9)); return [sign * dx * t, sign * dy * t]; };
-  const [ox, oy] = edge(1);
-  const off = bend ? 18 : 0, nx = (-dy / len) * off, ny = (dx / len) * off;
-  const p1 = [c1[0] + ox + nx, c1[1] + oy + ny], p2 = [c2[0] - ox + nx, c2[1] - oy + ny];
-  const m = [(p1[0] + p2[0]) / 2 + nx, (p1[1] + p2[1]) / 2 + ny];
-  return { d: `M${p1[0]},${p1[1]} Q${m[0]},${m[1]} ${p2[0]},${p2[1]}`, mid: m };
-}
-
 /** Settings › YouTrack › Workflow: the states in use on the canvas (drag to place, drag a box's dot onto another for an arrow,
  *  or Enter on one box then on another), the rest in a column on the right; drag between them to add / take off, pick a box or
  *  an arrow and press Delete to take it off. */
@@ -121,7 +76,8 @@ export function WorkflowSection() {
   const data = q.data, states = useMemo(() => data?.states ?? [], [data]);
   // arrows to a state YouTrack no longer has stay (its box is drawn as deleted, to be replaced or taken off)
   const saved = useMemo<Workflow | null>(() => !data ? null : {
-    pos: { ...layout([...states, ...goneStates(data)], data.edges, cols), ...data.pos },
+    // nothing placed yet: Tự xếp's layout; else boxes YouTrack gained since go along the flow (cheap, every refetch)
+    pos: { ...(Object.keys(data.pos ?? {}).length ? layout : arrange)([...states, ...goneStates(data)], data.edges, cols), ...data.pos },
     edges: data.edges,
     hidden: (data.hidden ?? []).filter((s) => states.includes(s)),
   }, [data, states, cols]);
@@ -165,7 +121,7 @@ export function WorkflowSection() {
     applyYt.current = (d, v) => {
       if (v.p !== p || v.gen !== gen) return;
       const edges = d.edges.filter(([s, t]) => shown.includes(s) && shown.includes(t)); // hidden boxes stay hidden
-      set({ edges, ...(Object.keys(data?.pos ?? {}).length ? {} : { pos: layout(shown, edges, cols) }) }); // nothing placed by hand yet: lay out along it
+      set({ edges, ...(Object.keys(data?.pos ?? {}).length ? {} : { pos: arrange(shown, edges, cols) }) }); // nothing placed by hand yet: lay out along it
     };
   });
   const fromYt = useMutation({
@@ -188,8 +144,8 @@ export function WorkflowSection() {
               <Download className="size-3.5" />{t(fromYt.isPending ? "Đang đọc…" : "Lấy từ YouTrack")}
             </Button>
           </Hint>
-          <Hint title={t("Tự xếp")} text={t("Xếp lại các ô theo luồng: state đầu ở trên, các bước sau xuống dưới.")}>
-            <Button type="button" size="icon-sm" variant="ghost" aria-label={t("Tự xếp")} onClick={() => set({ pos: layout(shown, wf.edges, cols) })}><LayoutGrid className="size-4" /></Button>
+          <Hint title={t("Tự xếp")} text={t("Xếp lại các ô cho mũi tên ngắn và gọn nhất (ít góc rẽ, ít cắt nhau): state đầu ở trên, các bước sau ở dưới hoặc bên cạnh.")}>
+            <Button type="button" size="icon-sm" variant="ghost" aria-label={t("Tự xếp")} onClick={() => set({ pos: arrange(shown, wf.edges, cols) })}><LayoutGrid className="size-4" /></Button>
           </Hint>
           <Hint title={t("Xóa hết mũi tên")} text={t("Bỏ mọi mũi tên để vẽ lại từ đầu.")}>
             <Button type="button" size="icon-sm" variant="ghost" aria-label={t("Xóa hết mũi tên")} disabled={!wf.edges.length} onClick={() => set({ edges: [] })}><Trash2 className="size-4" /></Button>
@@ -246,11 +202,13 @@ function Canvas({ states, all, gone, hidden, wf, onChange, onHide, onShow, onRep
   const setDrag = (d: Drag | null) => { live.current = d; setDragState(d); };
   const [sel, setSel] = useState<Sel>(null);
   const [linking, setLinking] = useState<string | null>(null); // keyboard: Enter on a box, then Enter on the one it leads to
+  const [hover, setHover] = useState<string | null>(null);
+  const hoverOn = (s: string) => ({ onPointerEnter: () => setHover(s), onPointerLeave: () => setHover((h) => (h === s ? null : h)) });
   // the dragged box is drawn where the pointer is; the flow only changes on letting go (one draft write per drag)
   const pos = drag?.kind === "move" && drag.to && !drag.out ? { ...wf.pos, [drag.s]: drag.to } : wf.pos;
   const has = new Set(wf.edges.map(key));
   const boxes = [...states, ...gone].filter((s) => pos[s]);
-  const width = Math.max(0, ...boxes.map((s) => pos[s][0])) + W + PAD;
+  const width = Math.max(0, ...boxes.map((s) => pos[s][0])) + W + PAD + 24; // + room for the loops on the right
   const height = Math.max(0, ...boxes.map((s) => pos[s][1])) + H + PAD + 40; // + room for the empty hint below the boxes
   // zoom for a big flow: the boxes and arrows scale, positions stay in flow units (`at` divides by it)
   const [zoom, setZoomState] = useState(1);
@@ -354,6 +312,13 @@ function Canvas({ states, all, gone, hidden, wf, onChange, onHide, onShow, onRep
   // a picked box (not while dragging): its arrows (in and out) and the states at their other end stand out, the rest fades back
   const focus = !drag && sel && "box" in sel ? sel.box : null;
   const near = focus ? new Set([focus, ...wf.edges.filter((e) => e.includes(focus)).flat()]) : null;
+  // its arrows stand out: the picked box's, else the one under the pointer (only the arrows; the boxes stay as they are)
+  const trace = focus ?? (drag ? null : hover);
+  // routed again only when a box or an arrow changes (not on hover / pick): `pos` and `boxes` are new objects every render
+  const geo = JSON.stringify([wf.edges, boxes.map((s) => [s, pos[s]])]);
+  const paths = useMemo(() => routes(wf.edges, pos, boxes), [geo]); // eslint-disable-line react-hooks/exhaustive-deps -- `geo` is them
+  const pickedEdge = sel && "edge" in sel ? wf.edges.find((x) => key(x) === sel.edge) : undefined, pickedMid = pickedEdge && paths.get(key(pickedEdge))?.mid;
+  const arrowSel = pickedEdge && pickedMid ? { e: pickedEdge, m: pickedMid } : null; // the picked arrow: its × at the middle
   // focus only picks from the keyboard (Tab): a pointer press picks on letting go, so drawing an arrow never dims its targets
   const keyFocus = (e: React.FocusEvent<Element>, s: Sel) => { if (e.currentTarget.matches(":focus-visible")) setSel(s); };
 
@@ -373,40 +338,38 @@ function Canvas({ states, all, gone, hidden, wf, onChange, onHide, onShow, onRep
           <svg width={width} height={height} overflow="visible" className="pointer-events-none absolute top-0 left-0">
             <defs>
               {["n", "s"].map((m) => (
-                <marker aria-hidden key={m} id={`wf-${m}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                  <path d="M0,0 L10,5 L0,10 z" fill={m === "s" ? "var(--color-hl)" : "var(--color-ink-3)"} />
+                <marker aria-hidden key={m} id={`wf-${m}`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+                  <path d="M0,1 L9,5 L0,9 L2,5 z" fill={m === "s" ? "var(--color-hl)" : "var(--color-ink-3)"} />
                 </marker>
               ))}
             </defs>
-            {wf.edges.map((e) => {
-              if (!pos[e[0]] || !pos[e[1]]) return null;
-              const k = key(e), on = lit(k), rel = !!focus && e.includes(focus), a = arrow(pos[e[0]], pos[e[1]], has.has(key([e[1], e[0]])));
+            {/* the traced box's arrows last: drawn over the rest */}
+            {(trace ? [...wf.edges].sort((x, y) => +x.includes(trace) - +y.includes(trace)) : wf.edges).map((e) => {
+              const k = key(e), a = paths.get(k);
+              if (!a) return null;
+              const on = lit(k), rel = !!trace && e.includes(trace);
               const dead = gone.includes(e[0]) || gone.includes(e[1]); // leads to / from a deleted state: drawn broken
               return (
-                <g key={k} role="button" tabIndex={0} aria-label={t("Mũi tên {from} → {to}, Delete để xóa", { from: e[0], to: e[1] })} className={cn("pointer-events-auto cursor-pointer outline-none transition-opacity duration-(--dur-short)", focus && !rel && "opacity-15")}
+                <g key={k} role="button" tabIndex={0} aria-label={t("Mũi tên {from} → {to}, Delete để xóa", { from: e[0], to: e[1] })} className={cn("group/a pointer-events-auto cursor-pointer outline-none transition-opacity duration-(--dur-short)", trace && !rel && !on && "opacity-15")}
                   onPointerDown={(ev) => { ev.stopPropagation(); setLinking(null); setSel(on ? null : { edge: k }); }} onFocus={(ev) => keyFocus(ev, { edge: k })}>
                   <path d={a.d} fill="none" stroke="transparent" strokeWidth={14} />
-                  <path d={a.d} fill="none" stroke={on || rel ? "var(--color-hl)" : dead ? "var(--color-error)" : "var(--color-ink-3)"} strokeWidth={on ? 2.5 : rel ? 2 : 1.5}
-                    strokeDasharray={dead ? "5 4" : undefined} opacity={dead && !on && !rel ? 0.7 : 1} markerEnd={`url(#wf-${on || rel ? "s" : "n"})`} />
+                  <path d={a.d} fill="none" stroke={on || rel ? "var(--color-hl)" : dead ? "var(--color-error)" : "var(--color-ink-3)"} strokeWidth={on ? 2.5 : rel ? 2 : 1.5} strokeLinecap="round"
+                    strokeDasharray={dead ? "5 4" : undefined} markerEnd={`url(#wf-${on || rel ? "s" : "n"})`}
+                    className={cn("transition-opacity duration-(--dur-short)", !on && !rel && "opacity-55 group-hover/a:opacity-100")} />
                 </g>
               );
             })}
             {drag?.kind === "link" && (() => { const [x, y] = pos[drag.s]; return <line x1={x + W} y1={y + H / 2} x2={drag.x} y2={drag.y} stroke="var(--color-hl)" strokeWidth={2} strokeDasharray="5 4" markerEnd="url(#wf-s)" />; })()}
           </svg>
-          {sel && "edge" in sel && (() => {
-            const e = wf.edges.find((x) => key(x) === sel.edge);
-            if (!e) return null;
-            const m = arrow(pos[e[0]], pos[e[1]], has.has(key([e[1], e[0]]))).mid;
-            return (
-              <button type="button" aria-label={t("Xóa mũi tên {from} → {to}", { from: e[0], to: e[1] })} onClick={() => drop(sel)} style={{ left: m[0] - 11, top: m[1] - 11 }}
-                className="absolute z-10 grid size-[22px] place-items-center rounded-full bg-error text-cotton shadow-stock"><X className="size-3.5" /></button>
-            );
-          })()}
+          {arrowSel && (
+            <button type="button" aria-label={t("Xóa mũi tên {from} → {to}", { from: arrowSel.e[0], to: arrowSel.e[1] })} onClick={() => drop({ edge: key(arrowSel.e) })} style={{ left: arrowSel.m[0] - 11, top: arrowSel.m[1] - 11 }}
+              className="absolute z-10 grid size-[22px] place-items-center rounded-full bg-error text-cotton shadow-stock"><X className="size-3.5" /></button>
+          )}
           {gone.filter((s) => pos[s]).map((s) => { // a state deleted / renamed on YouTrack: struck out, picked to fix it
             const [x, y] = pos[s], picked = !!sel && "box" in sel && sel.box === s;
             return (
               <div key={s} data-state={s} role="button" tabIndex={0} aria-pressed={picked} aria-label={t("{state} đã bị xóa trên YouTrack: Enter để thay bằng State khác", { state: s })}
-                style={{ left: x, top: y, width: W, height: H }} onFocus={(e) => keyFocus(e, { box: s })}
+                style={{ left: x, top: y, width: W, height: H }} onFocus={(e) => keyFocus(e, { box: s })} {...hoverOn(s)}
                 onPointerDown={(e) => { if (e.button) return; const [px, py] = at(e); grab(e, { kind: "move", s, dx: px - x, dy: py - y, to: null, out: false }); }}
                 className={cn("absolute flex cursor-pointer items-center gap-1.5 rounded-[var(--radius-input)] border border-dashed border-error/70 bg-cotton pr-2 pl-2.5 text-xs outline-none transition-[box-shadow,opacity,filter] duration-(--dur-short) focus-visible:ring-2 focus-visible:ring-hl/60",
                   picked && "ring-2 ring-error/60", near && !near.has(s) && "opacity-35 blur-[1.5px]")}>
@@ -420,7 +383,7 @@ function Canvas({ states, all, gone, hidden, wf, onChange, onHide, onShow, onRep
             const picked = !!sel && "box" in sel && sel.box === s, moving = drag?.kind === "move" && drag.s === s;
             return (
               <div key={s} data-state={s} role="button" tabIndex={0} aria-pressed={picked} aria-label={t("{state}: Enter để nối mũi tên, Delete để bỏ khỏi workflow", { state: s })}
-                style={{ left: x, top: y, width: W, height: H }} onFocus={(e) => keyFocus(e, { box: s })}
+                style={{ left: x, top: y, width: W, height: H }} onFocus={(e) => keyFocus(e, { box: s })} {...hoverOn(s)}
                 onPointerDown={(e) => { if (e.button) return; const [px, py] = at(e); grab(e, { kind: "move", s, dx: px - x, dy: py - y, to: null, out: false }); }}
                 className={cn("group absolute cursor-grab rounded-[var(--radius-input)] bg-cotton shadow-stock outline-none transition-[box-shadow,opacity,filter] duration-(--dur-short) focus-visible:ring-2 focus-visible:ring-hl/60 active:cursor-grabbing",
                   (target || picked) && "ring-2 ring-hl", linking === s && "outline-2 outline-offset-2 outline-hl outline-dashed", moving && "z-10 shadow-lg", moving && drag.out && "opacity-40",

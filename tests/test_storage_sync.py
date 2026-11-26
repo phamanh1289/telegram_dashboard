@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 
 from conftest import G1, G2, A, B, msg
@@ -131,6 +132,30 @@ async def test_revoked_session_becomes_login_required(env):
     await env.bridge.start()
     await env.bridge._main
     assert env.bridge.state == "login_required"
+
+
+async def test_reconnect_skips_the_retry_wait(env):
+    tries = []
+
+    async def flaky():
+        tries.append(1)
+        if len(tries) == 1:
+            raise OSError("blocked")
+        return True
+
+    env.fake.connect_impl = flaky
+    env.bridge.retry_delay = 3600
+    await env.bridge.start()
+    while env.bridge.state != "degraded":
+        await asyncio.sleep(0)
+    await env.bridge.reconnect()
+    await asyncio.wait_for(_until(lambda: env.bridge.state == "connected"), 2)
+    await env.bridge.stop()
+
+
+async def _until(cond):
+    while not cond():
+        await asyncio.sleep(0.01)
 
 
 async def test_tracking_via_api_flow(env):

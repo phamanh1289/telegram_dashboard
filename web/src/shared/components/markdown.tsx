@@ -43,6 +43,7 @@ const BULLET = /^\s*(?:[-*+]|\d+[.)])\s+/;
 // Who a message goes to: "@be_bot", or a tag by name ([Name](tg://user?id=N), lib/inbox nameTag).
 const TAG_AT = String.raw`(?:@\w+|\[[^\]]+\]\(tg://user\?id=\d+\))`;
 const TAGS = new RegExp(`^${TAG_AT}(?:\\s+${TAG_AT})*$`); // a line of tags only
+const BOLD_LINE = /^\s*\*\*[^*\n]+\*\*\s*:?\s*$/; // a label line in bold only: "**BE:**", "**Cần hỏi lại**"
 /** A message to "@be" quoted with more than MAX_POINTS points (numbered / bulleted items, else one point per line) →
  *  several quotes of MAX_POINTS, each to the same @tag, numbered from 1: each gets its own copy / send button. A single
  *  point left over joins the message before it (4 → 4, 7 → 3 + 4, 10 → 3 + 3 + 4).
@@ -51,7 +52,13 @@ export function splitAsks(md: string): string {
   const lines = md.split("\n");
   const out: string[] = [];
   for (let i = 0; i < lines.length; ) {
-    if (!/^\s*>/.test(lines[i])) { out.push(lines[i++]); continue; }
+    if (!/^\s*>/.test(lines[i])) {
+      // "**Cần hỏi lại**\n**BE:**": two bold label lines with no blank line are one paragraph, whose label is only the
+      // first; a blank line makes "**BE:**" its own label, so the asks under it are BE's ("#QA_BE_…")
+      if (BOLD_LINE.test(lines[i]) && BOLD_LINE.test(out.at(-1) ?? "")) out.push("");
+      out.push(lines[i++]);
+      continue;
+    }
     const start = i;
     while (i < lines.length && /^\s*>/.test(lines[i])) i++;
     const body = lines.slice(start, i).map((l) => l.replace(/^\s*>\s?/, ""));

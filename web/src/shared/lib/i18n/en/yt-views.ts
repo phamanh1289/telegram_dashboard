@@ -363,7 +363,7 @@ export default {
   "Thay các mũi tên bằng luồng YouTrack đang cho phép (đọc từ mỗi state một ticket). Chưa lưu cho tới khi bấm Lưu.": "Replace the arrows with the flow YouTrack allows now (read from one ticket per state). Not saved until you click Save.",
   "Đang đọc…": "Reading…",
   "Tự xếp": "Auto-arrange",
-  "Xếp lại các ô theo luồng: state đầu ở trên, các bước sau xuống dưới.": "Rearrange the boxes along the flow: first state on top, later steps below.",
+  "Xếp lại các ô cho mũi tên ngắn và gọn nhất (ít góc rẽ, ít cắt nhau): state đầu ở trên, các bước sau ở dưới hoặc bên cạnh.": "Rearrange the boxes for the shortest, tidiest arrows (fewer corners and crossings): first state on top, later steps below or beside.",
   "Xóa hết mũi tên": "Delete all arrows",
   "Bỏ mọi mũi tên để vẽ lại từ đầu.": "Remove every arrow to redraw from scratch.",
   "State chưa dùng trong workflow": "States not in the workflow",

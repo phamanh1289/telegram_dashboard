@@ -11,10 +11,10 @@ const WIRE = "M-3 18C10 34 34 18 50 18H110";
 
 /** Sidebar footer of a module (Telegram, YouTrack): the AI robot plugs a cable into the service's socket. "on" = plugged,
  *  `live` sends pulses service → AI; "try" reaches the jack in and out (connecting); "off" pulls it out to hang loose.
- *  `href` makes the card the way to fix it (setup / login). Motion lives in globals.css (.plug-*). */
-export function AiPlug({ pose, live, icon, sock, title, sub, subWarn, hint, href, textClass, testId }: {
+ *  `href` makes the card the way to fix it (setup / login); `onClick` makes it "try again now" (lost connection). Motion lives in globals.css (.plug-*). */
+export function AiPlug({ pose, live, icon, sock, title, sub, subWarn, hint, href, onClick, textClass, testId }: {
   pose: "on" | "try" | "off"; live: boolean; icon: ReactNode; sock: string; title: string; sub: string; subWarn?: boolean;
-  hint: { title: string; text: string }; href?: string; textClass?: string; testId?: string;
+  hint: { title: string; text: string }; href?: string; onClick?: () => void; textClass?: string; testId?: string;
 }) {
   const body = (
     <>
@@ -43,10 +43,13 @@ export function AiPlug({ pose, live, icon, sock, title, sub, subWarn, hint, href
     </>
   );
   const card = "grid gap-1.5 rounded-[var(--radius-card)] bg-cotton p-2.5 shadow-stock";
+  const press = "transition-[scale] duration-(--dur-micro) hover:scale-[1.02]";
   return (
     <Hint title={hint.title} text={hint.text}>
       {href ? (
-        <Link href={href} className={cn(card, "transition-[scale] duration-(--dur-micro) hover:scale-[1.02]")}>{body}</Link>
+        <Link href={href} className={cn(card, press)}>{body}</Link>
+      ) : onClick ? (
+        <button type="button" onClick={onClick} className={cn(card, press, "w-full text-left")}>{body}</button>
       ) : (
         <div className={card}>{body}</div>
       )}
