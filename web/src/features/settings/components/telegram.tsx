@@ -1,7 +1,7 @@
 "use client";
 
 import { AtSign, BellOff, Clock1, Clock12, Clock2, Clock4, Clock8, Eye, MousePointerClick, Plus, Timer, Users, X } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useSyncExternalStore } from "react";
 import { AUTO_BRIEF } from "@/features/telegram/components/briefing-page";
@@ -9,7 +9,6 @@ import { BUILTIN_WAITS, ROLE_WAITS, saveWaitChoices, toChoice, useWaitChoices, W
 import { ADD_CHIP, POP, RulesCount, RulesSection, rulesQuery } from "@/features/telegram/components/tools-menu";
 import { Card, quietBtn, Row, usePrivacy } from "@/features/settings/components/parts";
 import { TelegramLogin } from "@/features/telegram/components/login";
-import { Fold } from "@/shared/components/ui/fold";
 import { Switch } from "@/shared/components/ui/switch";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { useT } from "@/shared/lib/i18n";
@@ -40,6 +39,7 @@ export function TelegramGroup() {
   const [notifyNote, setNotifyNote] = useState("");
   const code = usesCode(useRole()); // QA / PO: no AI Agent, no Đối chiếu BE
   const agentTags = useAgentTagsShown();
+  const still = useReducedMotion();
   async function toggleNotify(on: boolean) {
     if (on) {
       if (typeof Notification === "undefined") return setNotifyNote(t("Trình duyệt này không hỗ trợ thông báo."));
@@ -104,9 +104,15 @@ export function TelegramGroup() {
       <RulesSection kinds={["priority", "relay", "agent"]} />
     </Card>
 
-    <Fold open={agentTags}><Card advanced badge={<RulesCount kinds={["tag_be", "tag_po", "tag_qc"]} />} title="Tag khi AI Agent hỏi" info="Người được tag ở đầu câu hỏi mà phiên AI Agent gửi BE / PO / QC vào nhóm: phiên mới soạn sẵn tag này, lúc gửi tự thêm tag còn thiếu.">
+    <AnimatePresence initial={false}>{agentTags && (
+      // overflow only while it moves: the card's flash outline and shadow stay whole once open
+      <motion.div key="agent-tags" initial={{ height: 0, opacity: 0, overflow: "hidden" }} animate={{ height: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }}
+        exit={{ height: 0, opacity: 0, overflow: "hidden" }} transition={{ duration: still ? 0 : 0.2, ease: [0.2, 0, 0, 1] }}>
+      <Card advanced badge={<RulesCount kinds={["tag_be", "tag_po", "tag_qc"]} />} title="Tag khi AI Agent hỏi" info="Người được tag ở đầu câu hỏi mà phiên AI Agent gửi BE / PO / QC vào nhóm: phiên mới soạn sẵn tag này, lúc gửi tự thêm tag còn thiếu.">
       <RulesSection kinds={["tag_be", "tag_po", "tag_qc"]} />
-    </Card></Fold>
+      </Card>
+      </motion.div>
+    )}</AnimatePresence>
 
   </>;
 }

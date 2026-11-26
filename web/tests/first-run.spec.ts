@@ -50,6 +50,8 @@ test("code of unknown length: up to 8 digits, nothing sends until Đăng nhập"
   await expect(page.locator('[data-slot="code-cell"]')).toHaveCount(8);
   await page.getByLabel("Mã đăng nhập").fill("123456789");
   await expect(page.getByLabel("Mã đăng nhập")).toHaveValue("12345678");
+  await page.getByLabel("Mã đăng nhập").press("9"); // a stray key on a full code keeps it
+  await expect(page.getByLabel("Mã đăng nhập")).toHaveValue("12345678");
   expect(sent).toBe("");
   await page.getByRole("button", { name: "Đăng nhập" }).click();
   await expect(page.getByLabel("Mật khẩu 2FA")).toBeVisible();

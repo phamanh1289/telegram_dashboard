@@ -17,7 +17,7 @@ export function CodeInput({ value, onChange, length, onComplete, label, autoFocu
     <span className="relative flex gap-2">
       {Array.from({ length: cells }, (_, i) => (
         <span key={i} data-slot="code-cell" aria-hidden
-          className={cn("grid h-11 w-10 place-items-center rounded-md border bg-cotton font-mono text-lg font-bold text-ink transition-[border-color,box-shadow] duration-(--dur-micro)",
+          className={cn("grid h-11 w-10 min-w-0 shrink place-items-center rounded-md border bg-cotton font-mono text-lg font-bold text-ink transition-[border-color,box-shadow] duration-(--dur-micro)",
             focus && i === at ? "border-hl ring-2 ring-hl/25" : "border-rule-2")}>
           {value[i] ?? ""}
         </span>
@@ -28,8 +28,9 @@ export function CodeInput({ value, onChange, length, onComplete, label, autoFocu
         onSelect={(e) => { const el = e.currentTarget, end = el.value.length; if (el.selectionStart !== end || el.selectionEnd !== end) el.setSelectionRange(end, end); }}
         onChange={(e) => {
           const d = e.target.value.replace(/\D/g, "");
-          // typed or pasted into a full code: start over with the new digits, not the old ones plus a stray one
-          const v = (d.length > n && value.length === n ? d.slice(n) : d).slice(0, n);
+          // typed or pasted into a full code of known length: start over with the new digits, not the old ones plus a stray one
+          // unknown length (no auto-send): keep what was typed and drop the extra digit
+          const v = (length && d.length > n && value.length === n ? d.slice(n) : d).slice(0, n);
           onChange(v);
           if (length && v.length === n && v !== value) onComplete?.(v);
         }}
