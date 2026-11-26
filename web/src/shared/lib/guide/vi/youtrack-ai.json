@@ -27,7 +27,7 @@
         "at": "Thêm ticket: số hoặc ID, nhiều cái cách dấu phẩy, Enter"
       },
       {
-        "t": "Bấm \"Cuộc mới\" để bắt đầu lại (hoặc \"Hủy\" để dừng, \"Copy\" để chép)",
+        "t": "Bấm \"Cuộc mới\" để bắt đầu lại (hoặc \"Hủy\" để dừng, \"Copy\" để chép). \"Xóa phiên\" (bấm 2 lần) xóa hẳn phiên khỏi Lịch sử AI và đóng panel",
         "at": "Cuộc mới"
       }
     ],

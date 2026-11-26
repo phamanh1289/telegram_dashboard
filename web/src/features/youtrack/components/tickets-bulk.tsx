@@ -12,7 +12,7 @@ import { t as tNow, useT } from "@/shared/lib/i18n";
 import { type Ticket, yt, ytFieldsQuery } from "@/features/youtrack/lib/yt";
 import { Avatar, Picker, Prio, StatePill } from "./bits";
 import { saveTicket, type TicketPatch, useYt } from "./state";
-import { useFlow } from "./workflow";
+import { useFlow, WorkflowTip } from "./workflow";
 
 type Edit = [Ticket, Partial<Ticket>]; // a ticket as it is now, and the values to put on it
 /** One change on many tickets, 5 calls at a time, each through `saveTicket`: shown at once, and its answer never lands
@@ -60,6 +60,7 @@ export function BulkBar() {
   const person = (p: { login: string; name: string }) => ({ v: p.login, text: p.name, node: <><Avatar name={p.name} /><span className="truncate">{p.name}</span></> });
   const field = (name: "State" | "Priority", node: (v: string) => React.ReactNode) => (fields.data?.[name]?.length ? (
     <Picker label={name} title={t("Đổi {name} cho các ticket đã chọn", { name })} value={none} disabled={busy} className={bar}
+      foot={name === "State" ? <WorkflowTip project={y.project} /> : undefined}
       options={fields.data[name]!.map((v) => ({ v, node: node(v) }))}
       onPick={(v) => void apply(v, (x) => (name === "State" ? x.state : x.priority), (id, x) => yt.setField(id, name, x!), v, name === "State" ? { state: v } : { priority: v }, false,
         name === "State" ? (x) => { const f = flow(x.state); return !f || f.includes(v); } : undefined)} />

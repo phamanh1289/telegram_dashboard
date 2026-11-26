@@ -19,7 +19,7 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
 from telethon import errors as tg_errors
 
-from . import local_data, log_buffer, privacy, provider_accounts, providers, updater
+from . import local_data, log_buffer, privacy, provider_accounts, providers, uninstall, updater
 from .agent import AgentRunner, session_ref
 from .ai import AiService, clean_svg, parse_ticket
 from .ai_jobs import stream_answer
@@ -277,6 +277,7 @@ def create_app(
     app.include_router(build_docs_router(settings))
     app.include_router(build_follow_router(settings, live_reads))
     app.include_router(updater.build_router(settings))
+    app.include_router(uninstall.build_router(settings))
     app.include_router(privacy.build_router(settings))
     app.include_router(local_data.build_router(settings))
 
@@ -331,8 +332,10 @@ def create_app(
             return not await request.is_disconnected()
 
         def bridge_status() -> dict:
-            # loop: the Báo lại list changed; auto: the last failure of the BE automation (autobe.py)
-            return {"state": s.bridge.state, "loop": s.store.loop_rev, "auto": [s.autobe.rev, s.autobe.error]}
+            # detail: "backfilling" / "backfill_partial" (the inbox's first scan); loop: the Báo lại list changed;
+            # auto: the last failure of the BE automation (autobe.py)
+            return {"state": s.bridge.state, "detail": s.bridge.detail, "loop": s.store.loop_rev,
+                    "auto": [s.autobe.rev, s.autobe.error]}
 
         yield ServerSentEvent(retry=3000, comment="open")
         async for ev in event_stream(s.store, s.hub, start, alive=alive, status=bridge_status):

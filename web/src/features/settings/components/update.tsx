@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Check, Download, Lightbulb, Loader2, RotateCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Row, StatusLine, Switch, waitRestart } from "@/features/settings/components/parts";
+import { UninstallRow } from "@/features/settings/components/uninstall";
 import { AiFetching, UpdateHero } from "@/shared/components/ai/fetching";
 import { Markdown } from "@/shared/components/markdown";
 import { FoldMore } from "@/shared/components/ui/fold";
@@ -136,6 +137,7 @@ export function UpdateSection() {
         <Switch label={t("Tự động cập nhật")} checked={auto.isPending ? !!auto.variables : d.auto} disabled={auto.isPending} onChange={(v) => auto.mutate(v)} />
       </Row>
     )}
+    <UninstallRow />
   </>;
 }
 

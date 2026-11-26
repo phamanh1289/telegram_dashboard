@@ -210,8 +210,8 @@ export function useSync(baseline: string) {
       let loop: number | undefined; // the server's Báo lại revision: read the list again when it moves (and on (re)connect)
       let auto: [number, string] | undefined; // Vòng BE tự chạy (autobe.py): [revision, last failure]
       src.addEventListener("status", (e) => {
-        const { state, loop: rev, auto: a } = JSON.parse((e as MessageEvent).data) as { state: Status["state"]; loop?: number; auto?: [number, string] };
-        qc.setQueryData<Status>(["status"], (s) => (s ? { ...s, state } : s));
+        const { state, detail, loop: rev, auto: a } = JSON.parse((e as MessageEvent).data) as { state: Status["state"]; detail?: string | null; loop?: number; auto?: [number, string] };
+        qc.setQueryData<Status>(["status"], (s) => (s ? { ...s, state, detail: detail ?? null } : s));
         if (rev !== loop) void qc.invalidateQueries({ queryKey: ["loopback"] });
         loop = rev;
         if (a && a[0] !== auto?.[0]) {

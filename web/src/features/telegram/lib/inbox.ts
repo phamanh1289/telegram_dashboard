@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { createContext, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { api, errorText, type GroupInfo, type HandledAllResponse, type Message, type PendingItem, type RuleAdded, type Task } from "@/shared/lib/api";
+import { api, errorText, statusQuery, type GroupInfo, type HandledAllResponse, type Message, type PendingItem, type RuleAdded, type Task } from "@/shared/lib/api";
 import { type Key, t } from "@/shared/lib/i18n";
 import { aboutMe, getPref, put, readAgentProject, readOverdueHours } from "@/shared/lib/prefs";
 import { smooth } from "@/shared/lib/utils";
@@ -10,6 +10,18 @@ import { toast } from "@/shared/lib/notifications";
 import { byUnit, timeLabel } from "@/shared/lib/time";
 
 /** Pending tags across groups (or the pinned archive); one cache shared by the inbox and the sidebar. */
+/** The scan of tags after a (re)connect (first sign-in: 14 days, every group): "backfilling" while it runs,
+ *  "backfill_partial" while Telegram makes it wait (it goes on by itself); null otherwise. An empty list then means
+ *  "still gathering", not "no tag". */
+export function useScan() {
+  const d = useQuery({ ...statusQuery, staleTime: Infinity }).data?.detail;
+  return d === "backfilling" || d === "backfill_partial" ? d : null;
+}
+/** What the waiting scene says while the scan runs (`useScan`). */
+export const scanLines = (scan: "backfilling" | "backfill_partial") => (scan === "backfilling"
+  ? [t("Đang quét tag 14 ngày qua ở mọi nhóm"), t("Lần đầu sẽ lâu hơn một chút"), t("Tag mới vẫn hiện ngay khi có")]
+  : [t("Telegram bắt chờ một lúc"), t("App tự gom tiếp phần còn lại"), t("Tag mới vẫn hiện ngay khi có")]);
+
 export function pendingQuery(range: string, pinned = false) {
   return {
     queryKey: pinned ? ["pending", "pinned"] : ["pending", range],

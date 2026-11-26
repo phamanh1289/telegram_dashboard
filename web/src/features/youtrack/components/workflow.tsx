@@ -9,6 +9,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import { Dropdown } from "@/shared/components/ui/dropdown";
 import { Hint } from "@/shared/components/ui/hint";
+import { SetupTip } from "@/shared/components/ai/setup-tip";
 import { useT } from "@/shared/lib/i18n";
 import { getPref, put, useRoleOrDev, YT_ROLES } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
@@ -47,6 +48,16 @@ function layout(states: string[], edges: [string, string][], cols: number) {
   return pos;
 }
 const key = (e: [string, string]) => `${e[0]}\u0000${e[1]}`;
+
+/** The role has no workflow on: any State is allowed, so say so where a State is changed (the ticket's State menu, the bulk
+ *  bar's, above the Board) with the walk to draw one; one "Để sau" hides it everywhere. Nothing while it loads or is on. */
+export function WorkflowTip({ project, className }: { project: string; className?: string }) {
+  const t = useT();
+  const role = useRoleOrDev();
+  const wf = useQuery({ ...ytWorkflowQuery(project, role), enabled: !!project }).data; // useFlow's cache
+  return <SetupTip id="workflow" when={!!wf && !wf.on} className={className} go={t("Vẽ workflow")} tour="settings-workflow"
+    text={t("Vai trò {role} chưa bật workflow nên ticket đổi được sang mọi State, kể cả bước sai luồng.", { role: t(YT_ROLES.find(([r]) => r === role)![1]) })} />;
+}
 
 /** An unsaved edit, kept in this browser per project and role: leaving the page keeps it as a draft, only Lưu applies it. */
 const DRAFT = (at: string) => `wfDraft:${at}`;

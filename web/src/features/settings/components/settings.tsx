@@ -178,6 +178,7 @@ const ENTRIES: Entry[] = [
   { t: "Linh vật AI (icon robot)", g: "look", card: "Linh vật AI", k: "robot icon mascot loading anh avatar rồng cú cáo dragon owl fox vai trò role" },
   { t: "Trợ lý biết tuốt (bot nổi)", g: "bot", card: "Hiển thị", k: "bot huong dan guide help f1 kich thuoc size goc canh mep neo vi tri an hien cach hien thi noi co dinh ben phai thanh cong cu" },
   { t: "Model cho trợ lý", g: "bot", card: "Cách trả lời", k: "bot doc code model effort" },
+  { t: "Gợi ý cài đặt", g: "bot", card: "Gợi ý cài đặt", k: "goi y setup tips onboarding nen lam de sau hien lai an goi y workflow cai ai" },
   { t: "Tài khoản Telegram, API ID/Hash", g: "telegram", card: "Tài khoản Telegram", k: "dang nhap login so dien thoai 2fa ma" },
   { t: "Ngưỡng quá hạn", g: "telegram", card: "Hàng chờ", k: "overdue gio cho lau" },
   { t: "Nút thao tác trên tin", g: "telegram", card: "Hàng chờ", k: "ghim ngu canh mo telegram hover" },

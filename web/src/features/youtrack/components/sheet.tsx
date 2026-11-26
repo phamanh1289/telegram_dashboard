@@ -16,11 +16,10 @@ import { fmtNum, type Key, t as tNow, useT } from "@/shared/lib/i18n";
 import { useNow } from "@/shared/hooks/use-now";
 import { toast } from "@/shared/lib/notifications";
 import { goApp } from "@/shared/lib/nav";
-import { useRoleOrDev, useSetupTips, YT_ROLES } from "@/shared/lib/prefs";
+import { useRoleOrDev, useSetupTips } from "@/shared/lib/prefs";
 import { openTour } from "@/shared/lib/nav";
-import { SetupTip } from "@/shared/components/ai/setup-tip";
 import { cn } from "@/shared/lib/utils";
-import { AI_MAX, type Detail, type Field, fileUrl, useFlowRunning, issueUrl, type Ticket, type UserField, when, yt, ytDetailQuery, ytFieldsQuery, ytPeopleQuery, ytWorkflowQuery } from "@/features/youtrack/lib/yt";
+import { AI_MAX, type Detail, type Field, fileUrl, useFlowRunning, issueUrl, type Ticket, type UserField, when, yt, ytDetailQuery, ytFieldsQuery, ytPeopleQuery } from "@/features/youtrack/lib/yt";
 import { Avatar, Label, Markdown, Person, Picker, Prio, StatePill, Title, TypeTag } from "./bits";
 import { Comments, ENTRY, Rail, Who } from "./comments";
 import { saveTicket, useYt, type Yt, YtProvider } from "./state";
@@ -28,7 +27,7 @@ import { tagsFor } from "@/features/telegram/lib/mentions";
 import { StoryUpdate } from "./story-update";
 import { Related } from "./ticket-extras";
 import { WorkView } from "./work";
-import { useFlow } from "./workflow";
+import { useFlow, WorkflowTip } from "./workflow";
 
 // The UI flow dialog (and, with it, the drawing engine) loads only when it is opened.
 const FlowDialog = dynamic(() => import("./flow").then((m) => m.FlowDialog));
@@ -118,7 +117,7 @@ export function Sheet() {
             <div className={cn("min-h-0 flex-1 p-4 sm:p-5", s.kind === "work" ? "flex flex-col" : "overflow-y-auto")}>{/* work: a chat, it scrolls its own middle */}
               {s.kind === "ticket" ? <TicketView key={s.id} id={s.id} draft={s.comment} />
                 : s.kind === "list" ? <TicketList rows={s.rows} />
-                : <WorkView key={s.title + s.ids.join() + (s.resume?.id ?? "")} title={s.title} ids={s.ids} auto={s.auto} start={s.start} resume={s.resume} />}
+                : <WorkView key={s.title + s.ids.join() + (s.resume?.id ?? "")} title={s.title} ids={s.ids} auto={s.auto} start={s.start} resume={s.resume} canDelete />}
             </div>
           </motion.aside>
         </>
@@ -392,9 +391,6 @@ function FieldSelect({ ticket, name }: { ticket: Ticket; name: Field }) {
   const { key, node } = FIELD[name], cur = ticket[key] ?? "";
   const flowOf = useFlow(project);
   const flow = name === "State" ? flowOf(cur) : null; // the team's arrows out of this state; null: no rule
-  const role = useRoleOrDev();
-  const wf = useQuery({ ...ytWorkflowQuery(project, role), enabled: name === "State" && !y.config?.mock }).data; // useFlow's cache
-  const roleName = t(YT_ROLES.find(([r]) => r === role)![1]);
   const all = opts.data?.[name] ?? [];
   const values = flow ? all.filter((v) => v === cur || flow.includes(v)) : all;
   // the values could not be read (a token without rights, YouTrack down): say why the field cannot be changed here
@@ -407,7 +403,7 @@ function FieldSelect({ ticket, name }: { ticket: Ticket; name: Field }) {
   }
   return <Picker label={node(ticket[key])} title={t("Đổi {field} {id}", { field: name, id: ticket.id })} value={cur} options={options} onPick={(v) => void change(v)}
     foot={flow && all.length > values.length ? t(flow.length ? "Theo workflow của team: chỉ hiện các bước đi tiếp từ {state}" : "Workflow của team: {state} là bước cuối", { state: cur || "—" })
-      : wf && !wf.on ? <SetupTip id="workflow" when text={t("Vai trò {role} chưa bật workflow nên menu hiện mọi State, kể cả bước sai luồng.", { role: roleName })} go={t("Vẽ workflow")} tour="settings-workflow" /> : undefined} />;
+      : name === "State" ? <WorkflowTip project={project} /> : undefined} />;
 }
 
 /** A feature's own colour (AI has `ai-chip`): tinted at rest, filled under the pointer. */

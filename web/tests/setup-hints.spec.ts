@@ -52,6 +52,25 @@ test("no AI, no workflow: the AI spots show locked, the State menu says why and 
   await lit(3, page.getByRole("button", { name: "Lấy từ YouTrack" }));
 });
 
+test("no workflow: the bulk State menu and the Board say so too, and one Để sau hides it everywhere", async ({ page }) => {
+  await youtrack(page);
+  await page.goto("/youtrack/?view=tickets");
+  await page.getByLabel("Chọn tất cả ticket đang hiện").check();
+  await page.getByRole("region", { name: "Thao tác hàng loạt" }).getByRole("button", { name: "Đổi State cho các ticket đã chọn" }).click();
+  const tip = page.getByRole("note").filter({ hasText: "chưa bật workflow" });
+  await expect(tip).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Bỏ chọn" }).click();
+  await page.getByRole("radio", { name: "Board" }).or(page.getByRole("button", { name: "Board", exact: true })).first().click();
+  await expect(tip).toBeVisible(); // above the Board
+  await tip.getByRole("button", { name: "Để sau" }).click();
+  await expect(tip).toBeHidden();
+  await page.getByText("Việc 1").first().click(); // a card opens its ticket
+  await page.getByRole("button", { name: "Đổi State VA-1" }).click();
+  await expect(page.getByRole("listbox", { name: "Đổi State VA-1" })).toBeVisible();
+  await expect(tip).toBeHidden(); // the same hint in the ticket's menu
+});
+
 test("the bot lists what is worth setting up, and it switches off", async ({ page }) => {
   await page.addInitScript(() => { localStorage.setItem("ytMode", "qa"); localStorage.removeItem("aiIntro"); localStorage.removeItem("setupTips"); });
   await page.goto("/settings/");

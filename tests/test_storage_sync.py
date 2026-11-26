@@ -160,6 +160,28 @@ async def test_backfill_mentions_stores_only_tagged(env):
     assert not env.store.is_tracking(B)
 
 
+async def test_backfill_says_it_is_gathering_until_it_ends(env):
+    from telegram_dashboard.telegram.bridge import PartialBackfill
+
+    env.bridge._set_state("connected")
+    seen = []
+
+    async def fetch(cutoff, skip):
+        seen.append(env.bridge.detail)
+        return []
+
+    env.fake.fetch_mentions = fetch
+    await env.bridge.backfill_mentions()
+    assert seen == ["backfilling"] and (env.bridge.state, env.bridge.detail) == ("connected", None)
+
+    async def cut(cutoff, skip):
+        raise PartialBackfill([], wait=10)
+
+    env.fake.fetch_mentions = cut
+    assert await env.bridge.backfill_mentions() is not None  # retried later
+    assert env.bridge.detail == "backfill_partial"
+
+
 def test_since_filters_messages_and_chats(env):
     from datetime import UTC, datetime
 

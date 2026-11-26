@@ -183,7 +183,7 @@
     "tab": "youtrack",
     "area": "Ticket › Board",
     "title": "Drag cards to change State",
-    "what": "On the Board, drag a card to another column to change its State on YouTrack (while dragging, next States with no column show as drop zones in a bar floating at the board's foot, so the columns don't shift; hover one and it grows, the bar's top line turns into \"Let go to move … to …\" and the dragged card folds into a chip with just the ticket id as soon as the pointer is over the bar (it unfolds again off the bar); let go and that State's column appears right after the card's own; columns the team Workflow does not allow are faded, and a card dropped there goes back); the notice has an undo button. Drag a column header to reorder the columns (remembered per project). Done columns are folded into one button.",
+    "what": "On the Board, drag a card to another column to change its State on YouTrack (while dragging, next States with no column show as drop zones in a bar floating at the board's foot, so the columns don't shift; hover one and it grows, the bar's top line turns into \"Let go to move … to …\" and the dragged card folds into a chip with just the ticket id as soon as the pointer is over the bar (it unfolds again off the bar); let go and that State's column appears right after the card's own; columns the team Workflow does not allow are faded, and a card dropped there goes back); the notice has an undo button. Drag a column header to reorder the columns (remembered per project). Done columns are folded into one button. While your role has no workflow on, a hint \"Draw the workflow\" shows above the Board (cards can move to any State).",
     "how": [
       {
         "t": "Click \"Tickets\"",
@@ -338,7 +338,7 @@
     "tab": "youtrack",
     "area": "Ticket › Table › Bulk actions",
     "title": "Select several tickets, bulk-change Assignee / State / Priority, ask the AI",
-    "what": "Tick several tickets to change their Assignee, State (following the workflow) or Priority at once: picking a value applies it right away, with undo; tickets that fail stay selected so you can retry. Or open an AI session about the selected tickets.",
+    "what": "Tick several tickets to change their Assignee, State (following the workflow; while your role has no workflow on, the State menu hints \"Draw the workflow\") or Priority at once: picking a value applies it right away, with undo; tickets that fail stay selected so you can retry. Or open an AI session about the selected tickets.",
     "how": [
       {
         "t": "Click \"Tickets\"",

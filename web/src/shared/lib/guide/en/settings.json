@@ -145,7 +145,7 @@
     "tab": "settings",
     "area": "Settings › Telegram › Telegram account",
     "title": "Connect and sign in to Telegram",
-    "what": "Enter the API ID/Hash from my.telegram.org, then sign in with your phone number → code → 2FA password. Stored only on this machine.",
+    "what": "Enter the API ID/Hash from my.telegram.org, then sign in with your phone number → code → 2FA password. Stored only on this machine. Once signed in, the app asks your role, then gathers the tags / replies to you from the last 14 days into To do.",
     "how": [
       {
         "t": "Choose the \"Telegram\" section",
@@ -346,6 +346,29 @@
     "keys": "update github auto update new version"
   },
   {
+    "id": "settings-uninstall",
+    "tab": "settings",
+    "area": "Settings › Updates",
+    "title": "Uninstall the app from this computer",
+    "what": "Only in an installed build (install command, Setup.exe, zip), not when running from source. \"Uninstall the app\" opens a confirm box listing what gets deleted; clicking \"Uninstall\" logs the Telegram session out, stops the server, then deletes the app, all its data (including a data folder you moved), the myradar command, shortcuts and the API unlock code. It can't be undone: to keep your data, copy the data folder elsewhere first. Waits while an AI Agent task runs.",
+    "how": [
+      {
+        "t": "Choose the \"Updates\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#github\"]"
+      },
+      {
+        "t": "Click \"Uninstall the app\"",
+        "at": "Gỡ bỏ ứng dụng"
+      },
+      {
+        "t": "Read the list of what gets deleted, click \"Uninstall\"",
+        "at": "css:[role=\"alertdialog\"]"
+      },
+      "Close the browser tab (on macOS also close the server's Terminal window)"
+    ],
+    "keys": "uninstall remove delete app data log out telegram go bo"
+  },
+  {
     "id": "settings-contact",
     "tab": "settings",
     "area": "Settings › Contact",
@@ -493,7 +516,7 @@
     "tab": "settings",
     "area": "Settings › YouTrack › Workflow",
     "title": "Draw a State workflow for your role",
-    "what": "The State flow for the chosen project and role: boxes are States, arrows the allowed next steps. With \"Apply in the app\" on, the State menu, Board drag and drop and bulk changes only follow the arrows (YouTrack still checks its own flow). \"Get from YouTrack\" copies the flow YouTrack allows today, the quickest start. Dev starts with a default flow when the project has its states; QA/QC and PO/PM start empty. While it is off, the State menu shows every State, with a hint \"Draw the workflow\".",
+    "what": "The State flow for the chosen project and role: boxes are States, arrows the allowed next steps. With \"Apply in the app\" on, the State menu, Board drag and drop and bulk changes only follow the arrows (YouTrack still checks its own flow). \"Get from YouTrack\" copies the flow YouTrack allows today, the quickest start. Dev starts with a default flow when the project has its states; QA/QC and PO/PM start empty. While it is off, a ticket can move to any State; a ticket's State menu, the bulk State menu and the top of the Board show a hint \"Draw the workflow\" (\"Later\" hides all three).",
     "how": [
       {
         "t": "Choose \"YouTrack\"",

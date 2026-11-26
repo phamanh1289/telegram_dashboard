@@ -145,7 +145,7 @@
     "tab": "settings",
     "area": "Cài đặt › Telegram › Tài khoản Telegram",
     "title": "Kết nối và đăng nhập Telegram",
-    "what": "Nhập API ID/Hash lấy tại my.telegram.org, rồi đăng nhập bằng số điện thoại → mã → mật khẩu 2FA. Chỉ lưu trên máy này.",
+    "what": "Nhập API ID/Hash lấy tại my.telegram.org, rồi đăng nhập bằng số điện thoại → mã → mật khẩu 2FA. Chỉ lưu trên máy này. Đăng nhập xong, app hỏi vai trò rồi tự gom các tin tag / reply bạn trong 14 ngày gần nhất vào Việc cần xử lý.",
     "how": [
       {
         "t": "Chọn mục \"Telegram\"",
@@ -346,6 +346,29 @@
     "keys": "cap nhat update github tu dong cap nhat auto update phien ban moi"
   },
   {
+    "id": "settings-uninstall",
+    "tab": "settings",
+    "area": "Cài đặt › Cập nhật",
+    "title": "Gỡ bỏ ứng dụng khỏi máy",
+    "what": "Chỉ có ở bản cài (lệnh cài, Setup.exe, zip), không có ở bản chạy từ source. Bấm \"Gỡ bỏ ứng dụng\" mở hộp xác nhận liệt kê những gì bị xóa; bấm \"Gỡ bỏ\" thì app đăng xuất phiên Telegram, tắt server rồi xóa app, toàn bộ dữ liệu (kể cả thư mục dữ liệu đã đổi chỗ), lệnh myradar, shortcut và mã mở khóa API. Không hoàn tác được: muốn giữ dữ liệu thì chép thư mục data ra chỗ khác trước. Đang có task AI Agent thì đợi task xong.",
+    "how": [
+      {
+        "t": "Chọn mục \"Cập nhật\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#github\"]"
+      },
+      {
+        "t": "Bấm \"Gỡ bỏ ứng dụng\"",
+        "at": "Gỡ bỏ ứng dụng"
+      },
+      {
+        "t": "Đọc danh sách sẽ bị xóa, bấm \"Gỡ bỏ\"",
+        "at": "css:[role=\"alertdialog\"]"
+      },
+      "Đóng tab trình duyệt (macOS: đóng cả cửa sổ Terminal của server)"
+    ],
+    "keys": "go bo go cai dat xoa app uninstall remove xoa du lieu dang xuat telegram"
+  },
+  {
     "id": "settings-contact",
     "tab": "settings",
     "area": "Cài đặt › Liên hệ",
@@ -493,7 +516,7 @@
     "tab": "settings",
     "area": "Cài đặt › YouTrack › Workflow",
     "title": "Vẽ workflow State cho vai trò",
-    "what": "Luồng State cho project và vai trò đang chọn: ô là State, mũi tên là bước được đi tiếp. Bật \"Áp dụng trong app\" thì menu State, kéo thả trên Board và đổi hàng loạt chỉ cho đi theo mũi tên (YouTrack vẫn kiểm luồng của nó). \"Lấy từ YouTrack\" chép luồng YouTrack đang cho phép, nhanh nhất để bắt đầu. Dev có sẵn luồng mặc định khi project đủ state; QA/QC, PO/PM bắt đầu trống. Chưa bật thì menu State hiện mọi State, kèm dòng gợi ý \"Vẽ workflow\".",
+    "what": "Luồng State cho project và vai trò đang chọn: ô là State, mũi tên là bước được đi tiếp. Bật \"Áp dụng trong app\" thì menu State, kéo thả trên Board và đổi hàng loạt chỉ cho đi theo mũi tên (YouTrack vẫn kiểm luồng của nó). \"Lấy từ YouTrack\" chép luồng YouTrack đang cho phép, nhanh nhất để bắt đầu. Dev có sẵn luồng mặc định khi project đủ state; QA/QC, PO/PM bắt đầu trống. Chưa bật thì ticket đổi được sang mọi State; menu State của ticket, menu State khi đổi hàng loạt và đầu Board có dòng gợi ý \"Vẽ workflow\" (\"Để sau\" ẩn cả ba).",
     "how": [
       {
         "t": "Chọn mục \"YouTrack\"",

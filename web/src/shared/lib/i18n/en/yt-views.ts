@@ -308,6 +308,7 @@ export default {
   "Có instructions {role}": "{role} instructions on",
   "Bắt đầu cuộc trò chuyện mới với các ticket này": "Start a new conversation about these tickets",
   "Cuộc mới": "New chat",
+  "Xóa phiên này khỏi Lịch sử AI và đóng panel": "Delete this session from AI history and close the panel",
   "Thư mục dự án để AI đọc code khi trả lời": "Project folder whose code AI reads when answering",
   "Không đọc code": "Don't read code",
   "AI được chạy lệnh": "AI may run commands",

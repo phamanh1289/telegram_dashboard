@@ -261,6 +261,10 @@ class TelethonTransport:
     async def disconnect(self) -> None:
         await self.client.disconnect()
 
+    async def log_out(self) -> bool:
+        """End this session on Telegram's side (uninstall): it leaves Settings › Devices."""
+        return await self.client.log_out()
+
     def is_connected(self) -> bool:
         return self.client.is_connected()
 

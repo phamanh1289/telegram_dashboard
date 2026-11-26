@@ -40,6 +40,7 @@ npx telegram-dashboard
   <a href="#hướng-dẫn-sử-dụng">Sử dụng</a> ·
   <a href="#ai-tùy-chọn">AI</a> ·
   <a href="#xử-lý-sự-cố">Sự cố</a> ·
+  <a href="#gỡ-cài-đặt">Gỡ cài đặt</a> ·
   <a href="#cho-developer">Developer</a>
 </p>
 
@@ -343,12 +344,62 @@ Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 
 ## Gỡ cài đặt
 
-| | Cách gỡ |
+**Cách nhanh (khuyên dùng)**: trong app vào **Cài đặt › Cập nhật › Gỡ bỏ ứng dụng** › **Gỡ bỏ**. App đăng xuất phiên Telegram, tắt server rồi xóa mọi thứ trong bảng dưới (Windows: chạy luôn bộ gỡ để bỏ Radar khỏi danh sách Apps). Xong thì đóng tab trình duyệt (macOS: đóng cả cửa sổ Terminal của server). Nút chỉ có ở bản cài, không có khi chạy từ source; đang có task AI Agent thì đợi task xong.
+
+Không mở được app, hoặc muốn gỡ bằng tay: làm theo các bước dưới. Radar để file ở các chỗ sau, gỡ sạch là xóa hết những chỗ này:
+
+| Thứ | macOS | Windows |
+|---|---|---|
+| App và dữ liệu (`data/`: phiên Telegram, database, cài đặt, log) | `~/Applications/Telegram Dashboard` | `%LOCALAPPDATA%\Programs\Telegram Dashboard` |
+| Lối mở app | `~/Applications/Radar.app`, `~/.local/bin/myradar`, `~/.local/bin/mydashboard` | Shortcut **Radar** ở Start Menu / Desktop (bộ gỡ tự xóa) |
+| Mã mở khóa API, khóa server | `~/.telegram_dashboard/` | `%USERPROFILE%\.telegram_dashboard\` |
+| Dữ liệu đã chuyển chỗ (nếu từng dùng **Đổi thư mục**) | Thư mục hiện ở **Cài đặt › Dữ liệu** | Như bên trái |
+| Agent Antigravity (nếu từng dùng Antigravity) | `~/.gemini/antigravity-cli/agents/telegram-dashboard-*.md` | `%USERPROFILE%\.gemini\antigravity-cli\agents\telegram-dashboard-*.md` |
+
+> **Xóa `data/` là mất hẳn**: phiên Telegram, nháp, quy tắc, lịch sử AI, không khôi phục được. Muốn cài lại sau mà giữ dữ liệu thì chép thư mục `data/` ra chỗ khác trước, cài lại xong chép về đúng chỗ cũ.
+
+### 1. Trước khi gỡ
+
+1. Nếu từng **Đổi thư mục** dữ liệu: mở **Cài đặt › Dữ liệu**, ghi lại đường dẫn đang dùng (bước 3 cần xóa thêm thư mục đó).
+2. **Tắt app**: đóng cửa sổ Terminal (macOS) / cửa sổ đen (Windows) của server. Windows không gỡ được khi app còn chạy.
+3. **Thu hồi phiên Telegram** (nên làm, kể cả khi đã xóa file): app Telegram › Settings › Devices (*Privacy and Security › Active Sessions* trên một số bản) › chọn phiên tên app bạn đặt ở my.telegram.org (ví dụ `radar`) › **Terminate**.
+
+### 2. Gỡ app
+
+#### macOS
+
+Mở **Terminal**, dán lệnh dưới đây, Enter (xóa app, dữ liệu trong thư mục cài, lệnh `myradar` và mã API):
+
+```bash
+rm -rf ~/Applications/"Telegram Dashboard" ~/Applications/Radar.app ~/.local/bin/myradar ~/.local/bin/mydashboard ~/.telegram_dashboard
+```
+
+- Bỏ Radar khỏi Dock nếu đã kéo vào: chuột phải icon › *Options* › *Remove from Dock*.
+- Lệnh cài từng thêm dòng `export PATH="$HOME/.local/bin:$PATH"` vào `~/.zprofile`. Dòng này vô hại; chỉ xóa nếu không công cụ nào khác của bạn dùng `~/.local/bin`.
+- Đã tải zip và giải nén chỗ khác: xóa thư mục `Telegram Dashboard` ở chỗ đó.
+
+#### Windows
+
+1. **Settings › Apps › Installed apps** (Windows 10: *Apps & features*) › **Radar** › **Uninstall** › xác nhận. Bộ gỡ xóa app, shortcut và các bản cập nhật, nhưng **giữ lại `data\`**.
+2. Xóa dữ liệu và mã API: mở **PowerShell**, dán lệnh, Enter:
+
+   ```powershell
+   Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Programs\Telegram Dashboard", "$env:USERPROFILE\.telegram_dashboard" -ErrorAction SilentlyContinue
+   ```
+
+- Không thấy **Radar** trong danh sách Apps: bạn dùng bản zip (không cài). Xóa thư mục đã giải nén, rồi chạy lệnh ở bước 2.
+- Bộ cài từng thêm thư mục cài vào PATH của tài khoản; sau khi xóa thư mục thì dòng đó không còn tác dụng, để nguyên cũng được.
+
+### 3. Dọn phần còn lại (nếu có)
+
+| Trường hợp | Làm gì |
 |---|---|
-| Windows | Settings › Apps › **Radar** › Uninstall. Thư mục `data\` (gồm phiên Telegram) được giữ lại; xóa tay nếu muốn sạch hẳn |
-| macOS | Xóa `~/Applications/Telegram Dashboard`, `~/Applications/Radar.app` và `~/.local/bin/myradar`, `~/.local/bin/mydashboard` |
-| Đã cài qua npm | Gỡ app như hai dòng trên; nếu từng `npm i -g` thì thêm `npm uninstall -g telegram-dashboard` |
-| Cả hai | Nên thu hồi phiên: Telegram › Settings › Devices › kết thúc phiên của Radar |
+| Từng **Đổi thư mục** dữ liệu | Xóa thư mục `data` ở đường dẫn đã ghi ở bước 1 |
+| Từng `npm i -g telegram-dashboard` | `npm uninstall -g telegram-dashboard`. Chỉ dùng `npx` thì không cần làm gì (cache npm không chứa dữ liệu) |
+| Từng dùng Antigravity | macOS: `rm -f ~/.gemini/antigravity-cli/agents/telegram-dashboard-*.md` · Windows (PowerShell): `Remove-Item "$env:USERPROFILE\.gemini\antigravity-cli\agents\telegram-dashboard-*.md"` |
+| Token YouTrack đã tạo cho Radar | YouTrack › Profile › **Account Security** › xóa token đó |
+
+AI CLI (Claude Code, Codex, Antigravity) là công cụ riêng của bạn, gỡ Radar không đụng tới; gỡ chúng theo hướng dẫn của từng hãng nếu muốn.
 
 ## Dữ liệu và bảo mật
 
