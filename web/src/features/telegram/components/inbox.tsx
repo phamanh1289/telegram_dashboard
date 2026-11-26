@@ -26,6 +26,7 @@ import { ShortcutsDialog } from "@/shared/components/shortcuts";
 import { Toaster, TopBar, useDashboardDown } from "@/app/_components/shell";
 import { HAPPY_MS, TelegramLoginPage } from "@/features/telegram/components/login";
 import { RolePicker } from "@/shared/components/role-picker";
+import { ScanPicker } from "@/features/telegram/components/scan-picker";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery, readTagRange, saveTagRange } from "@/shared/components/date-range";
 import { Button } from "@/shared/components/ui/button";
 import { Skeleton } from "@/shared/components/ui/skeleton";
@@ -667,6 +668,7 @@ function Inbox({ status }: { status: Status }) {
           setSearchOpen(true);
         }} /></QaCodes.Provider>
       <TicketSheetHost />
+      <ScanPicker />
       <Toaster />
     </div>
   );

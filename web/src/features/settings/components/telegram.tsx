@@ -9,6 +9,7 @@ import { BUILTIN_WAITS, ROLE_WAITS, saveWaitChoices, toChoice, useWaitChoices, W
 import { ADD_CHIP, POP, RulesCount, RulesSection, rulesQuery } from "@/features/telegram/components/tools-menu";
 import { Card, quietBtn, Row, usePrivacy } from "@/features/settings/components/parts";
 import { TelegramLogin } from "@/features/telegram/components/login";
+import { ScanPicker } from "@/features/telegram/components/scan-picker";
 import { Switch } from "@/shared/components/ui/switch";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { useT } from "@/shared/lib/i18n";
@@ -54,6 +55,7 @@ export function TelegramGroup() {
   return <>
     <Card title="Tài khoản Telegram" info="API ID/Hash và phiên đăng nhập chỉ lưu trên máy này (thư mục data/).">
       <TelegramLogin />
+      <ScanPicker />
     </Card>
 
     <Card title="Hàng chờ">

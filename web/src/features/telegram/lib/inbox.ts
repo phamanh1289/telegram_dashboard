@@ -10,16 +10,17 @@ import { toast } from "@/shared/lib/notifications";
 import { byUnit, timeLabel } from "@/shared/lib/time";
 
 /** Pending tags across groups (or the pinned archive); one cache shared by the inbox and the sidebar. */
-/** The scan of tags after a (re)connect (first sign-in: 14 days, every group): "backfilling" while it runs,
+/** The scan of tags after a (re)connect (first sign-in: as far back as picked in ScanPicker, every group): "backfilling" while it runs,
  *  "backfill_partial" while Telegram makes it wait (it goes on by itself); null otherwise. An empty list then means
  *  "still gathering", not "no tag". */
 export function useScan() {
   const d = useQuery({ ...statusQuery, staleTime: Infinity }).data?.detail;
-  return d === "backfilling" || d === "backfill_partial" ? d : null;
+  // waiting for the ScanPicker answer: the list behind it is still to fill, not "all done"
+  return d === "backfill_choice" ? "backfilling" : d === "backfilling" || d === "backfill_partial" ? d : null;
 }
 /** What the waiting scene says while the scan runs (`useScan`). */
 export const scanLines = (scan: "backfilling" | "backfill_partial") => (scan === "backfilling"
-  ? [t("Đang quét tag 14 ngày qua ở mọi nhóm"), t("Lần đầu sẽ lâu hơn một chút"), t("Tag mới vẫn hiện ngay khi có")]
+  ? [t("Đang quét tag ở mọi nhóm"), t("Lần đầu sẽ lâu hơn một chút"), t("Tag mới vẫn hiện ngay khi có")]
   : [t("Telegram bắt chờ một lúc"), t("App tự gom tiếp phần còn lại"), t("Tag mới vẫn hiện ngay khi có")]);
 
 export function pendingQuery(range: string, pinned = false) {

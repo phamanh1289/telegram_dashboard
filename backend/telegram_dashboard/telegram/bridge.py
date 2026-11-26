@@ -22,8 +22,8 @@ log = logging.getLogger("telegram_dashboard.telegram")
 SEND_TIMEOUT = 30.0
 RETRY_DELAY = 5.0
 WATCH_INTERVAL = 20.0
-# ponytail: fixed look-back for tags on connect; make it a setting if 14 days is not enough.
-BACKFILL_DAYS = 14
+BACKFILL_DAYS = 14  # look-back for tags on connect; a fresh sign-in picks its own (scan_from, 1..BACKFILL_MAX days)
+BACKFILL_MAX = 30
 NOTIFY_PREVIEW = False  # message text in tag banners (Settings › Telegram; privacy.py sets it)
 BACKFILL_RETRY = 300.0  # seconds before retrying a backfill that failed (a flood wait says its own)
 BACKFILL_MARGIN = timedelta(hours=1)  # a reconnect looks back from the last full backfill, minus this
@@ -114,6 +114,9 @@ class TelegramBridge:
         self.on_tags = None  # async (new pending tags) -> None: autobe.AutoBe.on_tags, set by the app
         self._backfilled_at = datetime.fromtimestamp(0, UTC)  # last backfill that read everything
         self._partial: tuple[datetime, datetime, frozenset[str]] | None = None  # cut-short pass: cutoff, start, done
+        # None: just signed in, waiting for the pick (scan_from); the pick until the first full scan; then BACKFILL_DAYS
+        self.scan_days: int | None = BACKFILL_DAYS
+        self._scan_now = False  # scan_from asked for a scan: `_run` starts it on its next turn
         if transport is not None:
             transport.attach(self)
 
@@ -137,9 +140,23 @@ class TelegramBridge:
             self._wake.set()
 
     def forget_account(self) -> None:
-        """Another account signs in: its name is read again on connect and its first backfill looks back in full."""
+        """Another account signs in: its name is read again on connect and its first backfill waits for the user to
+        pick how far back (popup → scan_from), then looks back in full."""
         self.me = self.me_name = ""
         self._backfilled_at, self._partial = datetime.fromtimestamp(0, UTC), None
+        self.scan_days = None
+
+    def scan_from(self, days: int) -> bool:
+        """The user picked the look-back after signing in: the first scan reads `days` back; once it has read
+        everything, reconnects look back BACKFILL_DAYS again. False (nothing done) when no pick is awaited: a second
+        tab, or a scan cut short and waiting out Telegram (an early call would only lengthen the wait)."""
+        if self.scan_days is not None:
+            return False
+        self.scan_days, self._scan_now = days, True
+        if self.detail == "backfill_choice":  # the popup closes on the next status read, not once the loop wakes
+            self._set_state(self.state, "backfilling")
+        self._wake.set()
+        return True
 
     async def set_transport(self, transport: Transport) -> None:
         """Swap in a transport built from new API credentials (Settings) and connect it."""
@@ -191,9 +208,13 @@ class TelegramBridge:
                     self._set_state("degraded", type(e).__name__)
                 else:
                     up = True
-                    self._set_state("connected")
-                    backfill_at = await self.backfill_mentions()  # its dialog scan also warms the entity cache
-            elif backfill_at is not None and time.monotonic() >= backfill_at:
+                    if self.scan_days is None:  # just signed in: the inbox asks how far back first
+                        self._set_state("connected", "backfill_choice")
+                        backfill_at = None
+                    else:
+                        self._set_state("connected")
+                        backfill_at = await self.backfill_mentions()  # its dialog scan also warms the entity cache
+            elif self._scan_now or (backfill_at is not None and time.monotonic() >= backfill_at):
                 backfill_at = await self.backfill_mentions()
             # ponytail: liveness polling; Telethon 1.x exposes no reconnect event.
             with contextlib.suppress(TimeoutError):
@@ -225,10 +246,12 @@ class TelegramBridge:
         looks back only to the last complete backfill (Telethon's catch-up replays the rest).
         Cut short / failed: the monotonic time `_run` retries it at (status detail says so meanwhile)."""
         started = datetime.now(UTC)
-        # the inbox shows "gathering", not "no tag yet", until it ends (first sign-in: 14 days)
+        self._scan_now = False
+        # the inbox shows "gathering", not "no tag yet", until it ends (first sign-in: the days picked)
         if self.state == "connected":
             self._set_state("connected", "backfilling")
-        cutoff = max(started - timedelta(days=BACKFILL_DAYS), self._backfilled_at - BACKFILL_MARGIN)
+        days = self.scan_days or BACKFILL_DAYS
+        cutoff = max(started - timedelta(days=days), self._backfilled_at - BACKFILL_MARGIN)
         skip: frozenset[str] = frozenset()
         if self._partial:  # finishing a cut-short pass: as far back, without the groups it read in full
             cutoff, started, skip = self._partial
@@ -243,8 +266,8 @@ class TelegramBridge:
             fresh = set(await self.db.write(self.store.store_mentions, found))
             if fresh and self.on_tags:
                 self._spawn(self.on_tags([m for _, _, m, _ in found if (m.chat_id, m.message_id) in fresh]))
-            if retry is None:
-                self._backfilled_at, self._partial = started, None
+            if retry is None:  # read everything: reconnects look back the usual window, not the first pick
+                self._backfilled_at, self._partial, self.scan_days = started, None, BACKFILL_DAYS
         except Exception as e:
             log.warning("mention backfill failed: %s: %s", type(e).__name__, e)
             retry = BACKFILL_RETRY
