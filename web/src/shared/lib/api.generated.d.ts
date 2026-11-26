@@ -1937,6 +1937,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/telegram/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Telegram Scan
+         * @description After sign-in: how far back the first tag scan reads (popup in the inbox / Cài đặt).
+         */
+        post: operations["telegram_scan_api_telegram_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/groups": {
         parameters: {
             query?: never;
@@ -5139,6 +5159,11 @@ export interface components {
         TelegramPhone: {
             /** Phone */
             phone: string;
+        };
+        /** TelegramScan */
+        TelegramScan: {
+            /** Days */
+            days: number;
         };
         /** TelegramSignIn */
         TelegramSignIn: {
@@ -8747,6 +8772,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TelegramSignInResult"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    telegram_scan_api_telegram_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelegramScan"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

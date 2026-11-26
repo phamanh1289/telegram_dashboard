@@ -492,6 +492,10 @@ class TelegramSignInResult(BaseModel):
     password_required: bool
 
 
+class TelegramScan(BaseModel):
+    days: int = Field(ge=1, le=30)  # bridge.BACKFILL_MAX
+
+
 class YouTrackAuth(BaseModel):
     # the token rides every request: plain http only to this machine
     url: str = Field(pattern=r"^(https://[^\s/]+|http://(localhost|127\.0\.0\.1)(:\d+)?)(/[^\s]*)?$", max_length=200)

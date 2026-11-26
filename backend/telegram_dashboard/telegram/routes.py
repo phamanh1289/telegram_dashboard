@@ -38,6 +38,7 @@ from ..models import (
     TelegramApp,
     TelegramCodeSent,
     TelegramPhone,
+    TelegramScan,
     TelegramSignIn,
     TelegramSignInResult,
     WeekStats,
@@ -441,6 +442,12 @@ def build_router(
         live_reads.forget()  # groups, members, Q&A read as the account before
         await S(request).bridge.start()  # the run loop stopped at login_required
         return TelegramSignInResult(password_required=False)
+
+
+    @router.post("/api/telegram/scan", status_code=204)
+    async def telegram_scan(body: TelegramScan, request: Request) -> None:
+        """After sign-in: how far back the first tag scan reads (popup in the inbox / Cài đặt)."""
+        S(request).bridge.scan_from(body.days)
 
 
     return router

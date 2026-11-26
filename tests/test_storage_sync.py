@@ -207,6 +207,33 @@ async def test_backfill_says_it_is_gathering_until_it_ends(env):
     assert env.bridge.detail == "backfill_partial"
 
 
+async def test_fresh_sign_in_waits_for_the_picked_look_back(env):
+    import asyncio
+    from datetime import UTC, datetime, timedelta
+
+    cutoffs = []
+
+    async def fetch(cutoff, *, skip=frozenset()):
+        cutoffs.append(cutoff)
+        return []
+
+    env.fake.fetch_mentions = fetch
+    env.bridge.forget_account()
+    await env.bridge.start()
+    for _ in range(100):
+        if env.bridge.detail == "backfill_choice":
+            break
+        await asyncio.sleep(0.01)
+    assert env.bridge.detail == "backfill_choice" and not cutoffs  # nothing scanned before the popup answers
+    env.bridge.scan_from(3)
+    for _ in range(100):
+        if cutoffs and env.bridge.detail is None:
+            break
+        await asyncio.sleep(0.01)
+    await env.bridge.stop()
+    assert len(cutoffs) == 1 and abs(datetime.now(UTC) - timedelta(days=3) - cutoffs[0]) < timedelta(minutes=1)
+
+
 def test_since_filters_messages_and_chats(env):
     from datetime import UTC, datetime
 
