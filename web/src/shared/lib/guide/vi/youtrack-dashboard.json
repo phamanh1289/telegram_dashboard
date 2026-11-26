@@ -362,20 +362,12 @@
     "id": "yt-du-lieu-mock",
     "tab": "youtrack",
     "area": "YouTrack › Chưa có token",
-    "title": "Chưa có token: tự mở Cài đặt › YouTrack",
-    "what": "Chưa dán token YouTrack thì mở tab YouTrack sẽ tự chuyển sang Cài đặt › YouTrack để kết nối; không có dữ liệu mẫu.",
+    "title": "Chưa có token: kết nối ngay trong tab",
+    "what": "Chưa dán token YouTrack thì tab YouTrack chỉ hiện thẻ \"Kết nối YouTrack\" ngay trong tab (linh vật nhắm mắt khi bạn gõ token, lắc đầu khi token sai); không có dữ liệu mẫu. Kết nối xong, app hỏi vai trò rồi mới tải ticket. Đổi URL / token sau này ở Cài đặt › YouTrack.",
     "how": [
       {
-        "t": "Bấm \"YouTrack\" trên thanh trên cùng: chưa có token thì trang tự chuyển sang Cài đặt › YouTrack",
+        "t": "Bấm \"YouTrack\" trên thanh trên cùng: chưa có token thì tab hiện thẻ \"Kết nối YouTrack\"",
         "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]"
-      },
-      {
-        "t": "Bấm biểu tượng \"Cài đặt\" ở góc phải thanh trên",
-        "at": "Cài đặt"
-      },
-      {
-        "t": "Chọn mục \"YouTrack\"",
-        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
       },
       {
         "t": "Nhập \"URL YouTrack\"",

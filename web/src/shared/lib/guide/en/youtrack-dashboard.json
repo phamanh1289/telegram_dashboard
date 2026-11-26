@@ -362,20 +362,12 @@
     "id": "yt-du-lieu-mock",
     "tab": "youtrack",
     "area": "YouTrack › No token yet",
-    "title": "No token yet: opens Settings › YouTrack",
-    "what": "Until a YouTrack token is pasted, opening the YouTrack tab switches to Settings › YouTrack to connect; there is no sample data.",
+    "title": "No token yet: connect right in the tab",
+    "what": "Until a YouTrack token is pasted, the YouTrack tab shows only the \"Connect YouTrack\" card in place (the mascot shuts its eyes while you type the token and shakes its head at a wrong one); there is no sample data. Once connected, the app asks your role, then loads tickets. Change the URL / token later in Settings › YouTrack.",
     "how": [
       {
-        "t": "Click \"YouTrack\" in the top bar: without a token the page switches to Settings › YouTrack by itself",
+        "t": "Click \"YouTrack\" in the top bar: without a token the tab shows the \"Connect YouTrack\" card",
         "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]"
-      },
-      {
-        "t": "Click the \"Settings\" icon at the right of the top bar",
-        "at": "Cài đặt"
-      },
-      {
-        "t": "Choose the \"YouTrack\" section",
-        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
       },
       {
         "t": "Enter the \"YouTrack URL\"",

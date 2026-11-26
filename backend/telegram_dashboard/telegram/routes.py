@@ -36,6 +36,7 @@ from ..models import (
     RuleRequest,
     SnoozeRequest,
     TelegramApp,
+    TelegramCodeSent,
     TelegramPhone,
     TelegramSignIn,
     TelegramSignInResult,
@@ -424,9 +425,9 @@ def build_router(
         return t
 
 
-    @router.post("/api/telegram/code", status_code=204)
-    async def telegram_code(body: TelegramPhone, request: Request) -> None:
-        await _login_transport(request).send_code(body.phone.replace(" ", ""))
+    @router.post("/api/telegram/code")
+    async def telegram_code(body: TelegramPhone, request: Request) -> TelegramCodeSent:
+        return await _login_transport(request).send_code(body.phone.replace(" ", ""))
 
 
     @router.post("/api/telegram/sign-in")

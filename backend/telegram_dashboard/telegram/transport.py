@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .. import ai
 from ..errors import ApiError
-from ..models import FileInfo, GroupInfo, LinkSpan, Member, SentMessage, StoredMessage, utf16_len
+from ..models import FileInfo, GroupInfo, LinkSpan, Member, SentMessage, StoredMessage, TelegramCodeSent, utf16_len
 from .bridge import LoginRequired, PartialBackfill, SendRejected, TelegramBridge, split_format
 
 log = logging.getLogger("telegram_dashboard.telegram")
@@ -215,8 +215,9 @@ class TelethonTransport:
         return f"@{me.username}" if getattr(me, "username", None) else name
 
     # ---- login from the dashboard (Settings) --------------------------------
-    async def send_code(self, phone: str) -> None:
+    async def send_code(self, phone: str) -> TelegramCodeSent:
         from telethon import errors
+        from telethon.tl import types
 
         try:
             if not self.client.is_connected():
@@ -227,6 +228,10 @@ class TelethonTransport:
             except ValueError:  # request_retries=0: PHONE_MIGRATE only switched DC; ask again
                 sent = await self.client.send_code_request(phone)
             self._code_hash = sent.phone_code_hash
+            sms = (types.auth.SentCodeTypeSms, types.auth.SentCodeTypeSmsWord, types.auth.SentCodeTypeSmsPhrase)
+            app = isinstance(sent.type, types.auth.SentCodeTypeApp)
+            via = "app" if app else "sms" if isinstance(sent.type, sms) else "other"
+            return TelegramCodeSent(via=via, length=getattr(sent.type, "length", None))
         except errors.FloodWaitError as e:
             raise ApiError(429, "flood_wait", retry_after=e.seconds) from e
         except (errors.PhoneNumberInvalidError, errors.PhoneNumberBannedError) as e:

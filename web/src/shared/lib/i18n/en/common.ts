@@ -4,6 +4,8 @@ const plural = (n: number | string, one: string, many: string) => (Number(n) ===
 
 // Shared strings: dates and durations (lib/time), API errors (lib/api, lib/yt), the language picker. Keys: the Vietnamese source.
 export default {
+  // ui/input SecretInput
+  "Hiện / ẩn nội dung": "Show / hide",
   // lib/time
   "Hôm qua": "Yesterday",
   "Hôm nay": "Today",
