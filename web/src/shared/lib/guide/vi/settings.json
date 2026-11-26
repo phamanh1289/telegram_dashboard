@@ -493,7 +493,7 @@
     "tab": "settings",
     "area": "Cài đặt › YouTrack › Workflow",
     "title": "Vẽ workflow State cho vai trò",
-    "what": "Luồng State cho project và vai trò đang chọn: ô là State, mũi tên là bước được đi tiếp. Bật \"Áp dụng trong app\" thì menu State, kéo thả trên Board và đổi hàng loạt chỉ cho đi theo mũi tên (YouTrack vẫn kiểm luồng của nó). \"Lấy từ YouTrack\" chép luồng YouTrack đang cho phép, nhanh nhất để bắt đầu. Dev có sẵn luồng mặc định khi project đủ state; QA/QC, PO/PM bắt đầu trống. Chưa bật thì menu State hiện mọi State, kèm dòng gợi ý \"Vẽ workflow\".",
+    "what": "Luồng State cho project và vai trò đang chọn: ô là State, mũi tên là bước được đi tiếp. Bật \"Áp dụng trong app\" thì menu State, kéo thả trên Board và đổi hàng loạt chỉ cho đi theo mũi tên (YouTrack vẫn kiểm luồng của nó). \"Lấy từ YouTrack\" chép luồng YouTrack đang cho phép, nhanh nhất để bắt đầu. Dev có sẵn luồng mặc định khi project đủ state; QA/QC, PO/PM bắt đầu trống. Chưa bật thì ticket đổi được sang mọi State; menu State của ticket, menu State khi đổi hàng loạt và đầu Board có dòng gợi ý \"Vẽ workflow\" (\"Để sau\" ẩn cả ba).",
     "how": [
       {
         "t": "Chọn mục \"YouTrack\"",

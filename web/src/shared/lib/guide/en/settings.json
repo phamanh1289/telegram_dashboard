@@ -493,7 +493,7 @@
     "tab": "settings",
     "area": "Settings › YouTrack › Workflow",
     "title": "Draw a State workflow for your role",
-    "what": "The State flow for the chosen project and role: boxes are States, arrows the allowed next steps. With \"Apply in the app\" on, the State menu, Board drag and drop and bulk changes only follow the arrows (YouTrack still checks its own flow). \"Get from YouTrack\" copies the flow YouTrack allows today, the quickest start. Dev starts with a default flow when the project has its states; QA/QC and PO/PM start empty. While it is off, the State menu shows every State, with a hint \"Draw the workflow\".",
+    "what": "The State flow for the chosen project and role: boxes are States, arrows the allowed next steps. With \"Apply in the app\" on, the State menu, Board drag and drop and bulk changes only follow the arrows (YouTrack still checks its own flow). \"Get from YouTrack\" copies the flow YouTrack allows today, the quickest start. Dev starts with a default flow when the project has its states; QA/QC and PO/PM start empty. While it is off, a ticket can move to any State; a ticket's State menu, the bulk State menu and the top of the Board show a hint \"Draw the workflow\" (\"Later\" hides all three).",
     "how": [
       {
         "t": "Choose \"YouTrack\"",

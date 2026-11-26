@@ -17,6 +17,7 @@ import { MultiSelect, Person, Popover, Prio, StatePill, Tag, TypeTag } from "./b
 import { type AssigneeActs, AssigneePicker } from "./sheet";
 import { CAP_STEP, useYt } from "./state";
 import { Board } from "./tickets-board";
+import { WorkflowTip } from "./workflow";
 import { BulkBar } from "./tickets-bulk";
 import { grab, morph, type Snap, useFlip } from "./tickets-morph";
 import { aiFilterApply, useAiFilterBusy, Views } from "./tickets-views";
@@ -181,7 +182,7 @@ export function TicketsPage() {
 
       <AnimatePresence>{y.picked.size > 0 && <BulkBar key="bulk" />}</AnimatePresence>
 
-      {view === "board" && shownAll.length > 0 ? <Board rows={shownAll} onOpen={open} /> : parts.some((p) => p[1].length) ? (
+      {view === "board" && shownAll.length > 0 ? <><WorkflowTip project={y.project} /><Board rows={shownAll} onOpen={open} /></> : parts.some((p) => p[1].length) ? (
         // its own scroll area (both ways) from md up, shrunk to the space left under the filters: wide tables keep their right-hand columns and the sticky headers still work
         <div data-view className="overflow-x-auto rounded-lg bg-cotton shadow-stock md:min-h-0 md:overflow-y-auto">
           <table className="w-full border-collapse text-sm">
