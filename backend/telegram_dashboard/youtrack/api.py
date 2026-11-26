@@ -30,6 +30,8 @@ from .schemas import (
 from .service import YouTrackDashboard
 
 LOGIN_RE = re.compile(r"^[\w.@-]+$")
+# a State change the team workflow refuses, or to a State YouTrack no longer has: the page offers "Sửa workflow"
+WF_CODE = "yt_workflow"
 SINCE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+@\d+\Z")
 
 
@@ -229,6 +231,9 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         # the value goes into the command unquoted (YouTrack rejects {braces}): only known values
         known = await fields_of(p)
         if body.value not in known.get(body.name, []):
+            if body.name == "State":  # gone from YouTrack (deleted / renamed) while the page or the workflow has it
+                msg = f"State {body.value} không còn trên YouTrack — cập nhật workflow"
+                raise YtError(400, msg, code=WF_CODE)
             raise YtError(400, f"{body.name} không có giá trị {body.value}")
         value = body.value
         if body.name == "State":  # a state machine takes the event leading to a state, not its name
@@ -237,14 +242,19 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             sf = next((f for f in d.get("customFields") or [] if f["name"] == "State"), {})
             cur = (sf.get("value") or {}).get("name")
             wf = svc.workflow(p, _role(request), known.get("State", []))
-            # along the team's arrows; no State yet: any state on the workflow (web: nextStates in lib/yt.ts)
-            allowed = {t for s, t in wf.edges if s == cur} if cur else {x for e in wf.edges for x in e}
+            # along the team's arrows between states YouTrack still has (an arrow to a deleted one leads nowhere);
+            # no State yet: any state on the workflow (web: nextStates / liveEdges in lib/yt.ts)
+            states = set(known.get("State", []))
+            edges = [(s, t) for s, t in wf.edges if s in states and t in states]
+            allowed = {t for s, t in edges if s == cur} if cur else {x for e in edges for x in e}
             if cur != body.value and body.value not in allowed:
-                if not wf.edges:
-                    where = "vẽ ở Cài đặt › YouTrack › Workflow"
-                    raise YtError(400, f"Vai trò này chưa có workflow nên chưa đổi được State — {where}")
-                to = ", ".join(t for s, t in wf.edges if s == cur) or "không có"
-                raise YtError(400, f"Workflow của team không cho {cur or '—'} → {body.value} — chỉ sang: {to}")
+                where = "Cài đặt › YouTrack › Workflow"
+                if not edges:
+                    why = "chỉ còn mũi tên tới State đã bị xóa trên YouTrack" if wf.edges else "chưa có workflow"
+                    raise YtError(400, f"Vai trò này {why} nên chưa đổi được State — cập nhật ở {where}", code=WF_CODE)
+                to = ", ".join(t for s, t in edges if s == cur) or "không có"
+                msg = f"Workflow của team không cho {cur or '—'} → {body.value} — chỉ sang: {to}"
+                raise YtError(400, msg, code=WF_CODE)
             if (events := sf.get("possibleEvents")) is not None:
                 value = next((e["id"] for e in events if e["presentation"] == body.value), None)
                 if value is None:

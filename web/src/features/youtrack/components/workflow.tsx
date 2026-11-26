@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, LayoutGrid, Maximize, Minus, Plus, Trash2, X } from "lucide-react";
+import { Download, LayoutGrid, Maximize, Minus, Plus, Trash2, TriangleAlert, X } from "lucide-react";
 import { animate, AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type KeyboardEvent as RKeyboardEvent, type PointerEvent as RPointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/button";
@@ -14,7 +14,8 @@ import { toast } from "@/shared/lib/notifications";
 import { getPref, useRoleOrDev, YT_ROLES } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 import { StatePill } from "@/features/youtrack/components/bits";
-import { nextStates, resolveProject, type Workflow, yt, ytFail, ytProjectsQuery, ytWorkflowQuery } from "@/features/youtrack/lib/yt";
+import { GoneBanner, GonePanel } from "@/features/youtrack/components/workflow-gone";
+import { goneStates, liveEdges, nextStates, resolveProject, type Workflow, yt, ytFail, ytProjectsQuery, ytWorkflowQuery } from "@/features/youtrack/lib/yt";
 
 const W = 150, H = 36, GX = 180, GY = 68, PAD = 24;
 
@@ -57,13 +58,13 @@ function useWorkflow(project: string) {
 }
 
 /** The role has no arrow at all for the project: no State can be changed (false while it loads). */
-export const useNoFlow = (project: string) => { const wf = useWorkflow(project).data; return !!wf && !wf.edges.length; };
+export const useNoFlow = (project: string) => { const wf = useWorkflow(project).data; return !!wf && !liveEdges(wf).length; };
 
 /** "Which states can a ticket in `from` move to": only along the team's arrows, none drawn = none. null while it loads (the
  *  server checks anyway); [] when it cannot be read, so nothing is offered that would be refused (WorkflowTip says why). */
 export function useFlow(project: string) {
   const q = useWorkflow(project);
-  return (from: string | null): string[] | null => (q.isError ? [] : q.data ? nextStates(q.data.edges, from) : null);
+  return (from: string | null): string[] | null => (q.isError ? [] : q.data ? nextStates(liveEdges(q.data), from) : null);
 }
 
 /** Where a State is changed (the ticket's State menu, the bulk bar's, above the Board): the role has no workflow, so no State
@@ -72,10 +73,14 @@ export function useFlow(project: string) {
 export function WorkflowTip({ project, className }: { project: string; className?: string }) {
   const t = useT();
   const role = useRoleOrDev();
-  const q = useWorkflow(project);
-  if (q.isError) return <p role="alert" className={cn("text-xs text-error", className)}>{t("Không đọc được workflow nên chưa đổi được State: {msg}", { msg: ytFail(q.error).msg })}</p>;
-  return <SetupTip id="workflow" must when={!!q.data && !q.data.edges.length} className={className} go={t("Vẽ workflow")} tour="settings-workflow"
-    text={t("Vai trò {role} chưa có workflow nên chưa đổi được State.", { role: t(YT_ROLES.find(([r]) => r === role)![1]) })} />;
+  const q = useWorkflow(project), wf = q.data;
+  if (q.isError) return <p role="alert" className={cn("text-xs text-error", className)}>{t("Không đọc được workflow nên chưa đổi được State: {msg}", { msg: ytFail(q.error).msg }) }</p>;
+  const roleName = t(YT_ROLES.find(([r]) => r === role)![1]), gone = wf ? goneStates(wf) : [];
+  if (wf && !liveEdges(wf).length && !gone.length) return <SetupTip id="workflow" must when className={className} go={t("Vẽ workflow")} tour="settings-workflow"
+    text={t("Vai trò {role} chưa có workflow nên chưa đổi được State.", { role: roleName })} />;
+  // the flow names states YouTrack no longer has (deleted / renamed): the steps through them are gone
+  return <SetupTip id="workflow-gone" must when={gone.length > 0} className={className} go={t("Sửa workflow")} tour="settings-workflow"
+    text={t("Workflow của vai trò {role} có State đã bị xóa trên YouTrack ({states}), các bước qua đó không đi được.", { role: roleName, states: gone.join(", ") })} />;
 }
 
 /** Unsaved edits per "project:role", in this tab's memory: moving between Settings groups keeps them, only Lưu applies one, and
@@ -114,9 +119,10 @@ export function WorkflowSection() {
   const [cols, setCols] = useState(3); // as many boxes as fit across the canvas
   const fit = (el: HTMLDivElement | null) => { if (el) setCols(Math.max(1, Math.floor((el.clientWidth - PAD - W) / GX) + 1)); };
   const data = q.data, states = useMemo(() => data?.states ?? [], [data]);
+  // arrows to a state YouTrack no longer has stay (its box is drawn as deleted, to be replaced or taken off)
   const saved = useMemo<Workflow | null>(() => !data ? null : {
-    pos: { ...layout(states, data.edges, cols), ...data.pos },
-    edges: data.edges.filter(([s, t]) => states.includes(s) && states.includes(t)),
+    pos: { ...layout([...states, ...goneStates(data)], data.edges, cols), ...data.pos },
+    edges: data.edges,
     hidden: (data.hidden ?? []).filter((s) => states.includes(s)),
   }, [data, states, cols]);
   const savedJson = useMemo(() => JSON.stringify(saved), [saved]);
@@ -131,6 +137,14 @@ export function WorkflowSection() {
   // a box off the canvas (its arrows go with it) / back on, `to` where it lands (default: where it was)
   const hide = (s: string, to?: [number, number]) => wf && set({ hidden: [...wf.hidden, s], edges: wf.edges.filter((e) => !e.includes(s)), ...(to && { pos: { ...wf.pos, [s]: to } }) });
   const show = (s: string, to?: [number, number]) => wf && set({ hidden: wf.hidden.filter((x) => x !== s), ...(to && { pos: { ...wf.pos, [s]: to } }) });
+  // a state deleted / renamed on YouTrack: `s` takes its arrows (and its place, unless already part of the flow), or it goes with them
+  const replace = (g: string, s: string) => wf && set({
+    edges: wf.edges.map(([a, b]) => [a === g ? s : a, b === g ? s : b] as [string, string])
+      .filter(([a, b], i, all) => a !== b && all.findIndex(([x, y]) => x === a && y === b) === i),
+    hidden: wf.hidden.filter((x) => x !== s),
+    ...(!wf.edges.some((e) => e.includes(s)) && { pos: { ...wf.pos, [s]: wf.pos[g] } }), // a renamed state: where the old name was
+  });
+  const dropGone = (g: string) => wf && set({ edges: wf.edges.filter((e) => !e.includes(g)) });
   // project, role and flow go with the call: a switch while it runs cannot point the answer at another draft
   const save = useMutation({
     mutationFn: (v: { p: string; role: string; w: Workflow; d: Workflow; states: string[] }) => // w: the flow shown, d: the draft it came from
@@ -186,7 +200,8 @@ export function WorkflowSection() {
       {ytHere && fromYt.data?.unknown.length ? <p className="text-xs text-ink-3">{t("Chưa có ticket nào ở {states} nên chưa biết từ đó đi đâu, tự nối thêm nếu cần.", { states: fromYt.data.unknown.join(", ") })}</p> : null}
       {!states.length ? <p className="text-sm text-ink-3">{t("Chưa có state: cần token YouTrack (nhóm Kết nối và báo cáo).")}</p> : (
         <div className="@container flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-card)] border border-rule">
-          <Canvas states={shown} hidden={wf.hidden} wf={wf} onChange={set} onHide={hide} onShow={show} fit={fit} />
+          <Canvas states={shown} all={states} gone={goneStates({ states, edges: wf.edges })} hidden={wf.hidden} wf={wf} onChange={set} onHide={hide} onShow={show}
+            onReplace={replace} onDropGone={dropGone} fit={fit} />
           {/* only while there is a draft: a strip under the canvas, so it never covers a box */}
           <Fold open={dirty}>
             <div className="flex flex-wrap items-center gap-2 border-t border-rule bg-warn-wash py-1.5 pr-1.5 pl-3">
@@ -215,9 +230,12 @@ const near0 = (v: number) => Math.max(0, Math.round(v));
 const ZOOM_MIN = 0.4, ZOOM_MAX = 1.6;
 const clampZoom = (z: number) => Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 100) / 100;
 
-function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
-  states: string[]; hidden: string[]; wf: Workflow; onChange: (p: Partial<Workflow>) => void;
-  onHide: (s: string, to?: [number, number]) => void; onShow: (s: string, to?: [number, number]) => void; fit: (el: HTMLDivElement | null) => void;
+/** `states`: the boxes on the canvas; `gone`: states the arrows still name that YouTrack no longer has (drawn as deleted);
+ *  `all`: the project's states (what a deleted one can be replaced with). */
+function Canvas({ states, all, gone, hidden, wf, onChange, onHide, onShow, onReplace, onDropGone, fit }: {
+  states: string[]; all: string[]; gone: string[]; hidden: string[]; wf: Workflow; onChange: (p: Partial<Workflow>) => void;
+  onHide: (s: string, to?: [number, number]) => void; onShow: (s: string, to?: [number, number]) => void;
+  onReplace: (gone: string, to: string) => void; onDropGone: (gone: string) => void; fit: (el: HTMLDivElement | null) => void;
 }) {
   const t = useT();
   const frame = useRef<HTMLDivElement>(null), box = useRef<HTMLDivElement>(null);
@@ -231,8 +249,9 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
   // the dragged box is drawn where the pointer is; the flow only changes on letting go (one draft write per drag)
   const pos = drag?.kind === "move" && drag.to && !drag.out ? { ...wf.pos, [drag.s]: drag.to } : wf.pos;
   const has = new Set(wf.edges.map(key));
-  const width = Math.max(0, ...states.map((s) => pos[s][0])) + W + PAD;
-  const height = Math.max(0, ...states.map((s) => pos[s][1])) + H + PAD + 40; // + room for the empty hint below the boxes
+  const boxes = [...states, ...gone].filter((s) => pos[s]);
+  const width = Math.max(0, ...boxes.map((s) => pos[s][0])) + W + PAD;
+  const height = Math.max(0, ...boxes.map((s) => pos[s][1])) + H + PAD + 40; // + room for the empty hint below the boxes
   // zoom for a big flow: the boxes and arrows scale, positions stay in flow units (`at` divides by it)
   const [zoom, setZoomState] = useState(1);
   const zoomNow = useRef(1), zoomGoal = useRef(1); // now: the drawn value (mid-animation too); goal: where it is heading
@@ -276,10 +295,10 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
   }, []);
   const boxH = Math.min(480, Math.max(260, height * zoom)); // narrow screens (no full-height card): the canvas's own height
 
-  const link = (from: string, to: string) => { if (to !== from && !has.has(key([from, to]))) onChange({ edges: [...wf.edges, [from, to]] }); };
+  const link = (from: string, to: string) => { if (to !== from && !gone.includes(to) && !gone.includes(from) && !has.has(key([from, to]))) onChange({ edges: [...wf.edges, [from, to]] }); };
   const drop = (s: Sel) => { // Delete: the picked arrow, or the picked box off the canvas; the keyboard stays on the canvas
     if (!s) return;
-    if ("edge" in s) onChange({ edges: wf.edges.filter((e) => key(e) !== s.edge) }); else onHide(s.box);
+    if ("edge" in s) onChange({ edges: wf.edges.filter((e) => key(e) !== s.edge) }); else if (gone.includes(s.box)) onDropGone(s.box); else onHide(s.box);
     setSel(null); setLinking(null); box.current?.focus();
   };
   // keys on the canvas only (a pick left behind never eats a Backspace typed elsewhere); handled here, before the page's Esc
@@ -287,6 +306,7 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
     const s = (e.target as Element).closest?.("[data-state]")?.getAttribute("data-state") ?? null;
     if (e.key === "Delete" || e.key === "Backspace") { if (sel) { e.preventDefault(); drop(sel); } }
     else if (e.key === "Escape" && (sel || linking)) { e.preventDefault(); setSel(null); setLinking(null); } // the next Esc closes Settings
+    else if (e.key === "Enter" && s && gone.includes(s)) { e.preventDefault(); setSel({ box: s }); setLinking(null); } // its fix panel
     else if (e.key === "Enter" && s) { e.preventDefault(); if (linking && linking !== s) { link(linking, s); setLinking(null); } else setLinking(linking === s ? null : s); }
     else if ((e.key === "+" || e.key === "=" || e.key === "-" || e.key === "0") && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
@@ -342,6 +362,8 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
       style={{ "--wf-h": `${boxH}px` } as React.CSSProperties} className="relative flex min-h-0 flex-1 touch-none select-none @max-lg:flex-col">
       <div data-wf-zone="canvas" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         {/* boxes and arrows take their own presses; the empty canvas drags the view (the hand), its click lets go of the pick */}
+        <GoneBanner gone={gone} onPick={(s) => { setSel({ box: s }); setLinking(null); }} />
+        <div className="relative flex min-h-0 flex-1 flex-col">
         <div ref={box} tabIndex={-1} onPointerDown={(e) => { if (e.button || (e.target as Element).closest("button")) return; const el = box.current!; grab(e, { kind: "pan", ox: e.clientX, oy: e.clientY, left: el.scrollLeft, top: el.scrollTop, moved: false }); }}
           className={cn("relative h-(--wf-h) cursor-grab overflow-auto bg-paper-2 outline-none transition-shadow md:h-auto md:min-h-60 md:flex-1", drag?.kind === "pan" && drag.moved && "cursor-grabbing", drag?.kind === "add" && drag.into && "shadow-[inset_0_0_0_2px_var(--color-hl)]")}
           style={{ backgroundImage: "radial-gradient(var(--color-rule) 1px, transparent 1px)", backgroundSize: "16px 16px" }}>
@@ -357,12 +379,15 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
               ))}
             </defs>
             {wf.edges.map((e) => {
+              if (!pos[e[0]] || !pos[e[1]]) return null;
               const k = key(e), on = lit(k), rel = !!focus && e.includes(focus), a = arrow(pos[e[0]], pos[e[1]], has.has(key([e[1], e[0]])));
+              const dead = gone.includes(e[0]) || gone.includes(e[1]); // leads to / from a deleted state: drawn broken
               return (
                 <g key={k} role="button" tabIndex={0} aria-label={t("Mũi tên {from} → {to}, Delete để xóa", { from: e[0], to: e[1] })} className={cn("pointer-events-auto cursor-pointer outline-none transition-opacity duration-(--dur-short)", focus && !rel && "opacity-15")}
                   onPointerDown={(ev) => { ev.stopPropagation(); setLinking(null); setSel(on ? null : { edge: k }); }} onFocus={(ev) => keyFocus(ev, { edge: k })}>
                   <path d={a.d} fill="none" stroke="transparent" strokeWidth={14} />
-                  <path d={a.d} fill="none" stroke={on || rel ? "var(--color-hl)" : "var(--color-ink-3)"} strokeWidth={on ? 2.5 : rel ? 2 : 1.5} markerEnd={`url(#wf-${on || rel ? "s" : "n"})`} />
+                  <path d={a.d} fill="none" stroke={on || rel ? "var(--color-hl)" : dead ? "var(--color-error)" : "var(--color-ink-3)"} strokeWidth={on ? 2.5 : rel ? 2 : 1.5}
+                    strokeDasharray={dead ? "5 4" : undefined} opacity={dead && !on && !rel ? 0.7 : 1} markerEnd={`url(#wf-${on || rel ? "s" : "n"})`} />
                 </g>
               );
             })}
@@ -377,6 +402,19 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
                 className="absolute z-10 grid size-[22px] place-items-center rounded-full bg-error text-cotton shadow-stock"><X className="size-3.5" /></button>
             );
           })()}
+          {gone.filter((s) => pos[s]).map((s) => { // a state deleted / renamed on YouTrack: struck out, picked to fix it
+            const [x, y] = pos[s], picked = !!sel && "box" in sel && sel.box === s;
+            return (
+              <div key={s} data-state={s} role="button" tabIndex={0} aria-pressed={picked} aria-label={t("{state} đã bị xóa trên YouTrack: Enter để thay bằng State khác", { state: s })}
+                style={{ left: x, top: y, width: W, height: H }} onFocus={(e) => keyFocus(e, { box: s })}
+                onPointerDown={(e) => { if (e.button) return; const [px, py] = at(e); grab(e, { kind: "move", s, dx: px - x, dy: py - y, to: null, out: false }); }}
+                className={cn("absolute flex cursor-pointer items-center gap-1.5 rounded-[var(--radius-input)] border border-dashed border-error/70 bg-cotton pr-2 pl-2.5 text-xs outline-none transition-[box-shadow,opacity,filter] duration-(--dur-short) focus-visible:ring-2 focus-visible:ring-hl/60",
+                  picked && "ring-2 ring-error/60", near && !near.has(s) && "opacity-35 blur-[1.5px]")}>
+                <TriangleAlert className="size-3.5 shrink-0 text-error" aria-hidden />
+                <span className="truncate text-ink-2 line-through decoration-error/60">{s}</span>
+              </div>
+            );
+          })}
           {states.map((s) => {
             const [x, y] = pos[s], target = drag?.kind === "link" && drag.over === s && drag.s !== s;
             const picked = !!sel && "box" in sel && sel.box === s, moving = drag?.kind === "move" && drag.s === s;
@@ -405,6 +443,13 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
           })}
           </div>
           </div>
+        </div>
+        <AnimatePresence>
+          {focus && gone.includes(focus) && (
+            <GonePanel key={focus} state={focus} arrows={wf.edges.filter((e) => e.includes(focus)).length} states={all} hidden={hidden}
+              onReplace={(to) => { onReplace(focus, to); setSel(null); }} onDrop={() => drop({ box: focus })} />
+          )}
+        </AnimatePresence>
         </div>
         <div role="toolbar" aria-label={t("Zoom sơ đồ")} className="absolute right-3 bottom-3 z-10 flex items-center gap-0.5 rounded-full bg-cotton/90 p-0.5 shadow-stock backdrop-blur">
           <Hint title={t("Thu nhỏ")} text={t("Phím − khi đang ở sơ đồ; Ctrl / ⌘ + cuộn hoặc chụm hai ngón trên trackpad để zoom quanh con trỏ.")}>

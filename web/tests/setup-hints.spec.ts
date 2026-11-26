@@ -117,6 +117,22 @@ test("the workflow canvas: Esc only lets go of a box, Delete takes it off, Lưu 
   expect(posts).toHaveLength(1);
 });
 
+test("a workflow step deleted on YouTrack: the State menu says so, and a refused change offers the way to the workflow", async ({ page }) => {
+  await youtrack(page);
+  await page.route(/\/api\/yt\/workflow\?/, (r) => r.fulfill({ json: { states: ["Open", "In Progress", "Done"], pos: {},
+    edges: [["Open", "Review"], ["Review", "Done"], ["Open", "In Progress"]], hidden: [] } })); // "Review" is gone from YouTrack
+  await page.route("**/api/yt/issue/field", (r) => r.fulfill({ status: 400, json: { error: { code: "yt_workflow", detail: "Workflow của team không cho Open → In Progress" } } }));
+  await page.goto("/youtrack/?view=tickets");
+  await page.locator("tbody tr[data-id]").first().click();
+  await page.getByRole("button", { name: "Đổi State VA-1" }).click();
+  await expect(page.getByRole("note").filter({ hasText: "đã bị xóa trên YouTrack (Review)" }).last()).toBeVisible();
+  await page.getByRole("option").filter({ hasText: "In Progress" }).click();
+  const fix = page.getByRole("status").filter({ hasText: "không đổi được" }).getByRole("button", { name: "Sửa workflow" });
+  await expect(fix).toBeVisible();
+  await fix.click();
+  await expect(page).toHaveURL(/\/settings\//); // the walk to the workflow
+});
+
 test("the bot lists what is worth setting up, and it switches off", async ({ page }) => {
   await page.addInitScript(() => { localStorage.setItem("ytMode", "qa"); localStorage.removeItem("aiIntro"); localStorage.removeItem("setupTips"); });
   await page.goto("/settings/");

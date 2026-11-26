@@ -6,7 +6,7 @@ import httpx
 from conftest import FakeAgent
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from telegram_dashboard.youtrack.api import build_router
+from telegram_dashboard.youtrack.api import build_router, yt_error_response
 from telegram_dashboard.youtrack.client import YtError
 from telegram_dashboard.youtrack.schemas import DEV_FLOW, Workflow
 from yt_test_helpers import issue, make
@@ -213,3 +213,34 @@ async def test_a_ticket_with_no_state_may_take_any_state_on_the_workflow_and_a_b
         wf = {"pos": {}, "edges": [["Open", "Dev"]], "hidden": []}
         assert (await c.post("/api/yt/workflow?project=VA", json=wf)).status_code == 500
         assert svc.workflow_path.read_text() == "{broken"  # never overwritten (every other project's flows would go)
+
+
+async def test_arrows_to_a_state_youtrack_no_longer_has_lead_nowhere_and_say_so(tmp_path):
+    vals = [{"name": v} for v in ("Open", "Dev")]  # "Review" was deleted on YouTrack
+    bundle = {"field": {"name": "State"}, "bundle": {"values": vals}}
+
+    def handler(req):
+        if req.url.path == "/api/admin/projects/VA/customFields":
+            return httpx.Response(200, json=[bundle])
+        if req.method == "POST":
+            return httpx.Response(200, json={"id": "c"})
+        if "possibleEvents" in req.url.query.decode():
+            sf = {"name": "State", "value": {"name": "Open"}, "possibleEvents": None}
+            return httpx.Response(200, json={"customFields": [sf]})
+        return httpx.Response(200, json=issue(1))
+
+    svc = make(handler)
+    svc.workflow_path = tmp_path / "yt_workflow.json"
+    svc.save_workflow("VA", "dev", Workflow(edges=[("Open", "Review"), ("Review", "Dev")]))
+    app = FastAPI()
+    app.add_exception_handler(YtError, yt_error_response)
+    app.include_router(build_router(svc))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+
+        def post(v):
+            return c.post("/api/yt/issue/field", json={"id": "VA-1", "name": "State", "value": v})
+
+        r = (await post("Dev")).json()["error"]  # the only way there went through the deleted state
+        assert r["code"] == "yt_workflow" and "State đã bị xóa" in r["detail"]
+        r = (await post("Review")).json()["error"]  # a page that still lists it
+        assert r["code"] == "yt_workflow" and "không còn trên YouTrack" in r["detail"]

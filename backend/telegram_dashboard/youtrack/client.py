@@ -49,9 +49,10 @@ TIMEOUT = 20.0
 
 
 class YtError(Exception):
-    def __init__(self, status: int, message: str):
+    def __init__(self, status: int, message: str, *, code: str | None = None):
+        """`code`: a machine code of its own for the page (else one from the status, yt_code)."""
         super().__init__(message)
-        self.status, self.message = status, message
+        self.status, self.message, self.code = status, message, code
 
 
 class YtUnreachable(YtError):
@@ -73,7 +74,7 @@ def yt_code(e: YtError) -> str:
     other API error. youtrack_unknown: a write may have landed, so the page says check before doing it again."""
     if isinstance(e, YtUnreachable):
         return "youtrack_unknown" if e.sent else "youtrack_unreachable"
-    return _YT_CODES.get(e.status, "youtrack_error")
+    return e.code or _YT_CODES.get(e.status, "youtrack_error")
 
 
 def _label(v):

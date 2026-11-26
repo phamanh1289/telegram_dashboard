@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { components } from "../../../shared/lib/api.generated";
 import { type AiStep, api, ApiError, errorText, type Failure, failureFor, OFFLINE_TEXT, readAnswer } from "@/shared/lib/api";
 import { fmtDate, fmtDay, fmtNum, type Key, t, tMaybe } from "@/shared/lib/i18n";
+import { openTour } from "@/shared/lib/nav";
 import { readYtRole } from "@/shared/lib/prefs";
 import { fold } from "@/shared/lib/utils";
 import { downloadCsv } from "@/shared/lib/utils";
@@ -131,6 +132,16 @@ export type Workflow = { pos: Record<string, [number, number]>; edges: [string, 
  *  the server (youtrack/api.py set_field). */
 export const nextStates = (edges: [string, string][], from: string | null) =>
   from ? edges.filter(([s]) => s === from).map(([, t]) => t) : [...new Set(edges.flat())];
+/** The arrows between states YouTrack still has (one to a deleted / renamed state leads nowhere; the server skips it too),
+ *  and the states the team's arrows still name that YouTrack no longer has. `states`: the project's, from /workflow. */
+export const liveEdges = (w: { states: string[]; edges: [string, string][] }) => w.edges.filter(([s, t]) => w.states.includes(s) && w.states.includes(t));
+export const goneStates = (w: { states: string[]; edges: [string, string][] }) =>
+  w.states.length ? [...new Set(w.edges.flat())].filter((s) => !w.states.includes(s)) : []; // no states read (no token): nothing to say
+/** A State change the team workflow refused (or to a State YouTrack no longer has): the toast's way to the workflow. */
+export const WF_CODE = "yt_workflow";
+export const fixWorkflow = (e?: unknown) => (e === undefined || (e instanceof ApiError && e.code === WF_CODE)
+  ? { label: t("Sửa workflow"), run: () => openTour("settings-workflow") }
+  : undefined);
 /** The ticket's UI flow, schema v2 (= uiflow.Flow on the server, sanitize() in flow-engine/model.js). v1 files are read
  *  as v2; `rect` is a hand-drawn tap area as fractions of the screen's whole image, `note` plain text. */
 export type FlowRect = { x: number; y: number; w: number; h: number };

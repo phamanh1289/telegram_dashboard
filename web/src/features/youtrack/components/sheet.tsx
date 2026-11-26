@@ -404,9 +404,11 @@ function FieldSelect({ ticket, name }: { ticket: Ticket; name: Field }) {
     if (await go(ticket, v)) toast({ text: `${ticket.id} ${name} → ${v}`, undo: back ? () => void go({ ...ticket, [key]: v }, cur) : undefined });
   }
   return <Picker label={node(ticket[key])} title={t("Đổi {field} {id}", { field: name, id: ticket.id })} value={cur} options={options} onPick={(v) => void change(v)}
-    foot={flow && !noFlow && all.length > values.length ? t(flow.length ? "Theo workflow của team: chỉ hiện các bước đi tiếp từ {state}"
-      : flowOf(null)?.includes(cur) ? "Workflow của team: {state} là bước cuối" : "{state} chưa có trong workflow của team nên chưa đổi được", { state: cur || "—" })
-      : name === "State" ? <WorkflowTip project={project} /> : undefined} />;
+    foot={name !== "State" ? undefined : <>
+      {flow && !noFlow && all.length > values.length && t(flow.length ? "Theo workflow của team: chỉ hiện các bước đi tiếp từ {state}"
+        : flowOf(null)?.includes(cur) ? "Workflow của team: {state} là bước cuối" : "{state} chưa có trong workflow của team nên chưa đổi được", { state: cur || "—" })}
+      <WorkflowTip project={project} />
+    </>} />;
 }
 
 /** A feature's own colour (AI has `ai-chip`): tinted at rest, filled under the pointer. */

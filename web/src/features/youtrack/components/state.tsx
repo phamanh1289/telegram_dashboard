@@ -7,7 +7,7 @@ import { toast } from "@/shared/lib/notifications";
 import { getPref, put, readJson, saveYtRole, setPref, useRole, type YtRole } from "@/shared/lib/prefs";
 import type { AiRun } from "./bits";
 import type { AiSession } from "./history";
-import { type AiReq, type ColKey, type Filters, type Group, GROUPS, isColKey, type Person, resolveProject, selfEdits, type Sprint, type Ticket, QUICK, UNASSIGNED, yt, ytFail, ytMeQuery, ytPeopleQuery, ytProjectsQuery } from "@/features/youtrack/lib/yt";
+import { type AiReq, type ColKey, fixWorkflow, type Filters, type Group, GROUPS, isColKey, type Person, resolveProject, selfEdits, type Sprint, type Ticket, QUICK, UNASSIGNED, yt, ytFail, ytMeQuery, ytPeopleQuery, ytProjectsQuery } from "@/features/youtrack/lib/yt";
 
 // One context for the YouTrack page: project, data, filters (URL + localStorage, same keys as /yt/), mode, view prefs,
 // the side sheet, and when each ticket entered its state.
@@ -40,7 +40,7 @@ export async function saveTicket(patch: (t: TicketPatch) => Promise<void>, t: Ti
   const back = Object.fromEntries(keys.map((k) => [k, t[k] ?? null])) as Partial<Ticket>;
   let r: Ticket;
   try { await patch({ id: t.id, ...local }); r = await call(); }
-  catch (e) { await patch(own(back)); if (quiet) throw e; const f = ytFail(e); toast({ text: tNow("{id}: không đổi được — {msg}", { id: t.id, msg: f.msg }), failure: f.failure }); return false; }
+  catch (e) { await patch(own(back)); if (quiet) throw e; const f = ytFail(e); toast({ text: tNow("{id}: không đổi được — {msg}", { id: t.id, msg: f.msg }), failure: f.failure, action: fixWorkflow(e) }); return false; } // workflow refusal: "Sửa workflow"
   await patch(newest.get(t.id) === n ? r : own(r));
   return true;
 }
