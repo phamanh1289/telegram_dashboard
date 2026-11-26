@@ -4,6 +4,7 @@ HTTP: /api/yt/* in api.py (+ api_ai.py, api_flow_file.py, api_flow.py), /api/you
 """
 
 import asyncio
+import json
 import logging
 import os
 import random
@@ -58,9 +59,23 @@ class YouTrackDashboard(YtQueries):
         except ValidationError:  # a hand-edited file: start over rather than 500
             return SavedPrompts()
 
+    def _workflow_file(self) -> dict:
+        """The whole file. A broken one is said (500), never read as "no workflow" (which blocks every State change) nor
+        overwritten by the next save, which would drop every other project's flows."""
+        try:
+            raw = json.loads(self.workflow_path.read_text())
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValueError) as e:
+            log.warning("workflow file unreadable: %s", e)
+            raise YtError(500, f"Không đọc được file workflow ({self.workflow_path.name}): {e}") from e
+        if not isinstance(raw, dict):
+            raise YtError(500, f"File workflow ({self.workflow_path.name}) không đúng định dạng")
+        return raw
+
     def _workflows(self, project: str) -> dict:
         """{role: flow} of a project; a first-version file (one flow for all) goes to each role."""
-        raw = _read_json(self.workflow_path).get(project)
+        raw = self._workflow_file().get(project)
         if not isinstance(raw, dict):
             return {}
         return {r: raw for r in ROLES} if "edges" in raw else raw
@@ -75,11 +90,12 @@ class YouTrackDashboard(YtQueries):
             return Workflow()
         try:
             return Workflow(**saved)
-        except ValidationError, TypeError:  # a hand-edited file: start over rather than 500
-            return Workflow()
+        except (ValidationError, TypeError) as e:  # a hand-edited entry: said, not read as "no workflow"; Lưu rewrites
+            log.warning("workflow %s/%s unreadable: %s", project, role, e)
+            raise YtError(500, f"Workflow {project} / {role} trong file bị hỏng: vẽ lại rồi Lưu để ghi đè") from e
 
     def save_workflow(self, project: str, role: str, wf: Workflow) -> None:
-        raw = _read_json(self.workflow_path)
+        raw = self._workflow_file()
         raw[project] = {**self._workflows(project), role: wf.model_dump()}
         write_private_json(self.workflow_path, raw)
 

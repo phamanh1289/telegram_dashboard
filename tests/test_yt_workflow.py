@@ -25,12 +25,13 @@ async def test_set_field_sends_known_values_and_state_machine_events(tmp_path):
             cmds.append(json.loads(req.content)["query"])
             return httpx.Response(200, json={"id": "c"})
         if "possibleEvents" in req.url.query.decode():
-            sf = {"name": "State", "possibleEvents": events}
+            sf = {"name": "State", "value": {"name": "QC"}, "possibleEvents": events}
             return httpx.Response(200, json={"customFields": [sf]})
         return httpx.Response(200, json=issue(1, "DONE ON DEV"))
 
     svc = make(handler)
     svc.workflow_path = tmp_path / "yt_workflow.json"
+    svc.save_workflow("VA", "dev", Workflow(edges=[("QC", "DONE ON DEV")]))  # the team's arrow out of QC
     app = FastAPI()
     app.add_exception_handler(YtError, lambda _, e: JSONResponse({}, status_code=e.status))
     app.include_router(build_router(svc))
@@ -79,7 +80,7 @@ async def test_team_workflow_blocks_moves_without_an_arrow_and_reads_youtrack_fl
         flow = (await c.get("/api/yt/workflow/youtrack?project=VA")).json()
         assert sorted(map(tuple, flow["edges"])) == [("Dev", "QC"), ("Open", "Dev"), ("Open", "QC")]
         assert flow["unknown"] == ["QC"]
-        wf = {"on": True, "pos": {"Open": [0, 0]}, "edges": [["Open", "Dev"]]}
+        wf = {"pos": {"Open": [0, 0]}, "edges": [["Open", "Dev"]]}
         assert (await c.post("/api/yt/workflow?project=VA", json=wf)).status_code == 200
         got = (await c.get("/api/yt/workflow?project=VA")).json()
         assert (got["states"], got["edges"]) == (["Open", "Dev", "QC"], [["Open", "Dev"]])
@@ -88,25 +89,21 @@ async def test_team_workflow_blocks_moves_without_an_arrow_and_reads_youtrack_fl
             return c.post("/api/yt/issue/field", json={"id": "VA-1", "name": "State", "value": v})
 
         assert (await post("QC")).status_code == 400  # no arrow Open → QC
-        qa = {"X-Yt-Role": "qa"}  # each role keeps its own flow: QA has none, so YouTrack decides
+        qa = {"X-Yt-Role": "qa"}  # each role keeps its own flow: QA has none, so no State change at all
         assert (await c.get("/api/yt/workflow?project=VA", headers=qa)).json()["edges"] == []
         body = {"id": "VA-1", "name": "State", "value": "QC"}
-        assert (await c.post("/api/yt/issue/field", json=body, headers=qa)).status_code == 200
-        cmds.clear()
+        assert (await c.post("/api/yt/issue/field", json=body, headers=qa)).status_code == 400
         assert (await post("Dev")).status_code == 200
-        wf["on"] = False
-        await c.post("/api/yt/workflow?project=VA", json=wf)
-        assert (await post("QC")).status_code == 200  # off: only YouTrack decides
-        assert cmds == ["State Dev", "State QC"]
+        assert cmds == ["State Dev"]
 
 
 def test_workflow_of_the_first_version_goes_to_every_role(tmp_path):
     svc = make(lambda req: httpx.Response(200, json=[]))
     svc.workflow_path = tmp_path / "yt_workflow.json"
-    svc.workflow_path.write_text(json.dumps({"VA": {"on": True, "edges": [["A", "B"]]}}))
+    svc.workflow_path.write_text(json.dumps({"VA": {"on": True, "edges": [["A", "B"]]}}))  # an old file: `on` ignored
     assert svc.workflow("VA", "qa", []).edges == [("A", "B")]
     svc.save_workflow("VA", "po", Workflow())
-    assert svc.workflow("VA", "dev", []).on and not svc.workflow("VA", "po", []).edges
+    assert svc.workflow("VA", "dev", []).edges and not svc.workflow("VA", "po", []).edges
 
 
 def test_dev_starts_with_the_built_in_flow_when_the_project_has_its_states(tmp_path):
@@ -114,7 +111,7 @@ def test_dev_starts_with_the_built_in_flow_when_the_project_has_its_states(tmp_p
     svc.workflow_path = tmp_path / "yt_workflow.json"
     states = [*DEV_FLOW["pos"], "QC - QA"]
     dev = svc.workflow("VA", "dev", states)
-    assert dev.on and len(dev.edges) == 9 and dev.hidden == ["QC - QA"]
+    assert len(dev.edges) == 9 and dev.hidden == ["QC - QA"]
     assert svc.workflow("VA", "qa", states) == Workflow()  # QA / PO start empty
     assert svc.workflow("X", "dev", ["Open", "Done"]) == Workflow()  # other states: no default
     svc.save_workflow("VA", "dev", Workflow())
@@ -181,3 +178,38 @@ async def test_assignee_endpoint_also_sets_qc():
         assert (await c.post("/api/yt/issue/assignee", json={"id": "VA-1", "login": None})).status_code == 200
         assert (await c.post("/api/yt/issue/qc", json={"id": "VA-1", "login": "{x}"})).status_code == 400
     assert [(f["name"], f["value"]) for f in sent] == [("QC", {"login": "q"}), ("Assignee", None)]
+
+
+async def test_a_ticket_with_no_state_may_take_any_state_on_the_workflow_and_a_broken_file_is_said(tmp_path):
+    vals = [{"name": v} for v in ("Open", "Dev", "QC")]
+    bundle = {"field": {"name": "State"}, "bundle": {"values": vals}}
+
+    def handler(req):
+        if req.url.path == "/api/admin/projects/VA/customFields":
+            return httpx.Response(200, json=[bundle])
+        if req.method == "POST":
+            return httpx.Response(200, json={"id": "c"})
+        if "possibleEvents" in req.url.query.decode():  # no State yet, no state machine
+            sf = {"name": "State", "value": None, "possibleEvents": None}
+            return httpx.Response(200, json={"customFields": [sf]})
+        return httpx.Response(200, json=issue(1))
+
+    svc = make(handler)
+    svc.workflow_path = tmp_path / "yt_workflow.json"
+    svc.save_workflow("VA", "dev", Workflow(edges=[("Open", "Dev")]))
+    app = FastAPI()
+    app.add_exception_handler(YtError, lambda _, e: JSONResponse({"detail": e.message}, status_code=e.status))
+    app.include_router(build_router(svc))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+
+        def post(v):
+            return c.post("/api/yt/issue/field", json={"id": "VA-1", "name": "State", "value": v})
+
+        assert (await post("Dev")).status_code == 200  # on the workflow
+        assert (await post("QC")).status_code == 400  # not on it
+        svc.workflow_path.write_text("{broken")
+        r = await post("Dev")
+        assert r.status_code == 500 and "file workflow" in r.json()["detail"]  # said, not "chưa có workflow"
+        wf = {"pos": {}, "edges": [["Open", "Dev"]], "hidden": []}
+        assert (await c.post("/api/yt/workflow?project=VA", json=wf)).status_code == 500
+        assert svc.workflow_path.read_text() == "{broken"  # never overwritten (every other project's flows would go)

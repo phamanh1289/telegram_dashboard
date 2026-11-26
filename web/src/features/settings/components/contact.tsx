@@ -3,8 +3,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { BookOpen, Bug, Check, Cpu, Ellipsis, Eye, FileText, HelpCircle, ImagePlus, Info, Lightbulb, Send, Settings, Sparkles, Square, TriangleAlert, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { Card, linkCls, PickPill, picked, StatusLine, tMap, useStatus } from "@/features/settings/components/parts";
+import { useEffect, useId, useRef, useState } from "react";
+import { Card, linkCls, PickPill, picked, StatusLine, tMap, useFillHeight, useStatus } from "@/features/settings/components/parts";
 import { clearPrefill, type ContactDraft, PREFILL_EVENT, readPrefill } from "@/features/settings/lib/contact-prefill";
 import { AiAsk } from "@/features/youtrack/components/bits";
 import { AiWriting } from "@/shared/components/ai/chat";
@@ -124,32 +124,6 @@ const FieldHead = ({ id, label, n, max }: { id: string; label: string; n: number
 
 const chipCls = (on: boolean) => cn("flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs transition-[background-color,border-color,color] duration-(--dur-micro) disabled:pointer-events-none disabled:opacity-50",
   on ? "border-hl/40 bg-hl-wash text-hl-2" : "border-rule text-ink-3 hover:border-rule-2 hover:text-ink-2");
-
-/** The height that takes `ref` to the bottom of the window less the page's bottom padding, so the page itself does not
- *  scroll; MIN_H at least (a short window scrolls the page rather than squeeze the form). null below the page's `md`
- *  layout (the menu on top, chips wrapping): the form keeps its natural height there and the page scrolls. */
-function useFillHeight(ref: React.RefObject<HTMLElement | null>) {
-  const [h, setH] = useState<number | null>(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const wide = matchMedia("(min-width: 48rem)");
-    const fit = () => {
-      if (!wide.matches) return setH(null);
-      const pad = parseFloat(getComputedStyle(el.closest("main")?.parentElement ?? el).paddingBottom) || 0;
-      setH(Math.max(MIN_H, Math.floor(innerHeight - (el.getBoundingClientRect().top + scrollY) - pad)));
-    };
-    fit();
-    // The window, and anything above that settles late (fonts, the header's wrap): `fit` never moves our own top, so
-    // the observer settles after one pass.
-    const ro = new ResizeObserver(fit);
-    ro.observe(document.body);
-    addEventListener("resize", fit);
-    wide.addEventListener("change", fit);
-    return () => { ro.disconnect(); removeEventListener("resize", fit); wide.removeEventListener("change", fit); };
-  }, [ref]);
-  return h;
-}
 
 /** One on / off chip in the composer's toolbar (what goes along with the message): its icon turns into a tick when on. */
 function Toggle({ on, onChange, hint, icon: Icon, label }: { on: boolean; onChange: (v: boolean) => void; hint: string; icon: typeof Bug; label: string }) {
@@ -361,7 +335,7 @@ export function ContactGroup() {
   const { writing, live } = ai;
   const fade = fadeIn(useReducedMotion());
   const box = useRef<HTMLDivElement>(null);
-  const height = useFillHeight(box);
+  const height = useFillHeight(box, MIN_H);
   const kind = kindOf(d.kind);
   useEffect(() => { put(DRAFT_KEY, d.title || d.text ? JSON.stringify(d) : null); }, [d]); // text survives a reload or a failed send
   const edit = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));

@@ -516,7 +516,7 @@
     "tab": "settings",
     "area": "Settings › YouTrack › Workflow",
     "title": "Draw a State workflow for your role",
-    "what": "The State flow for the chosen project and role: boxes are States, arrows the allowed next steps. With \"Apply in the app\" on, the State menu, Board drag and drop and bulk changes only follow the arrows (YouTrack still checks its own flow). \"Get from YouTrack\" copies the flow YouTrack allows today, the quickest start. Dev starts with a default flow when the project has its states; QA/QC and PO/PM start empty. While it is off, a ticket can move to any State; a ticket's State menu, the bulk State menu and the top of the Board show a hint \"Draw the workflow\" (\"Later\" hides all three).",
+    "what": "The State flow for the chosen project and role: boxes are States, arrows the allowed next steps. The workflow always applies: the State menu, Board drag and drop and bulk changes only follow the arrows (YouTrack still checks its own flow); a role with no arrow yet cannot change any State, and a ticket's State menu, the bulk State menu and the top of the Board show a \"Draw the workflow\" line that leads here. The toolbar: \"Get from YouTrack\" copies the flow YouTrack allows today (the quickest start), plus Auto-arrange and Delete all arrows. The diagram on the left holds the States in use, the column on the right the rest: drag a State from the column onto the diagram (or click it) to add it, drag a box from the diagram onto the column to take it off. Drag a box to move it, drag its dot onto another box to connect; click a box and its arrows and the States they link stand out while the rest fades (click an empty spot or press Esc to let go); click a box or an arrow (or Tab to it) then Delete to remove it. By keyboard: Tab to a box, Enter, Tab to the target box and Enter to draw an arrow. Every edit is a draft: an \"Unsaved draft\" strip opens under the diagram with Discard draft and Save; moving between Settings groups keeps the draft, closing Settings drops it. Dev starts with a default flow when the project has its states; QA/QC and PO/PM start empty.",
     "how": [
       {
         "t": "Choose \"YouTrack\"",
@@ -529,10 +529,6 @@
       {
         "t": "Click \"Get from YouTrack\" (or drag a box's dot onto another to draw an arrow)",
         "at": "Lấy từ YouTrack"
-      },
-      {
-        "t": "Tick \"Apply in the app\"",
-        "at": "Áp dụng trong app"
       },
       {
         "t": "Click \"Save\"",

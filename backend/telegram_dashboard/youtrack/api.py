@@ -237,9 +237,14 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             sf = next((f for f in d.get("customFields") or [] if f["name"] == "State"), {})
             cur = (sf.get("value") or {}).get("name")
             wf = svc.workflow(p, _role(request), known.get("State", []))
-            if wf.on and cur != body.value and (cur, body.value) not in wf.edges:
+            # along the team's arrows; no State yet: any state on the workflow (web: nextStates in lib/yt.ts)
+            allowed = {t for s, t in wf.edges if s == cur} if cur else {x for e in wf.edges for x in e}
+            if cur != body.value and body.value not in allowed:
+                if not wf.edges:
+                    where = "vẽ ở Cài đặt › YouTrack › Workflow"
+                    raise YtError(400, f"Vai trò này chưa có workflow nên chưa đổi được State — {where}")
                 to = ", ".join(t for s, t in wf.edges if s == cur) or "không có"
-                raise YtError(400, f"Workflow của team không cho {cur} → {body.value} — chỉ sang: {to}")
+                raise YtError(400, f"Workflow của team không cho {cur or '—'} → {body.value} — chỉ sang: {to}")
             if (events := sf.get("possibleEvents")) is not None:
                 value = next((e["id"] for e in events if e["presentation"] == body.value), None)
                 if value is None:

@@ -38,7 +38,7 @@ export function BulkBar() {
   const write = !y.config?.mock;
   const fields = useQuery({ ...ytFieldsQuery(y.project), enabled: write });
   const ids = [...y.picked];
-  async function apply(label: string, prevOf: (x: Ticket) => string | null, call: (id: string, v: string | null) => Promise<Ticket>, v: string | null, local: Partial<Ticket>, nullable = false, allowed?: (x: Ticket) => boolean) {
+  async function apply(label: string, prevOf: (x: Ticket) => string | null, call: (id: string, v: string | null) => Promise<Ticket>, v: string | null, local: Partial<Ticket>, nullable = false, allowed?: (x: Ticket) => boolean, back?: (x: Ticket) => boolean) {
     const changed = ids.map((id) => y.rows.find((i) => i.id === id)).filter((x): x is Ticket => !!x && prevOf(x) !== v);
     const todo = allowed ? changed.filter(allowed) : changed;
     const off = changed.length - todo.length; // "Áp dụng" workflow: no arrow from their State to this one
@@ -50,8 +50,9 @@ export function BulkBar() {
     const err = [offText, fail.length ? t("Lỗi {n} ticket — {first}", { n: fail.length, first: fail[0].join(": ") }) : ""].filter(Boolean).join(". ");
     if (!done.length) { toast({ text: err }); return; }
     const keys = Object.keys(local) as (keyof Ticket)[], prev = new Map(done.map((x) => [x.id, prevOf(x)]));
+    const undoable = done.filter((x) => (prevOf(x) !== null || nullable) && (!back || back(x))); // State: back only along an arrow
     toast({ text: `${done.length === 1 ? done[0].id : t("{n} ticket", { n: done.length })} → ${label}${err ? `. ${err}` : ""}`,
-      undo: () => undoMany(y.patchTicket, done.filter((x) => prevOf(x) !== null || nullable).map((x) => [{ ...x, ...local }, Object.fromEntries(keys.map((k) => [k, x[k] ?? null])) as Partial<Ticket>]),
+      undo: !undoable.length ? undefined : () => undoMany(y.patchTicket, undoable.map((x) => [{ ...x, ...local }, Object.fromEntries(keys.map((k) => [k, x[k] ?? null])) as Partial<Ticket>]),
         (x) => call(x.id, prev.get(x.id) ?? null)) });
     y.setPicked(new Set(fail.map(([id]) => id))); // the failed ones stay picked: try again
   }
@@ -63,7 +64,8 @@ export function BulkBar() {
       foot={name === "State" ? <WorkflowTip project={y.project} /> : undefined}
       options={fields.data[name]!.map((v) => ({ v, node: node(v) }))}
       onPick={(v) => void apply(v, (x) => (name === "State" ? x.state : x.priority), (id, x) => yt.setField(id, name, x!), v, name === "State" ? { state: v } : { priority: v }, false,
-        name === "State" ? (x) => { const f = flow(x.state); return !f || f.includes(v); } : undefined)} />
+        name === "State" ? (x) => { const f = flow(x.state); return !f || f.includes(v); } : undefined,
+        name === "State" ? (x) => { const f = flow(v); return !f || (!!x.state && f.includes(x.state)); } : undefined)} />
   ) : null);
   return (
     <motion.div role="region" aria-label={t("Thao tác hàng loạt")} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}

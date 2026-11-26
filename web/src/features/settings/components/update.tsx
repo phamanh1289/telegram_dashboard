@@ -3,7 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Check, Download, Lightbulb, Loader2, RotateCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Row, StatusLine, Switch, waitRestart } from "@/features/settings/components/parts";
+import { Row, StatusLine, waitRestart } from "@/features/settings/components/parts";
+import { Switch } from "@/shared/components/ui/switch";
 import { UninstallRow } from "@/features/settings/components/uninstall";
 import { AiFetching, UpdateHero } from "@/shared/components/ai/fetching";
 import { Markdown } from "@/shared/components/markdown";

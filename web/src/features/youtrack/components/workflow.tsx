@@ -1,21 +1,22 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, EyeOff, LayoutGrid, Plus, Trash2, X } from "lucide-react";
+import { Download, LayoutGrid, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { type PointerEvent as RPointerEvent, useEffect, useRef, useState } from "react";
-import { FoldMore } from "@/shared/components/ui/fold";
+import { type KeyboardEvent as RKeyboardEvent, type PointerEvent as RPointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/button";
-import { Checkbox } from "@/shared/components/ui/checkbox";
+import { Fold } from "@/shared/components/ui/fold";
 import { Dropdown } from "@/shared/components/ui/dropdown";
 import { Hint } from "@/shared/components/ui/hint";
 import { SetupTip } from "@/shared/components/ai/setup-tip";
 import { useT } from "@/shared/lib/i18n";
-import { getPref, put, useRoleOrDev, YT_ROLES } from "@/shared/lib/prefs";
+import { toast } from "@/shared/lib/notifications";
+import { getPref, useRoleOrDev, YT_ROLES } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { resolveProject, stateColor, type Workflow, yt, ytProjectsQuery, ytWorkflowQuery } from "@/features/youtrack/lib/yt";
+import { StatePill } from "@/features/youtrack/components/bits";
+import { nextStates, resolveProject, type Workflow, yt, ytFail, ytProjectsQuery, ytWorkflowQuery } from "@/features/youtrack/lib/yt";
 
-const W = 150, H = 36, GX = 180, GY = 80, PAD = 24;
+const W = 150, H = 36, GX = 180, GY = 68, PAD = 24;
 
 const START = /^(open|opened|new|submitted|backlog|to ?do)$/i;
 
@@ -49,32 +50,38 @@ function layout(states: string[], edges: [string, string][], cols: number) {
 }
 const key = (e: [string, string]) => `${e[0]}\u0000${e[1]}`;
 
-/** The role has no workflow on: any State is allowed, so say so where a State is changed (the ticket's State menu, the bulk
- *  bar's, above the Board) with the walk to draw one; one "Để sau" hides it everywhere. Nothing while it loads or is on. */
+/** The team's workflow for a project and the current role (no role yet: Dev, as on the server). */
+function useWorkflow(project: string) {
+  const role = useRoleOrDev();
+  return useQuery({ ...ytWorkflowQuery(project, role), enabled: !!project });
+}
+
+/** The role has no arrow at all for the project: no State can be changed (false while it loads). */
+export const useNoFlow = (project: string) => { const wf = useWorkflow(project).data; return !!wf && !wf.edges.length; };
+
+/** "Which states can a ticket in `from` move to": only along the team's arrows, none drawn = none. null while it loads (the
+ *  server checks anyway); [] when it cannot be read, so nothing is offered that would be refused (WorkflowTip says why). */
+export function useFlow(project: string) {
+  const q = useWorkflow(project);
+  return (from: string | null): string[] | null => (q.isError ? [] : q.data ? nextStates(q.data.edges, from) : null);
+}
+
+/** Where a State is changed (the ticket's State menu, the bulk bar's, above the Board): the role has no workflow, so no State
+ *  can be changed — say why, with the walk to draw one (not closable: it is the only reason given); or the workflow could not
+ *  be read. Nothing while it loads or when there is one. */
 export function WorkflowTip({ project, className }: { project: string; className?: string }) {
   const t = useT();
   const role = useRoleOrDev();
-  const wf = useQuery({ ...ytWorkflowQuery(project, role), enabled: !!project }).data; // useFlow's cache
-  return <SetupTip id="workflow" when={!!wf && !wf.on} className={className} go={t("Vẽ workflow")} tour="settings-workflow"
-    text={t("Vai trò {role} chưa bật workflow nên ticket đổi được sang mọi State, kể cả bước sai luồng.", { role: t(YT_ROLES.find(([r]) => r === role)![1]) })} />;
+  const q = useWorkflow(project);
+  if (q.isError) return <p role="alert" className={cn("text-xs text-error", className)}>{t("Không đọc được workflow nên chưa đổi được State: {msg}", { msg: ytFail(q.error).msg })}</p>;
+  return <SetupTip id="workflow" must when={!!q.data && !q.data.edges.length} className={className} go={t("Vẽ workflow")} tour="settings-workflow"
+    text={t("Vai trò {role} chưa có workflow nên chưa đổi được State.", { role: t(YT_ROLES.find(([r]) => r === role)![1]) })} />;
 }
 
-/** An unsaved edit, kept in this browser per project and role: leaving the page keeps it as a draft, only Lưu applies it. */
-const DRAFT = (at: string) => `wfDraft:${at}`;
-function readDraft(at: string): Workflow | null {
-  try {
-    const d = JSON.parse(getPref(DRAFT(at)) ?? "null");
-    return d?.pos && Array.isArray(d.edges) ? { on: !!d.on, pos: d.pos, edges: d.edges, hidden: Array.isArray(d.hidden) ? d.hidden : [] } : null;
-  } catch { return null; }
-}
-
-
-/** The team's workflow for a project and the current role, as "which states can a ticket in `from` move to" (null: no rule, YouTrack decides). */
-export function useFlow(project: string) {
-  const role = useRoleOrDev(); // the flow shown / saved / applied; no role yet: Dev, as on the server
-  const wf = useQuery({ ...ytWorkflowQuery(project, role), enabled: !!project }).data;
-  return (from: string | null): string[] | null => (wf?.on ? wf.edges.filter(([s]) => s === from).map(([, t]) => t) : null);
-}
+/** Unsaved edits per "project:role", in this tab's memory: moving between Settings groups keeps them, only Lưu applies one, and
+ *  opening Settings again (a reload too) starts from the saved flows (`dropWorkflowDrafts`). No storage write per drag move. */
+const drafts = new Map<string, Workflow>();
+export const dropWorkflowDrafts = () => drafts.clear();
 
 /** Where an arrow from box a to box b starts / ends: on each box's border, bent sideways when b → a also exists. */
 function arrow(a: [number, number], b: [number, number], bend: boolean) {
@@ -88,7 +95,9 @@ function arrow(a: [number, number], b: [number, number], bend: boolean) {
   return { d: `M${p1[0]},${p1[1]} Q${m[0]},${m[1]} ${p2[0]},${p2[1]}`, mid: m };
 }
 
-/** Settings › YouTrack › Workflow: drag the state boxes, drag from a box's dot onto another to draw an arrow, click an arrow to remove it. */
+/** Settings › YouTrack › Workflow: the states in use on the canvas (drag to place, drag a box's dot onto another for an arrow,
+ *  or Enter on one box then on another), the rest in a column on the right; drag between them to add / take off, pick a box or
+ *  an arrow and press Delete to take it off. */
 export function WorkflowSection() {
   const t = useT();
   const projects = useQuery(ytProjectsQuery);
@@ -100,230 +109,269 @@ export function WorkflowSection() {
   const qc = useQueryClient();
   const at = `${p}:${role}`; // a draft belongs to the project and role it was drawn for
   const [, redraw] = useState(0);
-  const draft = readDraft(at); // null: showing the saved one
-  const setDraft = (d: Workflow | null) => { put(DRAFT(at), d && JSON.stringify(d)); redraw((n) => n + 1); }; // ponytail: written on every drag move, ~3 KB
-  const states = q.data?.states ?? [];
+  const draft = drafts.get(at) ?? null; // null: showing the saved one
+  const setDraft = (d: Workflow | null, k = at) => { if (d) drafts.set(k, d); else drafts.delete(k); redraw((n) => n + 1); };
   const [cols, setCols] = useState(3); // as many boxes as fit across the canvas
   const fit = (el: HTMLDivElement | null) => { if (el) setCols(Math.max(1, Math.floor((el.clientWidth - PAD - W) / GX) + 1)); };
-  const saved: Workflow | null = q.data ? { on: q.data.on, pos: { ...layout(states, q.data.edges, cols), ...q.data.pos }, edges: q.data.edges.filter(([s, t]) => states.includes(s) && states.includes(t)), hidden: (q.data.hidden ?? []).filter((s) => states.includes(s)) } : null;
+  const data = q.data, states = useMemo(() => data?.states ?? [], [data]);
+  const saved = useMemo<Workflow | null>(() => !data ? null : {
+    pos: { ...layout(states, data.edges, cols), ...data.pos },
+    edges: data.edges.filter(([s, t]) => states.includes(s) && states.includes(t)),
+    hidden: (data.hidden ?? []).filter((s) => states.includes(s)),
+  }, [data, states, cols]);
+  const savedJson = useMemo(() => JSON.stringify(saved), [saved]);
   // a draft's `pos` may miss boxes ("Tự xếp" lays out the shown ones only; YouTrack gained a State since): the saved place
   const wf = draft ? { ...draft, pos: { ...saved?.pos, ...draft.pos } } : saved;
   const shown = states.filter((s) => !wf?.hidden.includes(s)); // the boxes on the canvas
-  const hide = (s: string) => wf && set({ hidden: [...wf.hidden, s], edges: wf.edges.filter((e) => !e.includes(s)) });
   const set = (patch: Partial<Workflow>) => {
     if (!wf || !saved) return;
     const next = { ...wf, ...patch };
-    setDraft(JSON.stringify(next) === JSON.stringify(saved) ? null : next); // back to the saved one: no draft left
+    setDraft(JSON.stringify(next) === savedJson ? null : next); // back to the saved one: no draft left
   };
+  // a box off the canvas (its arrows go with it) / back on, `to` where it lands (default: where it was)
+  const hide = (s: string, to?: [number, number]) => wf && set({ hidden: [...wf.hidden, s], edges: wf.edges.filter((e) => !e.includes(s)), ...(to && { pos: { ...wf.pos, [s]: to } }) });
+  const show = (s: string, to?: [number, number]) => wf && set({ hidden: wf.hidden.filter((x) => x !== s), ...(to && { pos: { ...wf.pos, [s]: to } }) });
+  // project, role and flow go with the call: a switch while it runs cannot point the answer at another draft
   const save = useMutation({
-    mutationFn: (w: Workflow) => yt.setWorkflow(p, { on: w.on, pos: Object.fromEntries(states.map((s) => [s, w.pos[s]])), edges: w.edges, hidden: w.hidden }),
-    onSuccess: () => { setDraft(null); void qc.invalidateQueries({ queryKey: ytWorkflowQuery(p, role).queryKey }); },
+    mutationFn: (v: { p: string; role: string; w: Workflow; d: Workflow; states: string[] }) => // w: the flow shown, d: the draft it came from
+      yt.setWorkflow(v.p, { pos: Object.fromEntries(v.states.map((s) => [s, v.w.pos[s]])), edges: v.w.edges, hidden: v.w.hidden }),
+    onSuccess: (w, v) => {
+      const k = ytWorkflowQuery(v.p, v.role).queryKey;
+      qc.setQueryData<Workflow & { states: string[] }>(k, (old) => old && { ...old, ...w }); // no flash of the old flow before the refetch
+      if (drafts.get(`${v.p}:${v.role}`) === v.d) setDraft(null, `${v.p}:${v.role}`); // edits made while it saved stay a draft
+      void qc.invalidateQueries({ queryKey: k });
+    },
+    onError: (e) => { const f = ytFail(e); toast({ text: t("Không lưu được workflow: {msg}", { msg: f.msg }), failure: f.failure }); },
+  });
+  // "Lấy từ YouTrack" reads one ticket per state (seconds): an answer after a project switch or Bỏ nháp is dropped, and it applies
+  // to the flow as it is when it lands, not as it was when asked
+  const [gen, setGen] = useState(0);
+  const applyYt = useRef<(d: { edges: [string, string][] }, v: { p: string; gen: number }) => void>(() => {});
+  useLayoutEffect(() => {
+    applyYt.current = (d, v) => {
+      if (v.p !== p || v.gen !== gen) return;
+      const edges = d.edges.filter(([s, t]) => shown.includes(s) && shown.includes(t)); // hidden boxes stay hidden
+      set({ edges, ...(Object.keys(data?.pos ?? {}).length ? {} : { pos: layout(shown, edges, cols) }) }); // nothing placed by hand yet: lay out along it
+    };
   });
   const fromYt = useMutation({
-    mutationFn: (proj: string) => yt.youtrackFlow(proj),
-    onSuccess: (d, proj) => { // hidden boxes stay hidden; nothing placed by hand yet: lay out along the new flow
-      if (proj !== p) return; // the project was switched while reading: not this one's arrows
-      const edges = d.edges.filter(([s, t]) => shown.includes(s) && shown.includes(t));
-      set({ edges, ...(Object.keys(q.data?.pos ?? {}).length ? {} : { pos: layout(shown, edges, cols) }) });
-    },
+    mutationFn: (v: { p: string; gen: number }) => yt.youtrackFlow(v.p),
+    onSuccess: (d, v) => applyYt.current(d, v),
   });
+  const ytHere = fromYt.variables?.p === p && fromYt.variables.gen === gen; // its note / error belong to this view
+  const discard = () => { setGen((n) => n + 1); setDraft(null); };
 
-  if (!q.data || !wf) return <p className="text-sm text-ink-3">{q.isError ? t("Không tải được: {msg}", { msg: (q.error as Error).message }) : t("Đang tải…")}</p>;
-  const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(saved);
-  const roleName = YT_ROLES.find(([r]) => r === role)?.[1];
+  if (!data || !wf) return <p className="text-sm text-ink-3">{q.isError ? t("Không tải được: {msg}", { msg: ytFail(q.error).msg }) : t("Đang tải…")}</p>;
+  const dirty = !!draft && JSON.stringify(draft) !== savedJson;
   return (
-    <div className="grid gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Dropdown label="Project" value={p} onChange={(v) => { setProject(v); fromYt.reset(); }} className="w-auto text-sm"
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Dropdown label="Project" value={p} onChange={(v) => { setGen((n) => n + 1); setProject(v); }} className="mr-1 w-auto text-sm"
           options={(ps ?? [{ shortName: p, name: p }]).map((x) => ({ value: x.shortName, label: x.shortName, hint: x.name }))} />
-        <Hint title={t("Lấy từ YouTrack")} text={t("Thay các mũi tên bằng luồng YouTrack đang cho phép (đọc từ mỗi state một ticket). Chưa lưu cho tới khi bấm Lưu.")}>
-          <Button type="button" size="sm" variant="outline" disabled={!states.length || fromYt.isPending} onClick={() => fromYt.mutate(p)}>
-            <Download className="size-3.5" />{t(fromYt.isPending ? "Đang đọc…" : "Lấy từ YouTrack")}
-          </Button>
-        </Hint>
-        <Hint title={t("Tự xếp")} text={t("Xếp lại các ô theo luồng: state đầu ở trên, các bước sau xuống dưới.")}>
-          <Button type="button" size="sm" variant="ghost" disabled={!states.length} onClick={() => set({ pos: layout(shown, wf.edges, cols) })}><LayoutGrid className="size-3.5" />{t("Tự xếp")}</Button>
-        </Hint>
-        <Hint title={t("Xóa hết mũi tên")} text={t("Bỏ mọi mũi tên để vẽ lại từ đầu.")}>
-          <Button type="button" size="sm" variant="ghost" disabled={!wf.edges.length} onClick={() => set({ edges: [] })}><Trash2 className="size-3.5" />{t("Xóa hết")}</Button>
-        </Hint>
-        <label className="ml-auto flex items-center gap-2 text-sm">
-          <Checkbox checked={wf.on} onCheckedChange={(v) => set({ on: !!v })} /> {t("Áp dụng trong app")}
-        </label>
+        {states.length > 0 && <>
+          <Hint title={t("Lấy từ YouTrack")} text={t("Thay các mũi tên bằng luồng YouTrack đang cho phép (đọc từ mỗi state một ticket). Chưa lưu cho tới khi bấm Lưu.")}>
+            <Button type="button" size="sm" variant="outline" disabled={fromYt.isPending} onClick={() => fromYt.mutate({ p, gen })}>
+              <Download className="size-3.5" />{t(fromYt.isPending ? "Đang đọc…" : "Lấy từ YouTrack")}
+            </Button>
+          </Hint>
+          <Hint title={t("Tự xếp")} text={t("Xếp lại các ô theo luồng: state đầu ở trên, các bước sau xuống dưới.")}>
+            <Button type="button" size="icon-sm" variant="ghost" aria-label={t("Tự xếp")} onClick={() => set({ pos: layout(shown, wf.edges, cols) })}><LayoutGrid className="size-4" /></Button>
+          </Hint>
+          <Hint title={t("Xóa hết mũi tên")} text={t("Bỏ mọi mũi tên để vẽ lại từ đầu.")}>
+            <Button type="button" size="icon-sm" variant="ghost" aria-label={t("Xóa hết mũi tên")} disabled={!wf.edges.length} onClick={() => set({ edges: [] })}><Trash2 className="size-4" /></Button>
+          </Hint>
+        </>}
       </div>
-      {fromYt.isError && <p role="alert" className="text-xs text-error">{t("Không đọc được: {msg}", { msg: (fromYt.error as Error).message })}</p>}
-      {fromYt.data?.unknown.length ? <p className="text-xs text-ink-3">{t("Chưa có ticket nào ở {states} nên chưa biết từ đó đi đâu, tự nối thêm nếu cần.", { states: fromYt.data.unknown.join(", ") })}</p> : null}
-      {!states.length ? <p className="text-sm text-ink-3">{q.data && !states.length ? t("Chưa có state: cần token YouTrack (nhóm Kết nối và báo cáo).") : null}</p>
-        : (
-          <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule">
-            <Canvas states={shown} wf={wf} onChange={set} onHide={hide} fit={fit} />
-            <HiddenTray hidden={wf.hidden} onShow={(list) => set({ hidden: wf.hidden.filter((x) => !list.includes(x)) })} />
-          </div>
-        )}
-      <EdgeList states={shown} edges={wf.edges} onChange={(edges) => set({ edges })} />
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" size="sm" variant="outline" disabled={!dirty || save.isPending} onClick={() => save.mutate(wf)}>{t("Lưu")}</Button>
-        {dirty && <Button type="button" size="sm" variant="ghost" onClick={() => { setDraft(null); fromYt.reset(); }}>{t("Bỏ nháp")}</Button>}
-        {dirty && <span className="rounded-full bg-warn-wash px-2 py-0.5 text-xs font-medium text-warn">{t("Bản nháp: chưa áp dụng cho ticket, bấm Lưu để áp dụng")}</span>}
-        <span className="flex flex-wrap gap-x-3 text-xs text-ink-3"><span>{t("Vai trò")} <b className="text-ink-2">{roleName && t(roleName)}</b></span><span>{t("{n} mũi tên", { n: wf.edges.length })}</span><span>{t(wf.on ? "app chỉ cho chuyển state theo mũi tên (menu State, kéo thả Board)" : "đang tắt: chỉ YouTrack quyết định")}</span></span>
-      </div>
-      {save.isError && <p role="alert" className="text-xs text-error">{t("Không lưu được: {msg}", { msg: (save.error as Error).message })}</p>}
+      {ytHere && fromYt.isError && <p role="alert" className="text-xs text-error">{t("Không đọc được: {msg}", { msg: ytFail(fromYt.error).msg })}</p>}
+      {ytHere && fromYt.data?.unknown.length ? <p className="text-xs text-ink-3">{t("Chưa có ticket nào ở {states} nên chưa biết từ đó đi đâu, tự nối thêm nếu cần.", { states: fromYt.data.unknown.join(", ") })}</p> : null}
+      {!states.length ? <p className="text-sm text-ink-3">{t("Chưa có state: cần token YouTrack (nhóm Kết nối và báo cáo).")}</p> : (
+        <div className="@container flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-card)] border border-rule">
+          <Canvas states={shown} hidden={wf.hidden} wf={wf} onChange={set} onHide={hide} onShow={show} fit={fit} />
+          {/* only while there is a draft: a strip under the canvas, so it never covers a box */}
+          <Fold open={dirty}>
+            <div className="flex flex-wrap items-center gap-2 border-t border-rule bg-warn-wash py-1.5 pr-1.5 pl-3">
+              <span aria-hidden className="size-2 shrink-0 rounded-full bg-signal" />
+              <span className="text-xs text-ink-2">{t("Bản nháp chưa lưu, ticket vẫn theo bản đã lưu")}</span>
+              <span className="ml-auto flex gap-1.5">
+                <Button type="button" size="sm" variant="ghost" onClick={discard}>{t("Bỏ nháp")}</Button>
+                <Button type="button" size="sm" aria-busy={save.isPending} disabled={!dirty || save.isPending} onClick={() => draft && save.mutate({ p, role, w: wf, d: draft, states })}>{t("Lưu")}</Button>
+              </span>
+            </div>
+          </Fold>
+        </div>
+      )}
     </div>
   );
 }
 
-type Drag = { kind: "move"; s: string; dx: number; dy: number } | { kind: "link"; s: string; x: number; y: number; over: string | null };
+type Drag =
+  | { kind: "move"; s: string; dx: number; dy: number; to: [number, number] | null; out: boolean } // to: where it is while dragged; out: over the column
+  | { kind: "link"; s: string; x: number; y: number; over: string | null }
+  | { kind: "add"; s: string; x: number; y: number; ox: number; oy: number; moved: boolean; into: boolean }; // from the column; frame coordinates, o: start
+type Sel = { edge: string } | { box: string } | null;
 
-function Canvas({ states, wf, onChange, onHide, fit }: { states: string[]; wf: Workflow; onChange: (p: Partial<Workflow>) => void; onHide: (s: string) => void; fit: (el: HTMLDivElement | null) => void }) {
+const near0 = (v: number) => Math.max(0, Math.round(v));
+
+function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
+  states: string[]; hidden: string[]; wf: Workflow; onChange: (p: Partial<Workflow>) => void;
+  onHide: (s: string, to?: [number, number]) => void; onShow: (s: string, to?: [number, number]) => void; fit: (el: HTMLDivElement | null) => void;
+}) {
   const t = useT();
-  const box = useRef<HTMLDivElement>(null);
+  const frame = useRef<HTMLDivElement>(null), box = useRef<HTMLDivElement>(null);
   useEffect(() => fit(box.current), []); // eslint-disable-line react-hooks/exhaustive-deps -- measured once
-  const [drag, setDrag] = useState<Drag | null>(null);
-  const [sel, setSel] = useState<string | null>(null); // the picked arrow's key
+  // the live drag in a ref too: a pointerup in the same frame as the last move still sees it
+  const [drag, setDragState] = useState<Drag | null>(null);
+  const live = useRef<Drag | null>(null);
+  const setDrag = (d: Drag | null) => { live.current = d; setDragState(d); };
+  const [sel, setSel] = useState<Sel>(null);
+  const [linking, setLinking] = useState<string | null>(null); // keyboard: Enter on a box, then Enter on the one it leads to
+  // the dragged box is drawn where the pointer is; the flow only changes on letting go (one draft write per drag)
+  const pos = drag?.kind === "move" && drag.to && !drag.out ? { ...wf.pos, [drag.s]: drag.to } : wf.pos;
   const has = new Set(wf.edges.map(key));
-  const width = Math.max(0, ...states.map((s) => wf.pos[s][0])) + W + PAD;
-  const height = Math.max(360, Math.max(0, ...states.map((s) => wf.pos[s][1])) + H + PAD);
+  const width = Math.max(0, ...states.map((s) => pos[s][0])) + W + PAD;
+  const height = Math.max(0, ...states.map((s) => pos[s][1])) + H + PAD + 40; // + room for the empty hint below the boxes
+  const boxH = Math.min(480, Math.max(260, height)); // narrow screens (no full-height card): the canvas's own height
 
-  const remove = (k: string) => { onChange({ edges: wf.edges.filter((e) => key(e) !== k) }); setSel(null); };
-  useEffect(() => {
-    if (!sel) return;
-    const down = (e: KeyboardEvent) => { if ((e.key === "Delete" || e.key === "Backspace") && !(e.target as HTMLElement).closest("input,textarea,select")) { e.preventDefault(); remove(sel); } if (e.key === "Escape") setSel(null); };
-    addEventListener("keydown", down);
-    return () => removeEventListener("keydown", down);
-  });
+  const link = (from: string, to: string) => { if (to !== from && !has.has(key([from, to]))) onChange({ edges: [...wf.edges, [from, to]] }); };
+  const drop = (s: Sel) => { // Delete: the picked arrow, or the picked box off the canvas; the keyboard stays on the canvas
+    if (!s) return;
+    if ("edge" in s) onChange({ edges: wf.edges.filter((e) => key(e) !== s.edge) }); else onHide(s.box);
+    setSel(null); setLinking(null); box.current?.focus();
+  };
+  // keys on the canvas only (a pick left behind never eats a Backspace typed elsewhere); handled here, before the page's Esc
+  function keys(e: RKeyboardEvent) {
+    const s = (e.target as Element).closest?.("[data-state]")?.getAttribute("data-state") ?? null;
+    if (e.key === "Delete" || e.key === "Backspace") { if (sel) { e.preventDefault(); drop(sel); } }
+    else if (e.key === "Escape" && (sel || linking)) { e.preventDefault(); setSel(null); setLinking(null); } // the next Esc closes Settings
+    else if (e.key === "Enter" && s) { e.preventDefault(); if (linking && linking !== s) { link(linking, s); setLinking(null); } else setLinking(linking === s ? null : s); }
+  }
 
   const at = (e: RPointerEvent) => { const r = box.current!.getBoundingClientRect(); return [e.clientX - r.left + box.current!.scrollLeft, e.clientY - r.top + box.current!.scrollTop]; };
+  const inFrame = (e: RPointerEvent) => { const r = frame.current!.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  const zone = (e: RPointerEvent) => (document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-wf-zone]") as HTMLElement | null)?.dataset.wfZone;
   const stateAt = (e: RPointerEvent) => (document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-state]") as HTMLElement | null)?.dataset.state ?? null;
+  const grab = (e: RPointerEvent, d: Drag) => { e.stopPropagation(); setDrag(d); setLinking(null); frame.current!.setPointerCapture(e.pointerId); };
   function move(e: RPointerEvent) {
-    if (!drag) return;
-    const [x, y] = at(e);
-    if (drag.kind === "move") onChange({ pos: { ...wf.pos, [drag.s]: [Math.max(0, Math.round(x - drag.dx)), Math.max(0, Math.round(y - drag.dy))] } });
-    else setDrag({ ...drag, x, y, over: stateAt(e) });
+    const d = live.current;
+    if (!d) return;
+    if (d.kind === "move") {
+      const out = zone(e) === "tray", [x, y] = at(e);
+      setDrag({ ...d, out, to: out ? d.to : [near0(x - d.dx), near0(y - d.dy)] });
+    } else if (d.kind === "link") { const [x, y] = at(e); setDrag({ ...d, x, y, over: stateAt(e) }); }
+    else { const [x, y] = inFrame(e); setDrag({ ...d, x, y, moved: d.moved || Math.hypot(x - d.ox, y - d.oy) > 4, into: zone(e) === "canvas" }); }
   }
   function up(e: RPointerEvent) {
-    if (drag?.kind === "link") {
-      const t = stateAt(e);
-      if (t && t !== drag.s && !has.has(key([drag.s, t]))) onChange({ edges: [...wf.edges, [drag.s, t]] });
-    }
+    const d = live.current;
     setDrag(null);
+    if (d?.kind === "move") {
+      if (d.out) { onHide(d.s); setSel(null); } // dropped on the column: off (back to its old place if it returns)
+      else if (d.to) onChange({ pos: { ...wf.pos, [d.s]: d.to } });
+      else setSel(sel && "box" in sel && sel.box === d.s ? null : { box: d.s }); // a click: pick / let go
+    } else if (d?.kind === "link") {
+      const to = stateAt(e);
+      if (to) link(d.s, to);
+    } else if (d?.kind === "add") {
+      if (!d.moved) onShow(d.s); // a click: back where it was
+      else if (d.into) { const [x, y] = at(e); onShow(d.s, [near0(x - W / 2), near0(y - H / 2)]); }
+    }
   }
+  const lit = (k: string) => !!sel && "edge" in sel && sel.edge === k;
+  // a picked box (not while dragging): its arrows (in and out) and the states at their other end stand out, the rest fades back
+  const focus = !drag && sel && "box" in sel ? sel.box : null;
+  const near = focus ? new Set([focus, ...wf.edges.filter((e) => e.includes(focus)).flat()]) : null;
+  // focus only picks from the keyboard (Tab): a pointer press picks on letting go, so drawing an arrow never dims its targets
+  const keyFocus = (e: React.FocusEvent<Element>, s: Sel) => { if (e.currentTarget.matches(":focus-visible")) setSel(s); };
 
   return (
-    <div ref={box} onPointerMove={move} onPointerUp={up} onPointerCancel={() => setDrag(null)} onPointerDown={(e) => e.target === e.currentTarget && setSel(null)}
-      className="relative h-[420px] touch-none overflow-auto bg-paper-2 select-none"
-      style={{ backgroundImage: "radial-gradient(var(--color-rule) 1px, transparent 1px)", backgroundSize: "16px 16px" }}>
-      <svg width={width} height={height} className="pointer-events-none absolute top-0 left-0" aria-hidden>
-        <defs>
-          {["n", "s"].map((m) => (
-            <marker key={m} id={`wf-${m}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" fill={m === "s" ? "var(--color-hl)" : "var(--color-ink-3)"} />
-            </marker>
-          ))}
-        </defs>
-        {wf.edges.map((e) => {
-          const k = key(e), on = sel === k, a = arrow(wf.pos[e[0]], wf.pos[e[1]], has.has(key([e[1], e[0]])));
-          return (
-            <g key={k} className="pointer-events-auto cursor-pointer" onPointerDown={(ev) => { ev.stopPropagation(); setSel(on ? null : k); }}>
-              <path d={a.d} fill="none" stroke="transparent" strokeWidth={14} />
-              <path d={a.d} fill="none" stroke={on ? "var(--color-hl)" : "var(--color-ink-3)"} strokeWidth={on ? 2.5 : 1.5} markerEnd={`url(#wf-${on ? "s" : "n"})`} />
-            </g>
-          );
-        })}
-        {drag?.kind === "link" && (() => { const [x, y] = wf.pos[drag.s]; return <line x1={x + W} y1={y + H / 2} x2={drag.x} y2={drag.y} stroke="var(--color-hl)" strokeWidth={2} strokeDasharray="5 4" markerEnd="url(#wf-s)" />; })()}
-      </svg>
-      {sel && (() => {
-        const e = wf.edges.find((x) => key(x) === sel);
-        if (!e) return null;
-        const m = arrow(wf.pos[e[0]], wf.pos[e[1]], has.has(key([e[1], e[0]]))).mid;
-        return (
-          <button type="button" aria-label={t("Xóa mũi tên {from} → {to}", { from: e[0], to: e[1] })} onClick={() => remove(sel)} style={{ left: m[0] - 11, top: m[1] - 11 }}
-            className="absolute z-10 grid size-[22px] place-items-center rounded-full bg-error text-cotton shadow-stock"><X className="size-3.5" /></button>
-        );
-      })()}
-      {states.map((s) => {
-        const [x, y] = wf.pos[s], target = drag?.kind === "link" && drag.over === s && drag.s !== s;
-        return (
-          <div key={s} data-state={s} style={{ left: x, top: y, width: W, height: H, borderColor: stateColor(s) }}
-            onPointerDown={(e) => { if (e.button) return; const [px, py] = at(e); setDrag({ kind: "move", s, dx: px - x, dy: py - y }); setSel(null); box.current!.setPointerCapture(e.pointerId); }}
-            className={cn("group absolute flex cursor-grab items-center gap-1.5 rounded-[var(--radius-input)] border-l-4 bg-cotton pr-4 pl-2 text-xs font-medium shadow-stock active:cursor-grabbing",
-              target && "ring-2 ring-hl", drag?.kind === "move" && drag.s === s && "z-10 shadow-lg")}>
-            <span className="truncate" title={s}>{s}</span>
-            <span role="button" aria-label={t("Kéo để nối từ {state}", { state: s })} onPointerDown={(e) => { e.stopPropagation(); const [px, py] = at(e); setDrag({ kind: "link", s, x: px, y: py, over: null }); setSel(null); box.current!.setPointerCapture(e.pointerId); }}
-              className="absolute top-1/2 -right-[7px] size-3.5 -translate-y-1/2 cursor-crosshair rounded-full border-2 border-cotton bg-hl shadow-stock hover:scale-125" />
-            <button type="button" aria-label={t("Ẩn {state} khỏi workflow", { state: s })} onPointerDown={(e) => e.stopPropagation()} onClick={() => onHide(s)}
-              className="absolute -top-2 right-3 grid size-[18px] place-items-center rounded-full bg-paper-3 text-ink-3 opacity-0 shadow-stock transition-opacity group-hover:opacity-100 hover:bg-error hover:text-cotton focus-visible:opacity-100 [@media(hover:none)]:opacity-100">
-              <X className="size-3" />
-            </button>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Under the canvas: the states taken off it, as small boxes like the ones above; a click puts one back where it was. */
-function HiddenTray({ hidden, onShow }: { hidden: string[]; onShow: (states: string[]) => void }) {
-  const t = useT();
-  return (
-    <AnimatePresence initial={false}>
-      {hidden.length > 0 && (
-        <motion.div key="tray" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.18, ease: "easeOut" }} className="overflow-hidden border-t border-rule bg-cotton">
-          <div className="grid gap-2 px-3 py-2.5">
-            <div className="flex items-center gap-2 text-xs text-ink-3">
-              <EyeOff className="size-3.5" aria-hidden />
-              <span className="font-medium text-ink-2">{t("Đã ẩn")}</span>
-              <span className="rounded-full bg-paper-3 px-1.5 font-mono text-2xs leading-[18px]">{hidden.length}</span>
-              <span className="max-sm:hidden">{t("(bấm một state để đưa lại vào sơ đồ)")}</span>
-              {hidden.length > 1 && (
-                <button type="button" onClick={() => onShow(hidden)} className="ml-auto rounded px-1.5 py-0.5 font-medium text-hl-2 hover:bg-hl-wash">{t("Hiện tất cả")}</button>
-              )}
-            </div>
-            <ul className="flex flex-wrap gap-1.5">
-              <AnimatePresence initial={false}>
-                {hidden.map((s) => (
-                  <motion.li key={s} layout initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} transition={{ duration: 0.15 }}>
-                    <button type="button" aria-label={t("Hiện lại {state}", { state: s })} onClick={() => onShow([s])} style={{ borderLeftColor: stateColor(s) }}
-                      className="group inline-flex h-7 max-w-56 items-center gap-1.5 rounded-[var(--radius-input)] border border-l-[3px] border-rule bg-paper-2 pr-1.5 pl-2 text-xs text-ink-2 transition-colors hover:border-hl/60 hover:bg-cotton hover:text-ink focus-visible:ring-2 focus-visible:ring-hl">
-                      <span className="truncate">{s}</span>
-                      <Plus className="size-3.5 shrink-0 text-ink-3 transition-colors group-hover:text-hl-2" aria-hidden />
-                    </button>
-                  </motion.li>
-                ))}
-              </AnimatePresence>
-            </ul>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
-
-/** The same arrows as a list: add one with two selects, remove with ×. Works by keyboard and on a phone. */
-function EdgeList({ states, edges, onChange }: { states: string[]; edges: [string, string][]; onChange: (e: [string, string][]) => void }) {
-  const [from, setFrom] = useState(""), [to, setTo] = useState("");
-  const t = useT();
-  const f = states.includes(from) ? from : states[0] ?? "", dst = states.includes(to) ? to : states[1] ?? states[0] ?? "";
-  const dupe = f === dst || edges.some(([a, b]) => a === f && b === dst);
-  const opts = states.map((s) => ({ value: s, label: s }));
-  return (
-    <FoldMore className="text-sm" labelClassName="text-xs font-normal text-ink-3" label={t("Danh sách mũi tên ({n})", { n: edges.length })}>
-      <div className="grid gap-2 pt-2">
-        <form className="flex flex-wrap items-center gap-2"   onSubmit={(e) => { e.preventDefault(); if (!dupe) onChange([...edges, [f, dst]]); }}>
-          <Dropdown label={t("Từ state")} value={f} onChange={setFrom} options={opts} className="w-auto" />
-          <span aria-hidden>→</span>
-          <Dropdown label={t("Sang state")} value={dst} onChange={setTo} options={opts} className="w-auto" />
-          <Button type="submit" size="sm" variant="outline" disabled={dupe}>{t("Thêm")}</Button>
-        </form>
-        <ul className="flex flex-wrap gap-1.5">
-          {edges.map(([a, b]) => (
-            <li key={key([a, b])} className="inline-flex items-center gap-1 rounded-full bg-paper-2 py-0.5 pr-1 pl-2.5 text-xs">
-              {a} → {b}
-              <button type="button" aria-label={t("Xóa {from} → {to}", { from: a, to: b })} onClick={() => onChange(edges.filter((e) => e[0] !== a || e[1] !== b))} className="rounded-full p-0.5 text-ink-3 hover:bg-paper-3 hover:text-error"><X className="size-3" /></button>
-            </li>
-          ))}
-        </ul>
+    <div ref={frame} onPointerMove={move} onPointerUp={up} onPointerCancel={() => setDrag(null)} onLostPointerCapture={() => setDrag(null)} onKeyDown={keys}
+      style={{ "--wf-h": `${boxH}px` } as React.CSSProperties} className="relative flex min-h-0 flex-1 touch-none select-none @max-lg:flex-col">
+      <div data-wf-zone="canvas" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <div ref={box} tabIndex={-1} onPointerDown={(e) => { if (e.target === e.currentTarget) { setSel(null); setLinking(null); } }}
+          className={cn("relative h-(--wf-h) overflow-auto bg-paper-2 outline-none transition-shadow md:h-auto md:min-h-60 md:flex-1", drag?.kind === "add" && drag.into && "shadow-[inset_0_0_0_2px_var(--color-hl)]")}
+          style={{ backgroundImage: "radial-gradient(var(--color-rule) 1px, transparent 1px)", backgroundSize: "16px 16px" }}>
+          <svg width={width} height={height} overflow="visible" className="pointer-events-none absolute top-0 left-0">
+            <defs>
+              {["n", "s"].map((m) => (
+                <marker aria-hidden key={m} id={`wf-${m}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" fill={m === "s" ? "var(--color-hl)" : "var(--color-ink-3)"} />
+                </marker>
+              ))}
+            </defs>
+            {wf.edges.map((e) => {
+              const k = key(e), on = lit(k), rel = !!focus && e.includes(focus), a = arrow(pos[e[0]], pos[e[1]], has.has(key([e[1], e[0]])));
+              return (
+                <g key={k} role="button" tabIndex={0} aria-label={t("Mũi tên {from} → {to}, Delete để xóa", { from: e[0], to: e[1] })} className={cn("pointer-events-auto cursor-pointer outline-none transition-opacity duration-(--dur-short)", focus && !rel && "opacity-15")}
+                  onPointerDown={(ev) => { ev.stopPropagation(); setLinking(null); setSel(on ? null : { edge: k }); }} onFocus={(ev) => keyFocus(ev, { edge: k })}>
+                  <path d={a.d} fill="none" stroke="transparent" strokeWidth={14} />
+                  <path d={a.d} fill="none" stroke={on || rel ? "var(--color-hl)" : "var(--color-ink-3)"} strokeWidth={on ? 2.5 : rel ? 2 : 1.5} markerEnd={`url(#wf-${on || rel ? "s" : "n"})`} />
+                </g>
+              );
+            })}
+            {drag?.kind === "link" && (() => { const [x, y] = pos[drag.s]; return <line x1={x + W} y1={y + H / 2} x2={drag.x} y2={drag.y} stroke="var(--color-hl)" strokeWidth={2} strokeDasharray="5 4" markerEnd="url(#wf-s)" />; })()}
+          </svg>
+          {sel && "edge" in sel && (() => {
+            const e = wf.edges.find((x) => key(x) === sel.edge);
+            if (!e) return null;
+            const m = arrow(pos[e[0]], pos[e[1]], has.has(key([e[1], e[0]]))).mid;
+            return (
+              <button type="button" aria-label={t("Xóa mũi tên {from} → {to}", { from: e[0], to: e[1] })} onClick={() => drop(sel)} style={{ left: m[0] - 11, top: m[1] - 11 }}
+                className="absolute z-10 grid size-[22px] place-items-center rounded-full bg-error text-cotton shadow-stock"><X className="size-3.5" /></button>
+            );
+          })()}
+          {states.map((s) => {
+            const [x, y] = pos[s], target = drag?.kind === "link" && drag.over === s && drag.s !== s;
+            const picked = !!sel && "box" in sel && sel.box === s, moving = drag?.kind === "move" && drag.s === s;
+            return (
+              <div key={s} data-state={s} role="button" tabIndex={0} aria-pressed={picked} aria-label={t("{state}: Enter để nối mũi tên, Delete để bỏ khỏi workflow", { state: s })}
+                style={{ left: x, top: y, width: W, height: H }} onFocus={(e) => keyFocus(e, { box: s })}
+                onPointerDown={(e) => { if (e.button) return; const [px, py] = at(e); grab(e, { kind: "move", s, dx: px - x, dy: py - y, to: null, out: false }); }}
+                className={cn("group absolute cursor-grab rounded-[var(--radius-input)] bg-cotton shadow-stock outline-none transition-[box-shadow,opacity,filter] duration-(--dur-short) focus-visible:ring-2 focus-visible:ring-hl/60 active:cursor-grabbing",
+                  (target || picked) && "ring-2 ring-hl", linking === s && "outline-2 outline-offset-2 outline-hl outline-dashed", moving && "z-10 shadow-lg", moving && drag.out && "opacity-40",
+                  near && !near.has(s) && "opacity-35 blur-[1.5px]")}>
+                <StatePill state={s} className="size-full rounded-[var(--radius-input)] pr-5 pl-2.5" />
+                <span aria-hidden onPointerDown={(e) => { if (e.button) return; const [px, py] = at(e); grab(e, { kind: "link", s, x: px, y: py, over: null }); setSel(null); }}
+                  className="absolute top-1/2 -right-[6px] size-3 -translate-y-1/2 cursor-crosshair rounded-full border-2 border-cotton bg-hl opacity-70 shadow-stock transition-[opacity,scale] duration-(--dur-micro) group-hover:opacity-100 hover:scale-125" />
+              </div>
+            );
+          })}
+        </div>
+        <AnimatePresence>
+          {(linking || !wf.edges.length) && ( // over the canvas's foot, outside its scroll
+            <motion.p key={linking ? "link" : "empty"} role="status" initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8, scale: 0.96 }} transition={{ type: "spring", stiffness: 420, damping: 32 }}
+              className="pointer-events-none absolute inset-x-3 bottom-3 mx-auto w-fit rounded-full bg-cotton/90 px-3 py-1 text-center text-xs text-ink-2 shadow-stock backdrop-blur">
+              {linking ? t("Nối từ {state}: Tab tới ô đích rồi Enter (Esc để hủy)", { state: linking }) : t("Kéo chấm tròn của một ô sang ô khác để nối, hoặc Lấy từ YouTrack.")}
+            </motion.p>
+          )}
+        </AnimatePresence>
       </div>
-    </FoldMore>
+      {/* the states not in the workflow: drag one onto the canvas (or click it) to add it, drag a box here to take it off */}
+      <ul data-wf-zone="tray" aria-label={t("State chưa dùng trong workflow")}
+        className={cn("flex min-h-0 w-44 shrink-0 flex-col gap-1.5 overflow-y-auto border-l border-rule bg-cotton p-2 transition-colors duration-(--dur-micro) @max-lg:max-h-32 @max-lg:w-auto @max-lg:flex-row @max-lg:flex-wrap @max-lg:border-t @max-lg:border-l-0",
+          drag?.kind === "move" && drag.out && "bg-hl-wash", "max-md:max-h-(--wf-h)")}>
+        <AnimatePresence initial={false}>
+          {hidden.map((s) => (
+            // layoutDependency: measured only when the column's chips change, not on every drag move
+            <motion.li key={s} layout layoutDependency={hidden.length} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} transition={{ duration: 0.15 }}
+              className={cn("min-w-0", drag?.kind === "add" && drag.s === s && drag.moved && "opacity-40")}>
+              <button type="button" aria-label={t("Thêm {state} vào workflow", { state: s })} onClick={() => onShow(s)}
+                onPointerDown={(e) => { if (e.button) return; const [x, y] = inFrame(e); grab(e, { kind: "add", s, x, y, ox: x, oy: y, moved: false, into: false }); }}
+                className="flex w-full max-w-full cursor-grab rounded-[var(--radius-input)] bg-cotton text-left shadow-stock transition-shadow hover:shadow-[0_0_0_1px_var(--color-hl)] focus-visible:ring-2 focus-visible:ring-hl active:cursor-grabbing">
+                <StatePill state={s} className="w-full min-w-0 py-0.5" />
+              </button>
+            </motion.li>
+          ))}
+        </AnimatePresence>
+        {(!hidden.length || (drag?.kind === "move" && drag.out)) && (
+          <li className="grid min-h-16 flex-1 place-items-center rounded-[var(--radius-input)] border border-dashed border-rule-2 p-2 text-center text-xs text-ink-3">
+            {t("Kéo ô vào đây để bỏ khỏi workflow")}
+          </li>
+        )}
+      </ul>
+      {drag?.kind === "add" && drag.moved && ( // the chip under the pointer while it is carried to the canvas
+        <div aria-hidden className="pointer-events-none absolute z-20 rounded-[var(--radius-input)] bg-cotton shadow-lg" style={{ left: drag.x - W / 2, top: drag.y - H / 2, width: W, height: H }}>
+          <StatePill state={drag.s} className="size-full rounded-[var(--radius-input)] pl-2.5" />
+        </div>
+      )}
+    </div>
   );
 }

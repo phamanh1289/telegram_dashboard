@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Info } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { Fold } from "@/shared/components/ui/fold";
 import { Hint } from "@/shared/components/ui/hint";
 import { Pill } from "@/shared/components/ui/segmented";
@@ -61,6 +61,32 @@ function InfoHint({ title, text }: { title: string; text: string }) {
   );
 }
 
+/** The height that takes `ref` to the bottom of the window less the page's bottom padding, so the page itself does not
+ *  scroll; `min` at least (a short window scrolls the page rather than squeeze the form). null below the page's `md`
+ *  layout (the menu on top, chips wrapping): the form keeps its natural height there and the page scrolls. */
+export function useFillHeight(ref: React.RefObject<HTMLElement | null>, min: number) {
+  const [h, setH] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const wide = matchMedia("(min-width: 48rem)");
+    const fit = () => {
+      if (!wide.matches) return setH(null);
+      const pad = parseFloat(getComputedStyle(el.closest("main")?.parentElement ?? el).paddingBottom) || 0;
+      setH(Math.max(min, Math.floor(innerHeight - (el.getBoundingClientRect().top + scrollY) - pad)));
+    };
+    fit();
+    // The window, and anything above that settles late (fonts, the header's wrap): `fit` never moves our own top, so
+    // the observer settles after one pass.
+    const ro = new ResizeObserver(fit);
+    ro.observe(document.body);
+    addEventListener("resize", fit);
+    wide.addEventListener("change", fit);
+    return () => { ro.disconnect(); removeEventListener("resize", fit); wide.removeEventListener("change", fit); };
+  }, [ref, min]);
+  return h;
+}
+
 /** One setting: name and a short line on the left, its control on the right (`stack`: the control below, full width). */
 export function Row({ label, desc, children, stack, htmlFor }: { label: React.ReactNode; desc?: React.ReactNode; children?: React.ReactNode; stack?: boolean; htmlFor?: string }) {
   const Name = htmlFor ? "label" : "span";
@@ -88,15 +114,6 @@ export function StatusLine({ tone, children }: { tone: "ok" | "warn" | "idle" | 
 
 export const linkCls = "inline-flex w-fit items-center gap-1 text-xs text-hl-2 underline decoration-hl underline-offset-[3px]";
 export const quietBtn = "w-fit text-xs text-ink-3 underline underline-offset-[3px] hover:text-ink";
-
-export function Switch({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <button type="button" role="switch" aria-label={label} aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)}
-      className={cn("relative block h-5 w-9 shrink-0 rounded-full transition-colors duration-(--dur-short) disabled:cursor-not-allowed disabled:opacity-40", checked ? "bg-hl" : "bg-paper-3 shadow-groove")}>
-      <span aria-hidden className={cn("absolute top-0.5 left-0.5 size-4 rounded-full bg-cotton shadow-stock transition-transform duration-(--dur-short) ease-(--ease-out)", checked && "translate-x-4")} />
-    </button>
-  );
-}
 
 /** A picked / unpicked tile (role, mascot, drawing, preset mix). The picked tile's border and wash are a `PickPill`
  *  that slides between tiles like `Segmented`; the tile's own border hides under it. */

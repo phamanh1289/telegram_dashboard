@@ -516,7 +516,7 @@
     "tab": "settings",
     "area": "Cài đặt › YouTrack › Workflow",
     "title": "Vẽ workflow State cho vai trò",
-    "what": "Luồng State cho project và vai trò đang chọn: ô là State, mũi tên là bước được đi tiếp. Bật \"Áp dụng trong app\" thì menu State, kéo thả trên Board và đổi hàng loạt chỉ cho đi theo mũi tên (YouTrack vẫn kiểm luồng của nó). \"Lấy từ YouTrack\" chép luồng YouTrack đang cho phép, nhanh nhất để bắt đầu. Dev có sẵn luồng mặc định khi project đủ state; QA/QC, PO/PM bắt đầu trống. Chưa bật thì ticket đổi được sang mọi State; menu State của ticket, menu State khi đổi hàng loạt và đầu Board có dòng gợi ý \"Vẽ workflow\" (\"Để sau\" ẩn cả ba).",
+    "what": "Luồng State cho project và vai trò đang chọn: ô là State, mũi tên là bước được đi tiếp. Workflow luôn được áp dụng: menu State, kéo thả trên Board và đổi hàng loạt chỉ cho đi theo mũi tên (YouTrack vẫn kiểm luồng của nó); vai trò chưa có mũi tên nào thì chưa đổi được State, menu State của ticket, menu State khi đổi hàng loạt và đầu Board có dòng \"Vẽ workflow\" dẫn tới đây. Hàng công cụ: \"Lấy từ YouTrack\" chép luồng YouTrack đang cho phép (nhanh nhất để bắt đầu), nút Tự xếp và Xóa hết mũi tên. Sơ đồ bên trái là các State đang dùng, cột bên phải là các State còn lại: kéo một State từ cột phải vào sơ đồ (hoặc bấm nó) để thêm, kéo ô từ sơ đồ sang cột phải để bỏ. Kéo ô để xếp, kéo chấm tròn sang ô khác để nối; bấm một ô thì các mũi tên và State nối với nó nổi lên, phần còn lại mờ đi (bấm chỗ trống hoặc Esc để bỏ chọn); bấm một ô hoặc mũi tên (hoặc Tab tới nó) rồi Delete để bỏ. Bằng bàn phím: Tab tới một ô, Enter, Tab tới ô đích rồi Enter để nối mũi tên. Sửa gì cũng thành bản nháp: dải \"Bản nháp chưa lưu\" mở ra dưới sơ đồ với nút Bỏ nháp và Lưu; chuyển giữa các mục trong Cài đặt vẫn giữ nháp, đóng Cài đặt thì nháp bị bỏ. Dev có sẵn luồng mặc định khi project đủ state; QA/QC, PO/PM bắt đầu trống.",
     "how": [
       {
         "t": "Chọn mục \"YouTrack\"",
@@ -529,10 +529,6 @@
       {
         "t": "Bấm \"Lấy từ YouTrack\" (hoặc kéo chấm tròn từ ô này sang ô kia để nối mũi tên)",
         "at": "Lấy từ YouTrack"
-      },
-      {
-        "t": "Tick \"Áp dụng trong app\"",
-        "at": "Áp dụng trong app"
       },
       {
         "t": "Bấm \"Lưu\"",

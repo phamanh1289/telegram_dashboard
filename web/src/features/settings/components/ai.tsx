@@ -1,6 +1,7 @@
 "use client";
 
-import { Card, Row, Switch, usePrivacy } from "@/features/settings/components/parts";
+import { Card, Row, usePrivacy } from "@/features/settings/components/parts";
+import { Switch } from "@/shared/components/ui/switch";
 import { AiAccounts, PrefsSection, useAiPrefs } from "@/shared/components/ai";
 import { PROVIDERS } from "@/shared/components/ai/prefs";
 import { Dropdown } from "@/shared/components/ui/dropdown";

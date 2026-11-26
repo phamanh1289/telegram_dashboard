@@ -124,8 +124,13 @@ export type SavedPrompt = { name: string; text: string };
 export type PromptCtx = `${"dev" | "qa" | "po"}:${"one" | "many"}`;
 /** The team's prompts and, per context, the names shown as buttons in the AI session (missing = the role's default). */
 export type PromptLib = { prompts: SavedPrompt[]; shown: Partial<Record<PromptCtx, string[]>>; hidden: string[] }; // hidden: built-ins the team deleted
-/** The team's State flow for a project (Settings › YouTrack › Workflow); `on`: the app only moves tickets along an arrow. */
-export type Workflow = { on: boolean; pos: Record<string, [number, number]>; edges: [string, string][]; hidden: string[] }; // hidden: states taken off the canvas (no arrow can reach them)
+/** The team's State flow for a project and role (Settings › YouTrack › Workflow), always applied: tickets only move along an
+ *  arrow, none drawn = no State change. */
+export type Workflow = { pos: Record<string, [number, number]>; edges: [string, string][]; hidden: string[] }; // hidden: states taken off the canvas (no arrow can reach them)
+/** Where a ticket in `from` may go along the team's arrows; no State yet (`from` null): any state on the workflow. Same rule as
+ *  the server (youtrack/api.py set_field). */
+export const nextStates = (edges: [string, string][], from: string | null) =>
+  from ? edges.filter(([s]) => s === from).map(([, t]) => t) : [...new Set(edges.flat())];
 /** The ticket's UI flow, schema v2 (= uiflow.Flow on the server, sanitize() in flow-engine/model.js). v1 files are read
  *  as v2; `rect` is a hand-drawn tap area as fractions of the screen's whole image, `note` plain text. */
 export type FlowRect = { x: number; y: number; w: number; h: number };
@@ -255,7 +260,8 @@ export const ytPeopleQuery = (project: string) => ({ queryKey: ["yt", "people", 
 export const ytNotesQuery = { queryKey: ["yt", "notes"], queryFn: () => yt.notes(), staleTime: 60_000 } as const;
 /** A project's workflow for a role with its States (Cài đặt › YouTrack › Workflow): one cache for the State menu, the Board, the settings and the bot. */
 export const ytWorkflowQuery = (project: string, role: string) =>
-  ({ queryKey: ["yt", "workflow", project, role], queryFn: () => yt.workflow(project), staleTime: 5 * 60_000 }) as const;
+  // short stale time: another tab's / teammate's save reaches the State menus soon; one retry so a 401 / 403 shows quickly
+  ({ queryKey: ["yt", "workflow", project, role], queryFn: () => yt.workflow(project), staleTime: 30_000, retry: 1 }) as const;
 export const ytMeQuery = { queryKey: ["yt", "me"], queryFn: yt.me, staleTime: Infinity, retry: false } as const;
 export const ytDetailQuery = (id: string) => ({ queryKey: ["yt", "detail", id], queryFn: () => yt.detail(id), staleTime: 60_000 });
 

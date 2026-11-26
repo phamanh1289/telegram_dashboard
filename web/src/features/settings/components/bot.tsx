@@ -1,7 +1,8 @@
 "use client";
 
 import { ArrowDownLeft, ArrowDownRight, ArrowUpLeft, ArrowUpRight, Move, PanelRight, PanelTop } from "lucide-react";
-import { Card, Row, Switch } from "@/features/settings/components/parts";
+import { Card, Row } from "@/features/settings/components/parts";
+import { Switch } from "@/shared/components/ui/switch";
 import { ModelEffortPicker } from "@/shared/components/ai";
 import { AiBot } from "@/shared/components/ai/chat";
 import { Segmented } from "@/shared/components/ui/segmented";
@@ -41,7 +42,7 @@ export function BotSection() {
         items={BOT_CORNERS.map(([v, name, Icon]) => ({ value: v, label: <><Icon className="size-3.5" aria-hidden />{t(name)}</> }))} />
     </Row>}
     </Card>
-    <Card title="Gợi ý cài đặt" info="Bot liệt kê các bước nên làm theo vai trò (Giới thiệu bản thân cho AI, thông báo, thư mục dự án, workflow, Instructions cho AI). Cạnh tính năng cần một cài đặt cũng có gợi ý: chỗ đổi State (menu, đổi hàng loạt, Board) khi vai trò chưa bật workflow, chỗ của tính năng AI khi máy chưa có AI, dòng dưới câu trả lời AI khi chưa có giới thiệu / instructions. Bấm gợi ý để được chỉ tận nơi.">
+    <Card title="Gợi ý cài đặt" info="Bot liệt kê các bước nên làm theo vai trò (Giới thiệu bản thân cho AI, thông báo, thư mục dự án, workflow, Instructions cho AI). Cạnh tính năng cần một cài đặt cũng có gợi ý: chỗ đổi State (menu, đổi hàng loạt, Board) khi vai trò chưa có workflow (chưa đổi được State), chỗ của tính năng AI khi máy chưa có AI, dòng dưới câu trả lời AI khi chưa có giới thiệu / instructions. Bấm gợi ý để được chỉ tận nơi.">
     <Row label={t("Hiện gợi ý cài đặt")} desc={t("Tắt: bot chỉ còn báo các bước bắt buộc (Telegram, AI, YouTrack); tính năng AI chưa cài thì ẩn như cũ.")}>
       <Switch label={t("Hiện gợi ý cài đặt")} checked={tips} onChange={(v) => setPref("setupTips", v ? null : "0")} />
     </Row>
