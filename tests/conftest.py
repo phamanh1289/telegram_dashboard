@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from telegram_dashboard.app import create_app
 from telegram_dashboard.config import Settings
 from telegram_dashboard.events import Hub
-from telegram_dashboard.models import GroupInfo, Member, SentMessage, StoredMessage
+from telegram_dashboard.models import GroupInfo, Member, SentMessage, StoredMessage, TelegramCodeSent
 from telegram_dashboard.storage import Db, Store
 from telegram_dashboard.telegram.bridge import TelegramBridge
 
@@ -51,6 +51,12 @@ class FakeTransport:
 
     def attach(self, bridge):
         self.bridge = bridge
+
+    async def send_code(self, phone):
+        return TelegramCodeSent(via="app", length=5)
+
+    async def sign_in(self, code, password):
+        return True
 
     async def connect(self):
         if self.connect_impl:

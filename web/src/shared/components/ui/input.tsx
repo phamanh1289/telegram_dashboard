@@ -1,6 +1,9 @@
 import * as React from "react"
 import { Input as InputPrimitive } from "@base-ui/react/input"
+import { Eye, EyeOff } from "lucide-react"
 import { cn } from "cn"
+import { Hint } from "@/shared/components/ui/hint"
+import { useT } from "@/shared/lib/i18n"
 
 // DESIGN.md § Input: 36px, radius 6, 1px rule-2 border, cotton fill; the coral focus ring comes from base.css.
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
@@ -17,4 +20,24 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   )
 }
 
-export { Input }
+/** A password-like field with an eye button that shows / hides what was typed; `onReveal` tells the caller (the login
+ *  mascot peeks while it is shown). */
+function SecretInput({ className, onReveal, ...props }: React.ComponentProps<"input"> & { onReveal?: (shown: boolean) => void }) {
+  const t = useT()
+  const [shown, setShown] = React.useState(false)
+  const Icon = shown ? EyeOff : Eye
+  return (
+    <span className="relative flex w-full min-w-0">
+      <Input {...props} type={shown ? "text" : "password"} className={cn("pr-9", className)} />
+      <Hint side="bottom" text={t("Hiện / ẩn nội dung")}>
+        <button type="button" aria-label={t("Hiện / ẩn nội dung")} aria-pressed={shown}
+          onClick={() => { setShown(!shown); onReveal?.(!shown) }}
+          className="absolute inset-y-0 right-0 grid w-9 place-items-center rounded-r-md text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink focus-visible:outline-2 focus-visible:outline-(--color-focus)">
+          <Icon className="size-4" aria-hidden />
+        </button>
+      </Hint>
+    </span>
+  )
+}
+
+export { Input, SecretInput }

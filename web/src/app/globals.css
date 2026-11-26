@@ -362,6 +362,17 @@
 @keyframes m-hello { 25% { rotate: -9deg; } 75% { rotate: 9deg; } }
 @keyframes m-breathe { 50% { scale: 1.04 0.96; } }
 @keyframes m-tilt { 0%, 84%, 100% { rotate: 0deg; } 88% { rotate: -9deg; } 94% { rotate: 5deg; } }
+/* The login mascot's mood (LoginStage): eyes shut while a secret is typed, half open while it is shown, a head shake on
+   an error. A state, not a motion: shut eyes stay shut under reduced motion, only the shake goes. */
+[data-mood="shy"] :is(.m-blink, .ai-blink), [data-mood="peek"] :is(.m-blink, .ai-blink) {
+  animation: none; transition: scale var(--dur-short) var(--ease-out), transform var(--dur-short) var(--ease-out); }
+[data-mood="shy"] .m-blink { scale: 1 0.1; }
+[data-mood="shy"] .ai-blink { transform: scaleY(0.1); }
+[data-mood="peek"] .m-blink { scale: 1 0.45; }
+[data-mood="peek"] .ai-blink { transform: scaleY(0.45); }
+[data-mood="no"] .ai-float { animation: m-no 0.4s ease-in-out 2; }
+@keyframes m-no { 25% { rotate: -10deg; } 75% { rotate: 10deg; } }
+@media (prefers-reduced-motion: reduce) { [data-mood="no"] .ai-float { animation: none; } }
 @media (prefers-reduced-motion: reduce) { .ai-chip, .ai-blink, .ai-wave, .ai-glow, .m-blink, .m-wave, .m-glow, .m-alive, .hint-rays { animation: none; } }
 /* AiIdle (ai/chat.tsx): the robot bobs over a shadow that shrinks as it rises, the glow breathes, a dotted beam and a
    packet run from it to the skill in hand; that skill's card writes itself out (sk-*). */

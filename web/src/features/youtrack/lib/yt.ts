@@ -38,7 +38,7 @@ export type Attachment = { id: string; name: string; mime: string; size: number;
 export const fileUrl = (issue: string, a: Pick<Attachment, "id">) => `/api/yt/attachment?issue=${encodeURIComponent(issue)}&id=${encodeURIComponent(a.id)}`;
 export type Link = { rel: string; issues: { id: string; summary: string | null; resolved: number | null }[] };
 export type Detail = Ticket & { description: string; comments: Comment[]; links: Link[]; attachments?: Attachment[] };
-export type Config = { base: string; mock: boolean; t: { wip: number; stale: number; dead: number }; hist: number; ai: boolean };
+export type Config = { base: string; mock: boolean; hint: string | null; t: { wip: number; stale: number; dead: number }; hist: number; ai: boolean };
 export type Sprint = { name: string; start: number; finish: number };
 export type Person = { login: string; name: string };
 export type Mention = { chat_id: string; chat: string; from: string | null; text: string; date: number; message_id: string; outgoing: boolean; reply_to_id: string | null };

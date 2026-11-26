@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, History, House as Home, Inbox as InboxIcon, LayoutDashboard, ListChecks, type LucideIcon, Menu, MessageCircleQuestion, MessageSquare, Pin, Rocket, RotateCw, Search, Send, Sparkles, Sun, UserSearch, X } from "lucide-react";
 import { AiBotIcon } from "@/shared/components/ai/chat";
@@ -25,6 +24,7 @@ import { PendingInbox, type PendingTab } from "@/features/telegram/components/pe
 import { Kbd } from "@/shared/components/ui/kbd";
 import { ShortcutsDialog } from "@/shared/components/shortcuts";
 import { Toaster, TopBar, useDashboardDown } from "@/app/_components/shell";
+import { HAPPY_MS, TelegramLoginPage } from "@/features/telegram/components/login";
 import { RolePicker } from "@/shared/components/role-picker";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery, readTagRange, saveTagRange } from "@/shared/components/date-range";
 import { Button } from "@/shared/components/ui/button";
@@ -86,6 +86,13 @@ export function App() {
   const t = useT();
   const status = useQuery({ ...statusQuery, retry: 1 });
   const role = useRole();
+  // just signed in from the tab: the card stays while its mascot waves, even if a status read already says connected
+  const [welcome, setWelcome] = useState(false);
+  useEffect(() => {
+    if (!welcome) return;
+    const id = setTimeout(() => setWelcome(false), HAPPY_MS);
+    return () => clearTimeout(id);
+  }, [welcome]);
 
   if (status.isPending) {
     return (
@@ -125,8 +132,10 @@ export function App() {
       </main>
     );
   }
-  // signed in, no role yet: ask first, like YouTrack (before login the inbox sends you to Telegram's setup)
-  if (!role && status.data.state !== "setup_required" && status.data.state !== "login_required") return (
+  // not signed in: the sign-in card, alone in the tab (Cài đặt keeps the same form to switch accounts)
+  if (welcome || status.data.state === "setup_required" || status.data.state === "login_required") return <TelegramLoginPage onDone={() => setWelcome(true)} />;
+  // signed in, no role yet: ask first, like YouTrack
+  if (!role) return (
     <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)]">
       <div className="sticky top-0 z-30"><TopBar module="telegram" /></div>
       <RolePicker />
@@ -186,10 +195,6 @@ function Inbox({ status }: { status: Status }) {
   // One search box: across groups on Việc cần xử lý / Ghim, within the group when one is open.
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false); // phones: the box opens from an icon
-  // First run: go straight to the Telegram setup (API ID/Hash, then login) on the settings page.
-  const router = useRouter();
-  const [firstRun] = useState(() => status.state === "setup_required" || status.state === "login_required");
-  useEffect(() => { if (firstRun) router.replace("/settings/#telegram"); }, [firstRun, router]);
   // Sidebar: pinned open or a hover-to-open rail (remembered per browser).
   const [collapsed, setCollapsed] = useState(() => getPref("sidebarCollapsed") === "1");
   function toggleCollapsed() {

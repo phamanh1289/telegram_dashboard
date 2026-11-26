@@ -1,21 +1,18 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AtSign, BellOff, Clock1, Clock12, Clock2, Clock4, Clock8, Eye, ExternalLink, MousePointerClick, Plus, RotateCw, Timer, Users, X } from "lucide-react";
+import { AtSign, BellOff, Clock1, Clock12, Clock2, Clock4, Clock8, Eye, MousePointerClick, Plus, Timer, Users, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import { useQuery } from "@tanstack/react-query";
 import { useState, useSyncExternalStore } from "react";
 import { AUTO_BRIEF } from "@/features/telegram/components/briefing-page";
 import { BUILTIN_WAITS, ROLE_WAITS, saveWaitChoices, toChoice, useWaitChoices, WAIT_ON, waitName } from "@/features/telegram/components/briefing/waits";
-import { ADD_CHIP, POP, RulesCount, RulesSection } from "@/features/telegram/components/tools-menu";
-import { Card, linkCls, quietBtn, Row, StatusLine, tMap, usePrivacy, useStatus } from "@/features/settings/components/parts";
+import { ADD_CHIP, POP, RulesCount, RulesSection, rulesQuery } from "@/features/telegram/components/tools-menu";
+import { Card, quietBtn, Row, usePrivacy } from "@/features/settings/components/parts";
+import { TelegramLogin } from "@/features/telegram/components/login";
 import { Switch } from "@/shared/components/ui/switch";
-import { Button } from "@/shared/components/ui/button";
-import { Input } from "@/shared/components/ui/input";
 import { Segmented } from "@/shared/components/ui/segmented";
-import { api, errorText } from "@/shared/lib/api";
-import { type Key, useT } from "@/shared/lib/i18n";
-import { applyRowActions, getPref, onPrefs, OVERDUE_CHOICES, QA_REMIND_CHOICES, qaRemindLabel, readNotify, readOverdueHours, readQaAnswerBy, readRowActions, setPref, useQaRemind, useRoleOrDev, YT_ROLES } from "@/shared/lib/prefs";
-import { cn } from "@/shared/lib/utils";
+import { useT } from "@/shared/lib/i18n";
+import { applyRowActions, getPref, onPrefs, OVERDUE_CHOICES, QA_REMIND_CHOICES, qaRemindLabel, readNotify, readOverdueHours, readQaAnswerBy, readRowActions, setPref, useQaRemind, useRole, useRoleOrDev, usesCode, YT_ROLES } from "@/shared/lib/prefs";
 
 /** A waiting time's chip icon: off, a timer under an hour, else the clock showing its hours (24 h on 12). */
 const CLOCKS: Record<number, typeof Timer> = { 1: Clock1, 2: Clock2, 4: Clock4, 8: Clock8, 24: Clock12 };
@@ -32,6 +29,9 @@ export function TelegramGroup() {
   const [autoBrief, setAutoBrief] = useState(() => getPref(AUTO_BRIEF) !== "0");
   const [notify, setNotify] = useState(readNotify);
   const [notifyNote, setNotifyNote] = useState("");
+  const code = usesCode(useRole()); // QA / PO: no AI Agent, no Đối chiếu BE
+  // QA / PO only see "Tag khi AI Agent hỏi" while such rules are left from a Dev role (to remove them), like RulesSection's relay / agent rows
+  const tagRules = useQuery({ ...rulesQuery, select: (rs) => rs.some((r) => r.kind.startsWith("tag_")) }).data;
   async function toggleNotify(on: boolean) {
     if (on) {
       if (typeof Notification === "undefined") return setNotifyNote(t("Trình duyệt này không hỗ trợ thông báo."));
@@ -45,7 +45,7 @@ export function TelegramGroup() {
 
   return <>
     <Card title="Tài khoản Telegram" info="API ID/Hash và phiên đăng nhập chỉ lưu trên máy này (thư mục data/).">
-      <TelegramSection />
+      <TelegramLogin />
     </Card>
 
     <Card title="Hàng chờ">
@@ -53,7 +53,7 @@ export function TelegramGroup() {
         <Segmented id="set-overdue" variant="card" label={t("Ngưỡng quá hạn")} value={overdue} onChange={(v) => { setOverdue(v); setPref("overdueHours", String(v)); }}
           items={OVERDUE_CHOICES.map((h) => { const Icon = clock(h * 60); return { value: h, label: <><Icon className="size-3.5" aria-hidden />{t("{n} giờ", { n: h })}</> }; })} />
       </Row>
-      <Row label={t("Nút thao tác trên tin")} desc={t("Hoãn, ngữ cảnh, Đối chiếu BE, đính kèm, chép ID và menu ⋯. Màn hình cảm ứng luôn hiện.")} stack>
+      <Row label={t("Nút thao tác trên tin")} desc={code ? t("Hoãn, ngữ cảnh, Đối chiếu BE, đính kèm, chép ID và menu ⋯. Màn hình cảm ứng luôn hiện.") : t("Hoãn, ngữ cảnh, đính kèm, chép ID và menu ⋯. Màn hình cảm ứng luôn hiện.")} stack>
         <Segmented id="set-row-actions" variant="card" label={t("Nút thao tác trên tin")} value={rowActions} onChange={(v) => { setRowActions(v); applyRowActions(v); }}
           items={[{ value: "hover", label: <><MousePointerClick className="size-3.5" aria-hidden />{t("Khi rê vào nút Xong")}</> }, { value: "always", label: <><Eye className="size-3.5" aria-hidden />{t("Luôn hiện")}</> }]} />
       </Row>
@@ -92,13 +92,13 @@ export function TelegramGroup() {
       <RulesSection kinds={["sender", "keyword"]} />
     </Card>
 
-    <Card advanced badge={<RulesCount kinds={["priority", "relay", "agent"]} />} title="Ưu tiên và tự động" info="Quy tắc theo người gửi. Luôn ưu tiên: gõ tên ở đây hoặc chọn “Luôn ưu tiên …” trong menu Hoãn của một tin. Tự chuyển / Tự giao AI Agent cần dự án nên thêm từ menu Hoãn (“Tự chuyển trả lời của … vào phiên AI”, “Luôn giao AI Agent cho tin của …”). Bấm × trên chip để gỡ, thông báo có nút Hoàn tác.">
+    <Card advanced badge={<RulesCount kinds={["priority", "relay", "agent"]} />} title="Ưu tiên và tự động" info={code ? "Quy tắc theo người gửi. Luôn ưu tiên: gõ tên ở đây hoặc chọn “Luôn ưu tiên …” trong menu Hoãn của một tin. Tự chuyển / Tự giao AI Agent cần dự án nên thêm từ menu Hoãn (“Tự chuyển trả lời của … vào phiên AI”, “Luôn giao AI Agent cho tin của …”). Bấm × trên chip để gỡ, thông báo có nút Hoàn tác." : "Quy tắc theo người gửi. Luôn ưu tiên: gõ tên ở đây hoặc chọn “Luôn ưu tiên …” trong menu Hoãn của một tin. Bấm × trên chip để gỡ, thông báo có nút Hoàn tác."}>
       <RulesSection kinds={["priority", "relay", "agent"]} />
     </Card>
 
-    <Card advanced badge={<RulesCount kinds={["tag_be", "tag_po", "tag_qc"]} />} title="Tag khi AI Agent hỏi" info="Người được tag ở đầu câu hỏi mà phiên AI Agent gửi BE / PO / QC vào nhóm: phiên mới soạn sẵn tag này, lúc gửi tự thêm tag còn thiếu.">
+    {(code || tagRules) && <Card advanced badge={<RulesCount kinds={["tag_be", "tag_po", "tag_qc"]} />} title="Tag khi AI Agent hỏi" info="Người được tag ở đầu câu hỏi mà phiên AI Agent gửi BE / PO / QC vào nhóm: phiên mới soạn sẵn tag này, lúc gửi tự thêm tag còn thiếu.">
       <RulesSection kinds={["tag_be", "tag_po", "tag_qc"]} />
-    </Card>
+    </Card>}
 
   </>;
 }
@@ -154,129 +154,5 @@ function WaitChoicesRow() {
         )}
       </div>
     </Row>
-  );
-}
-
-const TG_ERRORS: Record<string, Key> = {
-  phone_invalid: "Số điện thoại không hợp lệ (ghi kèm mã nước, vd. +84…).",
-  api_invalid: "API ID/Hash sai, kiểm tra lại trên my.telegram.org.",
-  code_invalid: "Mã không đúng.",
-  code_expired: "Mã đã hết hạn, gửi lại mã mới.",
-  code_not_sent: "Gửi mã trước đã.",
-  password_invalid: "Mật khẩu 2FA không đúng.",
-  flood_wait: "Telegram tạm chặn vì thử nhiều lần, đợi một lúc rồi thử lại.",
-  telegram_not_configured: "Lưu API ID/Hash trước.",
-};
-
-/** API ID/Hash from my.telegram.org, then phone → code → 2FA: the whole Telegram setup without .env or a terminal. */
-function TelegramSection() {
-  const t = useT();
-  const qc = useQueryClient();
-  const sq = useStatus();
-  const status = sq.data;
-  const [editApi, setEditApi] = useState(false);
-  const [apiId, setApiId] = useState("");
-  const [apiHash, setApiHash] = useState("");
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
-  const [password, setPassword] = useState("");
-  const [step, setStep] = useState<"phone" | "code" | "password">("phone");
-  const refresh = () => void qc.invalidateQueries({ queryKey: ["status"] });
-  const saveApi = useMutation({
-    mutationFn: () => api("/telegram/app", { method: "PUT", json: { api_id: Number(apiId), api_hash: apiHash.trim().toLowerCase() } }),
-    onSuccess: () => { setEditApi(false); setApiHash(""); setStep("phone"); refresh(); },
-  });
-  const sendCode = useMutation({
-    mutationFn: () => api("/telegram/code", { method: "POST", json: { phone: phone.trim() } }),
-    onSuccess: () => { setCode(""); setStep("code"); },
-  });
-  const signIn = useMutation({
-    mutationFn: () => api<{ password_required: boolean }>("/telegram/sign-in", { method: "POST", json: step === "password" ? { password } : { code: code.trim() } }),
-    onSuccess: (r) => { if (r.password_required) setStep("password"); else { setPassword(""); refresh(); } },
-  });
-  if (!status) return (
-    <div className="flex flex-wrap items-center gap-2 pt-1">
-      {sq.isError ? <StatusLine tone="error">{errorText(sq.error, {}, t("Không đọc được trạng thái Telegram."))}</StatusLine>
-        : <StatusLine tone="idle">{t("Đang kiểm tra…")}</StatusLine>}
-      {sq.isError && <Button size="xs" variant="outline" aria-busy={sq.isFetching} disabled={sq.isFetching} onClick={() => void sq.refetch()}><RotateCw /> {t("Thử lại")}</Button>}
-    </div>
-  );
-  const err = saveApi.error ?? sendCode.error ?? signIn.error;
-  const errLine = err && <p role="alert" className="text-xs text-error">{errorText(err, tMap(t, TG_ERRORS), t("Không thực hiện được, thử lại."))}</p>;
-
-  if (editApi || !status.telegram_api_id) {
-    return (
-      <form className="grid gap-2.5 pt-1" onSubmit={(e) => { e.preventDefault(); saveApi.mutate(); }}>
-        <a href="https://my.telegram.org/apps" target="_blank" rel="noreferrer" className={linkCls}>
-          {t("Lấy API ID/Hash tại my.telegram.org → API development tools")} <ExternalLink className="size-3" aria-hidden />
-        </a>
-        <div className="grid gap-2 sm:grid-cols-[8rem_minmax(0,1fr)]">
-          <Input aria-label="API ID" placeholder="API ID" inputMode="numeric" maxLength={12}
-            value={apiId} onChange={(e) => setApiId(e.target.value.replace(/\D/g, ""))} />
-          <Input aria-label="API Hash" type="password" autoComplete="off" placeholder={t("API Hash (32 ký tự)")} maxLength={32}
-            value={apiHash} onChange={(e) => setApiHash(e.target.value)} />
-        </div>
-        <div className="flex gap-2">
-          <Button type="submit" size="sm" aria-busy={saveApi.isPending} disabled={saveApi.isPending || !apiId || !/^[0-9a-fA-F]{32}$/.test(apiHash.trim())}>
-            {saveApi.isPending ? t("Đang lưu…") : t("Lưu")}
-          </Button>
-          {editApi && <Button type="button" size="sm" variant="ghost" onClick={() => setEditApi(false)}>{t("Hủy")}</Button>}
-        </div>
-        {errLine}
-      </form>
-    );
-  }
-
-  const changeApi = <button type="button" className={quietBtn} onClick={() => { setApiId(String(status.telegram_api_id)); setEditApi(true); }}>{t("Đổi API ID/Hash")}</button>;
-  if (status.state === "degraded") {
-    return (
-      <div className="grid gap-1.5 pt-1">
-        <StatusLine tone="warn">{t("Không kết nối được tới Telegram")}{status.detail ? ` (${status.detail})` : ""}</StatusLine>
-        <p className="text-xs text-ink-3">{t("Mạng có thể đang chặn Telegram: bật VPN, app sẽ tự thử lại.")}</p>
-        {changeApi}
-      </div>
-    );
-  }
-  if (status.state !== "login_required") {
-    const ok = status.state === "connected";
-    return (
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-        <StatusLine tone={ok ? "ok" : "idle"}>{ok ? <>{t("Đã đăng nhập")}{status.telegram_me && <b className="ml-1 font-bold">{status.telegram_me}</b>}</> : t("Đang kết nối Telegram…")}</StatusLine>
-        {changeApi}
-      </div>
-    );
-  }
-  return (
-    <form className="grid gap-2.5 pt-1" onSubmit={(e) => { e.preventDefault(); if (step === "phone") sendCode.mutate(); else signIn.mutate(); }}>
-      <StatusLine tone="warn">{t("Chưa đăng nhập Telegram")}</StatusLine>
-      <ol aria-label={t("Các bước đăng nhập")} className="flex gap-1.5 text-xs text-ink-3">
-        {(["phone", "code", "password"] as const).map((s, i) => (
-          <li key={s} className={cn("rounded-full px-2 py-0.5", step === s ? "bg-hl-wash font-medium text-hl-2" : "bg-paper-2")}>{i + 1}. {{ phone: t("Số điện thoại"), code: t("Mã"), password: "2FA" }[s]}</li>
-        ))}
-      </ol>
-      {step === "phone" ? (
-        <div className="flex gap-2">
-          <Input aria-label={t("Số điện thoại")} type="tel" autoComplete="tel" placeholder="+84 9xx xxx xxx" maxLength={20}
-            value={phone} onChange={(e) => setPhone(e.target.value)} />
-          <Button type="submit" variant="outline" aria-busy={sendCode.isPending} disabled={sendCode.isPending || !/^\+?[0-9 ]{6,20}$/.test(phone.trim())}>
-            {sendCode.isPending ? t("Đang gửi…") : t("Gửi mã")}
-          </Button>
-        </div>
-      ) : (
-        <div className="flex gap-2">
-          {step === "code"
-            ? <Input aria-label={t("Mã đăng nhập")} inputMode="numeric" autoComplete="one-time-code" placeholder={t("Mã Telegram vừa gửi")} maxLength={8} autoFocus
-                value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} />
-            : <Input aria-label={t("Mật khẩu 2FA")} type="password" autoComplete="current-password" placeholder={t("Mật khẩu 2FA")} maxLength={256} autoFocus
-                value={password} onChange={(e) => setPassword(e.target.value)} />}
-          <Button type="submit" variant="outline" aria-busy={signIn.isPending} disabled={signIn.isPending || (step === "code" ? code.length < 3 : !password)}>
-            {signIn.isPending ? t("Đang đăng nhập…") : t("Đăng nhập")}
-          </Button>
-        </div>
-      )}
-      {step !== "phone" && <button type="button" className={quietBtn} onClick={() => { signIn.reset(); setStep("phone"); }}>{t("Đổi số / gửi lại mã")}</button>}
-      {step === "phone" && changeApi}
-      {errLine}
-    </form>
   );
 }

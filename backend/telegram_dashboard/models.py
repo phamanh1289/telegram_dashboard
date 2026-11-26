@@ -478,6 +478,11 @@ class TelegramPhone(BaseModel):
     phone: str = Field(pattern=r"^\+?[0-9 ]{6,20}$")
 
 
+class TelegramCodeSent(BaseModel):
+    via: Literal["app", "sms", "other"]  # app: into the Telegram app on another device, not an SMS
+    length: int | None = None  # digits in the code, when Telegram says
+
+
 class TelegramSignIn(BaseModel):
     code: str | None = Field(default=None, pattern=r"^[0-9]{3,8}$")
     password: str | None = Field(default=None, min_length=1, max_length=256)

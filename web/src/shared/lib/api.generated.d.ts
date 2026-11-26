@@ -5125,6 +5125,16 @@ export interface components {
             /** Api Hash */
             api_hash: string;
         };
+        /** TelegramCodeSent */
+        TelegramCodeSent: {
+            /**
+             * Via
+             * @enum {string}
+             */
+            via: "app" | "sms" | "other";
+            /** Length */
+            length?: number | null;
+        };
         /** TelegramPhone */
         TelegramPhone: {
             /** Phone */
@@ -8697,11 +8707,13 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["TelegramCodeSent"];
+                };
             };
             /** @description Validation Error */
             422: {

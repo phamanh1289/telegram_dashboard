@@ -4,7 +4,7 @@
     "tab": "settings",
     "area": "Settings › Search settings",
     "title": "Find a setting",
-    "what": "Type a setting's name (accents optional) to jump straight to it: the page opens the right section, the right YouTrack subgroup, and highlights the card holding the setting. Rarely used cards (Always ignore, Priority and automation, Tags when AI Agent asks, Prompt library, Workflow, Release report) are folded with an \"Advanced\" label; click the card title to open it, and searching to it opens it by itself. Press Esc (when not typing in a field and no popup is open) to close Settings, like the \"Back\" button.",
+    "what": "Type a setting's name (accents optional) to jump straight to it: the page opens the right section, the right YouTrack subgroup, and highlights the card holding the setting. Rarely used cards (Always ignore, Priority and automation, Tags when AI Agent asks (Dev role only; QA / PO see it only while old rules are left to remove), Prompt library, Workflow, Release report) are folded with an \"Advanced\" label; click the card title to open it, and searching to it opens it by itself. Press Esc (when not typing in a field and no popup is open) to close Settings, like the \"Back\" button.",
     "how": [
       {
         "t": "Click the \"Search settings\" box under the Settings heading (or press /)",
@@ -145,7 +145,7 @@
     "tab": "settings",
     "area": "Settings › Telegram › Telegram account",
     "title": "Connect and sign in to Telegram",
-    "what": "Enter the API ID/Hash from my.telegram.org, then sign in with your phone number → code → 2FA password. Stored only on this machine. Once signed in, the app asks your role, then gathers the tags / replies to you from the last 14 days into To do.",
+    "what": "Enter the API ID/Hash from my.telegram.org, then sign in with your phone number → code → 2FA password. Stored only on this machine. Until you sign in, the Telegram tab shows just this sign-in card in place (the mascot shuts its eyes while you type the API Hash / 2FA password; the code has one box per digit, and pasting it whole sends it). Once signed in, the app asks your role, then gathers the tags / replies to you from the last 14 days into To do.",
     "how": [
       {
         "t": "Choose the \"Telegram\" section",
@@ -302,7 +302,7 @@
     "tab": "settings",
     "area": "Settings › AI › Model and effort",
     "title": "Choose any AI's model from one list",
-    "what": "The Model box of each job (summaries, drafts, Briefing, Task and AI Agent, YouTrack AI) lists the models of Claude, Codex and Antigravity in groups: pick a model of an AI and that job runs on that AI, no need to switch AI first; effort follows the levels that model accepts. When Codex runs through opencodex (a local proxy), the routed opencodex models (AgentAPI, anthropic, combo…) are added, grouped \"Codex · <provider>\" like the opencodex Models page. Each AI keeps its own choice. An unfinished Task continues on the AI that started it.",
+    "what": "The Model box of each job (summaries, drafts, Briefing, Task and AI Agent (QA / PO role: AI Assistant, Briefing sessions), YouTrack AI) lists the models of Claude, Codex and Antigravity in groups: pick a model of an AI and that job runs on that AI, no need to switch AI first; effort follows the levels that model accepts. When Codex runs through opencodex (a local proxy), the routed opencodex models (AgentAPI, anthropic, combo…) are added, grouped \"Codex · <provider>\" like the opencodex Models page. Each AI keeps its own choice. An unfinished Task continues on the AI that started it.",
     "how": [
       {
         "t": "Choose the \"AI\" section",
@@ -403,7 +403,7 @@
     "tab": "settings",
     "area": "Settings › YouTrack",
     "title": "Connect YouTrack and configure its AI",
-    "what": "Three groups: Connection and reports (URL, YouTrack token, Release report schedule), AI and prompts (AI instructions per role, Prompt library), Workflow.",
+    "what": "With no token yet, the YouTrack tab shows just this URL / token card in place. Three groups: Connection and reports (URL, YouTrack token, Release report schedule), AI and prompts (AI instructions per role, Prompt library), Workflow.",
     "how": [
       {
         "t": "Choose the \"YouTrack\" section",
@@ -427,7 +427,7 @@
         "at": "css:form:has(input[aria-label=\"Token YouTrack\"]) button[type=\"submit\"]"
       },
       {
-        "t": "No token yet: click the link \"Create a token on YouTrack\"",
+        "t": "No token yet: enter the URL, click the link \"Create a token in YouTrack\" (opens Account Security) and follow the 3 steps under the fields",
         "at": "Tạo token trên YouTrack"
       }
     ],

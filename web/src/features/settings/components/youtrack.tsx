@@ -1,11 +1,12 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Plug, RotateCw, Sparkles, UserRound, Workflow } from "lucide-react";
+import { Plug, RotateCw, Sparkles, UserRound, Workflow } from "lucide-react";
 import { useRef, useState, useSyncExternalStore } from "react";
-import { Card, linkCls, Row, StatusLine, tMap, useFillHeight } from "@/features/settings/components/parts";
+import { Card, Row, useFillHeight } from "@/features/settings/components/parts";
 import { Switch } from "@/shared/components/ui/switch";
 import { PromptManager } from "@/features/youtrack/components/prompts";
+import { YtConnect } from "@/features/youtrack/components/connect";
 import { WorkflowSection } from "@/features/youtrack/components/workflow";
 import { yt, ytNotesQuery } from "@/features/youtrack/lib/yt";
 import { Button } from "@/shared/components/ui/button";
@@ -13,7 +14,6 @@ import { Input } from "@/shared/components/ui/input";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { Textarea } from "@/shared/components/ui/textarea";
 import { CharCount } from "@/shared/components/ui/char-count";
-import { api, errorText } from "@/shared/lib/api";
 import { type Key, tMaybe, useT } from "@/shared/lib/i18n";
 import { onPrefs, readReportAt, readYtRole, type ReportAt, saveReportAt, YT_ROLES, type YtRole } from "@/shared/lib/prefs";
 
@@ -40,7 +40,7 @@ export function YouTrackGroup({ view, setView }: { view: YtView; setView: (v: Yt
       items={YT_VIEWS.map((v) => ({ value: v.value, label: <><v.icon className="size-3.5" aria-hidden />{t(v.label)}</>, title: t(v.title) }))} />
     {view === "connect" && <>
       <Card title="Tài khoản YouTrack" info="Token chỉ lưu trên máy này (thư mục data/), dùng cho trang YouTrack và nút tạo issue.">
-        <YouTrackSection />
+        <YtConnect />
       </Card>
       <Card advanced title="Báo cáo release" info="AI tự viết báo cáo (kịp release không, bàn giao QC, stuck, kết quả test, việc trễ, quá tải, bug) theo vai trò và project đang chọn bên trang YouTrack. Chạy khi trang YouTrack đang mở; lỡ giờ thì tạo lúc mở lại trong ngày. Xuất MD / PDF / CSV ở card Báo cáo.">
         <ReportSection />
@@ -68,73 +68,6 @@ function WorkflowCard({ action }: { action: React.ReactNode }) {
       <Card fill title="Workflow" action={action} info="Mỗi project, mỗi vai trò (Cài đặt › Chung) một luồng State, dùng chung cả team (data/). Ticket chỉ đổi State theo mũi tên; chưa có mũi tên nào thì chưa đổi được State. Kéo State giữa sơ đồ và cột phải để thêm / bớt, kéo chấm tròn sang ô khác để nối, chọn ô hoặc mũi tên rồi Delete để bỏ. Sửa gì cũng là bản nháp tới khi bấm Lưu.">
         <div className="flex min-h-0 flex-col pt-1"><WorkflowSection /></div>
       </Card>
-    </div>
-  );
-}
-
-const YT_ERRORS: Record<string, Key> = {
-  youtrack_unauthorized: "Token sai, đã thu hồi hoặc không đủ quyền.",
-  youtrack_unreachable: "Không kết nối được YouTrack ở URL này.",
-};
-
-/** Paste a permanent token (made on the YouTrack profile page); the server checks it before keeping it. Connected: the form folds away. */
-function YouTrackSection() {
-  const t = useT();
-  const qc = useQueryClient();
-  const cfg = useQuery({
-    queryKey: ["yt-config"],
-    queryFn: ({ signal }) => api<{ base: string; mock: boolean; hint: string | null }>("/yt/config", { signal }),
-  });
-  const [url, setUrl] = useState<string | null>(null); // null: still showing the server's URL
-  const [token, setToken] = useState("");
-  const [edit, setEdit] = useState(false);
-  const base = (url ?? cfg.data?.base ?? "").trim().replace(/\/+$/, "");
-  const save = useMutation({
-    mutationFn: () => api<{ login: string; name: string }>("/youtrack/auth", { method: "PUT", json: { url: base, token: token.trim() } }),
-    onSuccess: () => {
-      setToken("");
-      setEdit(false);
-      void qc.invalidateQueries({ queryKey: ["yt-config"] });
-      void qc.invalidateQueries({ queryKey: ["status"] });
-      qc.removeQueries({ queryKey: ["yt"] }); // projects/me/issues of the old token (or sample data) are cached forever
-    },
-  });
-  if (!cfg.data) return (
-    <div className="flex flex-wrap items-center gap-2 pt-1">
-      <StatusLine tone={cfg.isError ? "error" : "idle"}>{cfg.isError ? errorText(cfg.error, {}, t("Không đọc được cấu hình YouTrack")) : t("Đang kiểm tra…")}</StatusLine>
-      {cfg.isError && <Button size="xs" variant="outline" aria-busy={cfg.isFetching} disabled={cfg.isFetching} onClick={() => void cfg.refetch()}><RotateCw /> {t("Thử lại")}</Button>}
-    </div>
-  );
-  const live = !cfg.data.mock;
-  const validUrl = /^https?:\/\/\S+$/.test(base);
-  return (
-    <div className="grid gap-2.5 pt-1">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <StatusLine tone={live ? "ok" : "warn"}>
-          {save.isSuccess ? <>{t("Đã kết nối:")} <b className="font-bold">{save.data.name}</b></> : live ? <>{t("Đang dùng")} <span className="font-mono text-xs">{cfg.data.base}</span></> : t("Chưa có token, trang YouTrack đang hiện dữ liệu mẫu")}
-        </StatusLine>
-        {live && !edit && <Button size="sm" variant="outline" onClick={() => setEdit(true)}>{t("Đổi URL / token")}</Button>}
-      </div>
-      {(!live || edit) && (
-        <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
-          <Input aria-label="URL YouTrack" placeholder="https://youtrack.example.com" inputMode="url" maxLength={200}
-            value={url ?? cfg.data.base} onChange={(e) => setUrl(e.target.value)} />
-          <div className="flex gap-2">
-            <Input aria-label={t("Token YouTrack")} type="password" autoComplete="off" placeholder={cfg.data.hint ?? "perm-…"} maxLength={500}
-              value={token} onChange={(e) => setToken(e.target.value)} />
-            <Button type="submit" aria-busy={save.isPending} disabled={save.isPending || !validUrl || token.trim().length < 8}>
-              {save.isPending ? t("Đang kiểm tra…") : cfg.data.hint ? t("Cập nhật") : t("Lưu")}
-            </Button>
-            {edit && <Button type="button" variant="ghost" onClick={() => setEdit(false)}>{t("Hủy")}</Button>}
-          </div>
-          {validUrl && (
-            <a href={`${base}/users/me?tab=account-security`} target="_blank" rel="noreferrer" className={linkCls}>
-              {t("Tạo token trên YouTrack (Hồ sơ → Account Security → New token)")} <ExternalLink className="size-3" aria-hidden />
-            </a>
-          )}
-        </form>
-      )}
-      {save.isError && <p role="alert" className="text-xs text-error">{errorText(save.error, tMap(t, YT_ERRORS), t("Không lưu được. Kiểm tra URL (bắt đầu bằng https://) và token."))}</p>}
     </div>
   );
 }

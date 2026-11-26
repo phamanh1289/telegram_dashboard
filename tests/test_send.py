@@ -205,8 +205,14 @@ async def test_send_code_retries_once_after_phone_migrate(tmp_path):
         return False
 
     c._sender, c.is_connected, c.is_user_authorized, c._switch_dc = Sender(), lambda: True, noop, noop
-    await t.send_code("+84900000000")
+    sent = await t.send_code("+84900000000")
     assert t._code_hash == "h" and len(calls) == 2
+    assert (sent.via, sent.length) == ("app", 5)
+
+
+def test_telegram_code_route_returns_channel(client):
+    r = client.post("/api/telegram/code", json={"phone": "+84 900 000 000"}, headers={"Origin": "http://127.0.0.1:8765"})
+    assert r.status_code == 200 and r.json() == {"via": "app", "length": 5}
 
 
 def test_split_format_utf16_offsets():

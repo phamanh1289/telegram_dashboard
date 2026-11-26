@@ -16,7 +16,7 @@ import { type AiCatalogEntry, api, errorText } from "@/shared/lib/api";
 import { type Key, tMaybe, useT } from "@/shared/lib/i18n";
 import { useNow } from "@/shared/hooks/use-now";
 import { copyText } from "@/shared/lib/notifications";
-import { saveQuotaAgent, useQuotaAgent } from "@/shared/lib/prefs";
+import { saveQuotaAgent, useQuotaAgent, useRole, usesCode } from "@/shared/lib/prefs";
 import { timeLabel } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 import { BASE, card, type Effort, effortLabel, KEYS, meterTone, planName, planTier, type Provider, PROVIDERS, resetIn, ringTone, type RunKind, sectionHead, useAccounts, useAiPrefs, useClaudeAccount, useRecheck, windowName } from "@/shared/components/ai/prefs";
@@ -273,6 +273,7 @@ function AgentCard({ provider, line, tone, badges, actions, children }: {
 function UsedFor({ provider, onEdit }: { provider: Provider; onEdit: () => void }) {
   const t = useT();
   const { p, on, info, picks } = useAiPrefs();
+  const { names } = useKinds();
   const c = info(provider);
   if (!p || !c) return null;
   const k = picks(provider);
@@ -286,7 +287,7 @@ function UsedFor({ provider, onEdit }: { provider: Provider; onEdit: () => void 
         const effort = k[KEYS[kind][1]] || k[KEYS[BASE[kind]][1]];
         return (
           <span key={kind} className="rounded-md bg-paper-2 px-2 py-0.5 text-ink shadow-groove">
-            {t(KINDS[kind][0])}
+            {t(names[kind][0])}
             <span className="text-ink-3"> · {tMaybe(c.models.find((o) => o.value === model)?.label ?? (model || "Mặc định"))}{stepsOf(c, model).length > 0 && ` · ${effortLabel(effort)}`}</span>
           </span>
         );
@@ -420,6 +421,11 @@ const INHERITS: Partial<Record<RunKind, readonly [Key, Key]>> = {
   yt_task: ["Như Telegram", "Dùng lựa chọn của Task và AI Agent"],
   guide: ["Như tóm tắt", "Dùng lựa chọn của tóm tắt, soạn nháp"],
 };
+// QA / PO have no AI Agent: their "task" runs are the Trợ lý AI and Briefing sessions.
+const NO_CODE_KINDS = { ...KINDS, task: ["Phiên Trợ lý AI, Briefing", "Hỏi tiếp nhiều lượt trong một phiên: cần model mạnh."] } as const satisfies Record<RunKind, readonly [Key, Key]>;
+const NO_CODE_INHERITS = { ...INHERITS, yt_task: ["Như Telegram", "Dùng lựa chọn của phiên Trợ lý AI, Briefing"] } as const satisfies Partial<Record<RunKind, readonly [Key, Key]>>;
+/** Run kinds' names for the role picked (QA / PO: no AI Agent wording). */
+const useKinds = () => (usesCode(useRole()) ? { names: KINDS, inherits: INHERITS } : { names: NO_CODE_KINDS, inherits: NO_CODE_INHERITS });
 /** The module whose runs a picks list sets: Telegram's or YouTrack's AI features. */
 export type AiScope = "telegram" | "youtrack";
 const SCOPES: Record<AiScope, RunKind[]> = { telegram: ["chat", "brief", "task"], youtrack: ["yt", "yt_task"] };
@@ -457,10 +463,11 @@ function KindPicks({ kind, modelClass, effortClass, bare, variant = "full", chip
 }) {
   const t = useT();
   const { catalog, on, info, modelOf, setModel, picks, setPicks } = useAiPrefs();
+  const { names, inherits } = useKinds();
   const id = on(kind), c = info(id);
   if (!catalog || !c) return null;
-  const from = INHERITS[kind], inherit = from && ([t(from[0]), t(from[1])] as const);
-  const label = t(KINDS[kind][0]), value = modelOf(kind), e = KEYS[kind][1];
+  const from = inherits[kind], inherit = from && ([t(from[0]), t(from[1])] as const);
+  const label = t(names[kind][0]), value = modelOf(kind), e = KEYS[kind][1];
   // "" of another kind is its base kind's pick, not a CLI default: those kinds list models only.
   const models = [
     ...(inherit ? [{ value: "", label: inherit[0], hint: inherit[1] }] : []),
@@ -488,9 +495,10 @@ export function ModelEffortPicker({ kind = "chat", compact = false, className, v
 }) {
   const t = useT();
   const { p, catalog, isError, save } = useAiPrefs();
+  const { names } = useKinds();
   if (!p || !catalog) return isError ? <span role="alert" className={cn("text-xs text-error", className)}>{t("Không đọc được model/effort")}</span> : null;
   return (
-    <span role="group" aria-label={t("Model và effort cho {label}", { label: t(KINDS[kind][0]) })} className={cn("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5", compact && "gap-x-1.5", className)}>
+    <span role="group" aria-label={t("Model và effort cho {label}", { label: t(names[kind][0]) })} className={cn("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5", compact && "gap-x-1.5", className)}>
       <KindPicks kind={kind} modelClass={compact ? "flex min-w-0 max-w-36" : "w-44"} effortClass={compact ? "w-20" : "w-28"} variant={variant} chip={compact} />
       {save.isError && <span role="alert" className="text-xs text-error">{t("Không lưu được, thử lại")}</span>}
     </span>
@@ -510,6 +518,7 @@ export function PrefsSection({ plain = false, scope: initial = "telegram", fixed
   const t = useT();
   const { p, catalog, save, set, used, info } = useAiPrefs();
   const accounts = useAccounts();
+  const { names } = useKinds();
   const [scope, setScope] = useState<AiScope>(initial);
   if (!p || !catalog) return null;
   const inUse = used();
@@ -536,7 +545,7 @@ export function PrefsSection({ plain = false, scope: initial = "telegram", fixed
           <span>{t("Dùng cho")}</span>
           <span className={PICK_COLS}><span>Model</span><span>Effort</span></span>
         </li>
-        {SCOPES[scope].map((kind) => { const [title, hint] = KINDS[kind]; return (
+        {SCOPES[scope].map((kind) => { const [title, hint] = names[kind]; return (
           <li key={kind} className={cn(PICK_ROW, pad)}>
             <span className="grid min-w-0 gap-0.5">
               <span className="flex flex-wrap items-center gap-x-2 text-sm font-medium text-ink">

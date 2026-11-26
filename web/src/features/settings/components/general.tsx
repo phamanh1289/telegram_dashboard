@@ -12,6 +12,13 @@ import { getPref, INTRO_MAX, onPrefs, type Platform, PLATFORMS, readIntro, readP
 import { cn } from "@/shared/lib/utils";
 
 const PLATFORM_ICONS: Record<Platform, typeof Globe> = { android: Smartphone, ios: Apple, web: Globe, mobile: TabletSmartphone, any: Layers };
+/** "Tóm tắt theo nền tảng" for the role picked: no role yet, both halves. */
+const PLATFORM_HINT: Record<YtRole | "any", Key> = {
+  dev: "Nền tảng bạn code: AI bỏ phần chỉ liên quan nền tảng khác.",
+  qa: "Chọn Mobile (Android + iOS) hoặc Tất cả: AI báo tình trạng từng nền tảng (xong, chưa test, đang chậm).",
+  po: "Chọn Mobile (Android + iOS) hoặc Tất cả: AI báo tình trạng từng nền tảng (xong, chưa test, đang chậm).",
+  any: "Dev: nền tảng bạn code, AI bỏ phần chỉ liên quan nền tảng khác. QA/QC, PO/PM: chọn Mobile (Android + iOS) hoặc Tất cả, AI báo tình trạng từng nền tảng (xong, chưa test, đang chậm).",
+};
 /** A language's chip mark: its code in a small outlined box (one globe on every chip would say nothing). */
 const LangTag = ({ children }: { children: string }) => <span aria-hidden className="rounded-sm border border-current px-0.5 text-2xs leading-none font-bold">{children}</span>;
 
@@ -21,6 +28,7 @@ export function GeneralGroup() {
   // Live: the top bar's language button changes it too.
   const lang = useSyncExternalStore(onPrefs, () => (getPref("lang") as Lang | null) ?? "system", () => "system" as const);
   const [platform, setPlatform] = useState(readPlatform);
+  const role = useRole();
   return <>
     <Card title="Vai trò" info="Telegram và YouTrack theo vai trò này: trang chủ, Dashboard, góc nhìn của AI khi tóm tắt và tạo ticket. QA, PO không dùng AI Agent nên không cần thư mục code.">
       <RoleSection />
@@ -33,7 +41,7 @@ export function GeneralGroup() {
     </Card>
     <Card title="Giới thiệu bản thân cho AI" info="AI phía Telegram (tóm tắt, soạn nháp, Briefing, tạo ticket từ tin, Đối chiếu BE, AI Agent) đọc phần này để biết bạn làm gì, rành gì, cần gì. Chưa có thì AI phải đoán, dễ lan man và lệch chuyên môn. Bên YouTrack dùng Instructions cho AI riêng (Cài đặt › YouTrack). Lưu trên trình duyệt này.">
       <IntroSection platform={platform} />
-      <Row label={t("Tóm tắt theo nền tảng")} desc={t("Dev: nền tảng bạn code, AI bỏ phần chỉ liên quan nền tảng khác. QA/QC, PO/PM: chọn Mobile (Android + iOS) hoặc Tất cả, AI báo tình trạng từng nền tảng (xong, chưa test, đang chậm).")} stack>
+      <Row label={t("Tóm tắt theo nền tảng")} desc={t(PLATFORM_HINT[role ?? "any"])} stack>
         <Segmented id="set-platform" variant="card" label={t("Tóm tắt theo nền tảng")} value={platform} onChange={(v) => { setPlatform(v); setPref("aiPlatform", v); }}
           items={PLATFORMS.map(([value, name]) => { const Icon = PLATFORM_ICONS[value]; return { value, label: <><Icon className="size-3.5" aria-hidden />{t(name)}</> }; })} />
       </Row>

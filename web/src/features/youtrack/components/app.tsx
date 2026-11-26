@@ -3,7 +3,6 @@
 import { Plus, CalendarCheck, Rocket, History, ClipboardList, FlaskConical, LayoutDashboard, ListChecks, Menu, RotateCw, Search, Sparkles, UserPlus, UserSearch, X } from "lucide-react";
 import { Popover as BasePopover } from "@base-ui/react/popover";
 import { AnimatePresence, motion } from "motion/react";
-import { useRouter } from "next/navigation";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Toaster, TopBar } from "@/app/_components/shell";
@@ -18,6 +17,7 @@ import { fold } from "@/shared/lib/utils";
 import { Dialog, DialogContent, DialogTitle } from "@/shared/components/ui/dialog";
 import { ShortcutList, YT_KEYS } from "@/shared/components/shortcuts";
 import { getPref, setPref, YT_ROLES } from "@/shared/lib/prefs";
+import { YtConnectPage } from "@/features/youtrack/components/connect";
 import { RolePicker } from "@/shared/components/role-picker";
 import { cn, durShort } from "@/shared/lib/utils";
 import { AI_MAX, QUICK, rank, riskOf, shortName, shortSp, TIER_LABEL, UNASSIGNED } from "@/features/youtrack/lib/yt";
@@ -96,10 +96,6 @@ function Shell() {
     return () => document.removeEventListener("keydown", k);
   }, []);
   useWatch();
-  // No YouTrack token yet (the server answers empty "mock" lists): go to its setup in Settings, like Telegram does before login.
-  const router = useRouter();
-  const mock = !!y.config?.mock;
-  useEffect(() => { if (mock) router.replace("/settings/#youtrack"); }, [mock, router]);
   const pages = y.aiOn ? [...PAGES[y.mode], ["ai", "Lịch sử AI", History] as (typeof PAGES)[Mode][number]] : PAGES[y.mode];
   const now = useNow(); // badge on the home page: my risky tickets (Dev), the ones I test (QA), the team's (PO)
   const risk = y.rows.filter((i) => (y.mode === "po" || (y.mode === "qa" ? i.qc : i.assignee) === y.me) && riskOf(i, now)).length;
@@ -109,6 +105,8 @@ function Shell() {
   // collapsing keeps the labels: the narrowing aside clips them while they fade, so nothing pops or jumps
   const fade = cn("whitespace-nowrap transition-opacity duration-(--dur-short)", collapsed && "md:opacity-0");
 
+  // no YouTrack token yet (the server answers empty "mock" lists): the token card, alone in the tab, like Telegram's sign-in
+  if (y.config?.mock) return <YtConnectPage />;
   // no role yet: ask first (nothing is loaded until then)
   if (!y.role) return (
     <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)]">

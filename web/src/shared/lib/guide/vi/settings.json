@@ -4,7 +4,7 @@
     "tab": "settings",
     "area": "Cài đặt › Tìm cài đặt",
     "title": "Tìm một cài đặt",
-    "what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt. Thẻ ít dùng (Luôn bỏ qua, Ưu tiên và tự động, Tag khi AI Agent hỏi, Kho prompt, Workflow, Báo cáo release) gập lại với nhãn “Nâng cao”; bấm tên thẻ để mở, tìm tới thẻ thì nó tự mở. Nhấn Esc (khi không gõ trong ô nào, không mở popup nào) để đóng Cài đặt, như nút \"Quay lại\".",
+    "what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt. Thẻ ít dùng (Luôn bỏ qua, Ưu tiên và tự động, Tag khi AI Agent hỏi (chỉ vai trò Dev; QA / PO chỉ thấy khi còn quy tắc cũ để gỡ), Kho prompt, Workflow, Báo cáo release) gập lại với nhãn “Nâng cao”; bấm tên thẻ để mở, tìm tới thẻ thì nó tự mở. Nhấn Esc (khi không gõ trong ô nào, không mở popup nào) để đóng Cài đặt, như nút \"Quay lại\".",
     "how": [
       {
         "t": "Bấm ô \"Tìm cài đặt\" dưới chữ Cài đặt (hoặc nhấn /)",
@@ -145,7 +145,7 @@
     "tab": "settings",
     "area": "Cài đặt › Telegram › Tài khoản Telegram",
     "title": "Kết nối và đăng nhập Telegram",
-    "what": "Nhập API ID/Hash lấy tại my.telegram.org, rồi đăng nhập bằng số điện thoại → mã → mật khẩu 2FA. Chỉ lưu trên máy này. Đăng nhập xong, app hỏi vai trò rồi tự gom các tin tag / reply bạn trong 14 ngày gần nhất vào Việc cần xử lý.",
+    "what": "Nhập API ID/Hash lấy tại my.telegram.org, rồi đăng nhập bằng số điện thoại → mã → mật khẩu 2FA. Chỉ lưu trên máy này. Chưa đăng nhập thì tab Telegram hiện riêng thẻ đăng nhập này ngay trong tab (linh vật nhắm mắt khi bạn gõ API Hash / mật khẩu 2FA, mã đăng nhập chia ô, dán cả mã là tự gửi). Đăng nhập xong, app hỏi vai trò rồi tự gom các tin tag / reply bạn trong 14 ngày gần nhất vào Việc cần xử lý.",
     "how": [
       {
         "t": "Chọn mục \"Telegram\"",
@@ -302,7 +302,7 @@
     "tab": "settings",
     "area": "Cài đặt › AI › Model và effort",
     "title": "Chọn model của mọi AI trong một danh sách",
-    "what": "Ô Model của từng việc (tóm tắt, soạn nháp, Briefing, Task và AI Agent, AI YouTrack) liệt kê model của Claude, Codex và Antigravity theo nhóm: chọn model của AI nào thì việc đó chạy bằng AI ấy, không cần đổi AI trước; effort theo đúng mức model đó nhận. Codex chạy qua opencodex (proxy trên máy) thì có thêm model opencodex định tuyến (AgentAPI, anthropic, combo…), xếp nhóm \"Codex · <provider>\" như trang Models của opencodex. Mỗi AI giữ lựa chọn riêng. Task đang dở tiếp tục bằng AI đã bắt đầu nó.",
+    "what": "Ô Model của từng việc (tóm tắt, soạn nháp, Briefing, Task và AI Agent (vai trò QA / PO: Phiên Trợ lý AI, Briefing), AI YouTrack) liệt kê model của Claude, Codex và Antigravity theo nhóm: chọn model của AI nào thì việc đó chạy bằng AI ấy, không cần đổi AI trước; effort theo đúng mức model đó nhận. Codex chạy qua opencodex (proxy trên máy) thì có thêm model opencodex định tuyến (AgentAPI, anthropic, combo…), xếp nhóm \"Codex · <provider>\" như trang Models của opencodex. Mỗi AI giữ lựa chọn riêng. Task đang dở tiếp tục bằng AI đã bắt đầu nó.",
     "how": [
       {
         "t": "Chọn mục \"AI\"",
@@ -403,7 +403,7 @@
     "tab": "settings",
     "area": "Cài đặt › YouTrack",
     "title": "Kết nối YouTrack và cấu hình AI cho YouTrack",
-    "what": "Ba nhóm: Kết nối và báo cáo (URL, token YouTrack, lịch Báo cáo release), AI và prompt (Instructions cho AI theo vai trò, Kho prompt), Workflow.",
+    "what": "Chưa có token thì tab YouTrack hiện riêng thẻ nhập URL / token này ngay trong tab. Ba nhóm: Kết nối và báo cáo (URL, token YouTrack, lịch Báo cáo release), AI và prompt (Instructions cho AI theo vai trò, Kho prompt), Workflow.",
     "how": [
       {
         "t": "Chọn mục \"YouTrack\"",
@@ -427,7 +427,7 @@
         "at": "css:form:has(input[aria-label=\"Token YouTrack\"]) button[type=\"submit\"]"
       },
       {
-        "t": "Chưa có token: bấm link \"Tạo token trên YouTrack\"",
+        "t": "Chưa có token: nhập URL rồi bấm link \"Tạo token trên YouTrack\" (mở trang Account Security), làm theo 3 bước hiện dưới ô nhập",
         "at": "Tạo token trên YouTrack"
       }
     ],
