@@ -668,7 +668,7 @@ function Inbox({ status }: { status: Status }) {
           setSearchOpen(true);
         }} /></QaCodes.Provider>
       <TicketSheetHost />
-      <ScanPicker />
+      <ScanPicker onRange={setDays} />
       <Toaster />
     </div>
   );

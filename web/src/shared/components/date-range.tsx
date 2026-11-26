@@ -31,8 +31,10 @@ export function rangeQuery({ from, to }: DayRange) {
   return p.toString();
 }
 
-/** Default range of the tag lists: the last 7 days, open-ended so tags arriving after midnight still show. */
-export const lastWeek = (): DayRange => ({ from: daysAgo(6), to: "" });
+/** The last `n` days including today, open-ended so tags arriving after midnight still show. */
+export const lastDays = (n: number): DayRange => ({ from: daysAgo(n - 1), to: "" });
+/** Default range of the tag lists. */
+export const lastWeek = () => lastDays(7);
 
 /** The tag lists' range, kept across reloads: a preset by its name (so "7 ngày qua" keeps sliding), else the exact days. */
 export function readTagRange(): DayRange {
@@ -54,7 +56,7 @@ function presets(): { label: Key; range: DayRange }[] {
     { label: "Hôm nay", range: { from: today, to: today } },
     { label: "Hôm qua", range: { from: daysAgo(1), to: daysAgo(1) } },
     { label: "7 ngày qua", range: lastWeek() },
-    { label: "30 ngày qua", range: { from: daysAgo(29), to: "" } },
+    { label: "30 ngày qua", range: lastDays(30) },
     { label: "Tháng này", range: { from: ymd(first), to: "" } },
     { label: "Tất cả", range: { from: "", to: "" } },
   ];
