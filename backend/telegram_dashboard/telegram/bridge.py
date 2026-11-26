@@ -145,12 +145,17 @@ class TelegramBridge:
         self._backfilled_at, self._partial = datetime.fromtimestamp(0, UTC), None
         self.scan_days = None
 
-    def scan_from(self, days: int) -> None:
-        """The user picked the look-back after signing in: the first scan reads `days` back (later ones too)."""
+    def scan_from(self, days: int) -> bool:
+        """The user picked the look-back after signing in: the first scan reads `days` back; once it has read
+        everything, reconnects look back BACKFILL_DAYS again. False (nothing done) when no pick is awaited: a second
+        tab, or a scan cut short and waiting out Telegram (an early call would only lengthen the wait)."""
+        if self.scan_days is not None:
+            return False
         self.scan_days, self._scan_now = days, True
         if self.detail == "backfill_choice":  # the popup closes on the next status read, not once the loop wakes
             self._set_state(self.state, "backfilling")
         self._wake.set()
+        return True
 
     async def set_transport(self, transport: Transport) -> None:
         """Swap in a transport built from new API credentials (Settings) and connect it."""
@@ -260,8 +265,8 @@ class TelegramBridge:
             fresh = set(await self.db.write(self.store.store_mentions, found))
             if fresh and self.on_tags:
                 self._spawn(self.on_tags([m for _, _, m, _ in found if (m.chat_id, m.message_id) in fresh]))
-            if retry is None:
-                self._backfilled_at, self._partial = started, None
+            if retry is None:  # read everything: reconnects look back the usual window, not the first pick
+                self._backfilled_at, self._partial, self.scan_days = started, None, BACKFILL_DAYS
         except Exception as e:
             log.warning("mention backfill failed: %s: %s", type(e).__name__, e)
             retry = BACKFILL_RETRY

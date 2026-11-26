@@ -232,6 +232,26 @@ async def test_fresh_sign_in_waits_for_the_picked_look_back(env):
         await asyncio.sleep(0.01)
     await env.bridge.stop()
     assert len(cutoffs) == 1 and abs(datetime.now(UTC) - timedelta(days=3) - cutoffs[0]) < timedelta(minutes=1)
+    assert not env.bridge.scan_from(1)  # no pick awaited any more: a second tab changes nothing
+
+
+async def test_picked_look_back_is_only_for_the_first_scan(env):
+    from datetime import UTC, datetime, timedelta
+
+    cutoffs = []
+
+    async def fetch(cutoff, *, skip=frozenset()):
+        cutoffs.append(cutoff)
+        return []
+
+    env.fake.fetch_mentions = fetch
+    env.bridge.forget_account()
+    assert env.bridge.scan_from(1)
+    await env.bridge.backfill_mentions()
+    last = env.bridge._backfilled_at = datetime.now(UTC) - timedelta(days=3)  # asleep 3 days, then a reconnect
+    await env.bridge.backfill_mentions()
+    assert abs(datetime.now(UTC) - timedelta(days=1) - cutoffs[0]) < timedelta(minutes=1)
+    assert cutoffs[1] == last - timedelta(hours=1)  # back to the last full scan (14-day window), not the 1 picked
 
 
 def test_since_filters_messages_and_chats(env):

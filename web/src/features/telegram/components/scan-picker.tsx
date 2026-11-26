@@ -20,7 +20,9 @@ export function ScanPicker() {
   const start = useRef<HTMLButtonElement>(null); // first focus: not the 1-day chip, whose ring reads as a second pick
   const scan = useMutation({
     mutationFn: () => api("/telegram/scan", { method: "POST", json: { days } }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["status"] }),
+    // either way read the status again: a 409 (picked in another tab) closes the popup too; errorText shows below
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["status"] }),
+    onError: () => undefined,
   });
   return (
     <Dialog open={asking}>

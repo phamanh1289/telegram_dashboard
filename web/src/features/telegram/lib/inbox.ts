@@ -15,7 +15,8 @@ import { byUnit, timeLabel } from "@/shared/lib/time";
  *  "still gathering", not "no tag". */
 export function useScan() {
   const d = useQuery({ ...statusQuery, staleTime: Infinity }).data?.detail;
-  return d === "backfilling" || d === "backfill_partial" ? d : null;
+  // waiting for the ScanPicker answer: the list behind it is still to fill, not "all done"
+  return d === "backfill_choice" ? "backfilling" : d === "backfilling" || d === "backfill_partial" ? d : null;
 }
 /** What the waiting scene says while the scan runs (`useScan`). */
 export const scanLines = (scan: "backfilling" | "backfill_partial") => (scan === "backfilling"
