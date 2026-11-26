@@ -376,6 +376,7 @@ export default {
   "Vai trò này chưa có workflow nên chưa đổi được State — vẽ ở Cài đặt › YouTrack › Workflow": "This role has no workflow yet, so no State can be changed — draw one in Settings › YouTrack › Workflow",
   "{state} chưa có trong workflow của team nên chưa đổi được": "{state} is not on the team workflow, so it cannot be changed",
   "Vai trò chưa có workflow nên chưa đổi được State.": "Your role has no workflow yet, so no State can be changed.",
+  "Bỏ {state} khỏi workflow": "Take {state} off the workflow",
   "Kéo chấm tròn của một ô sang ô khác để nối, hoặc Lấy từ YouTrack.": "Drag a box's dot onto another box to connect, or Get from YouTrack.",
   "Bản nháp chưa lưu, ticket vẫn theo bản đã lưu": "Unsaved draft, tickets still follow the saved one",
   "Mũi tên {from} → {to}, Delete để xóa": "Arrow {from} → {to}, Delete to remove",

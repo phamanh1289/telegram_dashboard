@@ -331,6 +331,16 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
                 <StatePill state={s} className="size-full rounded-[var(--radius-input)] pr-5 pl-2.5" />
                 <span aria-hidden onPointerDown={(e) => { if (e.button) return; const [px, py] = at(e); grab(e, { kind: "link", s, x: px, y: py, over: null }); setSel(null); }}
                   className="absolute top-1/2 -right-[6px] size-3 -translate-y-1/2 cursor-crosshair rounded-full border-2 border-cotton bg-hl opacity-70 shadow-stock transition-[opacity,scale] duration-(--dur-micro) group-hover:opacity-100 hover:scale-125" />
+                <AnimatePresence>
+                  {picked && ( // the picked box's own way off the canvas (same as Delete; the pointer's, and a touch screen's)
+                    <motion.button key="x" type="button" tabIndex={-1} aria-label={t("Bỏ {state} khỏi workflow", { state: s })}
+                      initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.6 }} transition={{ type: "spring", stiffness: 520, damping: 30 }}
+                      onPointerDown={(e) => e.stopPropagation()} onClick={() => drop({ box: s })}
+                      className="absolute -top-2.5 -right-2.5 z-10 grid size-[22px] place-items-center rounded-full bg-error text-cotton shadow-stock hover:brightness-110">
+                      <X className="size-3.5" />
+                    </motion.button>
+                  )}
+                </AnimatePresence>
               </div>
             );
           })}
