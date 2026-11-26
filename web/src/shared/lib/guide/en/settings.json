@@ -516,7 +516,7 @@
     "tab": "settings",
     "area": "Settings › YouTrack › Workflow",
     "title": "Draw a State workflow for your role",
-    "what": "The State flow for the chosen project and role: boxes are States, arrows the allowed next steps. With \"Apply in the app\" on, the State menu, Board drag and drop and bulk changes only follow the arrows (YouTrack still checks its own flow). \"Get from YouTrack\" copies the flow YouTrack allows today, the quickest start. Dev starts with a default flow when the project has its states; QA/QC and PO/PM start empty. While it is off, a ticket can move to any State; a ticket's State menu, the bulk State menu and the top of the Board show a hint \"Draw the workflow\" (\"Later\" hides all three).",
+    "what": "The State flow for the chosen project and role: boxes are States, arrows the allowed next steps. The workflow always applies: the State menu, Board drag and drop and bulk changes only follow the arrows (YouTrack still checks its own flow); a role with no arrow yet cannot change any State, and a ticket's State menu, the bulk State menu and the top of the Board show a \"Draw the workflow\" line that leads here. The toolbar: \"Get from YouTrack\" copies the flow YouTrack allows today (the quickest start), plus Auto-arrange and Delete all arrows. The diagram on the left holds the States in use, the column on the right the rest: drag a State from the column onto the diagram (or click it) to add it, drag a box from the diagram onto the column to take it off. Drag a box to move it, drag its dot onto another box to connect; arrows run at right angles around the boxes instead of across them, never on top of one another (down the flow from a box's bottom, along a row from its side) and reroute as you drag a box; Auto-arrange tries each box in the free spots around it / swapped with another and keeps the arrangement with the shortest arrows and the fewest corners and crossings (first state on top, later steps below or beside; the same flow always comes out the same); hover a box and its arrows light up while the others fade; click a box and its arrows and the States they link stand out while the rest fades (click an empty spot or press Esc to let go); click a box or an arrow (or Tab to it) then Delete, or the × that shows on it, to remove it. By keyboard: Tab to a box, Enter, Tab to the target box and Enter to draw an arrow. A flow with many States: drag an empty spot to move the whole diagram; the diagram's bottom-right corner has − / + to zoom, the % to go back to 100%, and Fit to view to see the whole flow; Ctrl / ⌘ + scroll or a trackpad pinch zooms around the pointer, and the + / − / 0 keys work on the diagram. Every edit is a draft: an \"Unsaved draft\" strip opens under the diagram with Discard draft and Save; moving between Settings groups keeps the draft, closing Settings drops it. A State with arrows in the workflow that was deleted / renamed on YouTrack shows as a dashed red box, with a warning line over the diagram: click the box (or its name in the line) to pick a State to replace it (that State takes its place and arrows) or take it off with its arrows, then Save. Dev starts with a default flow when the project has its states; QA/QC and PO/PM start empty.",
     "how": [
       {
         "t": "Choose \"YouTrack\"",
@@ -531,14 +531,10 @@
         "at": "Lấy từ YouTrack"
       },
       {
-        "t": "Tick \"Apply in the app\"",
-        "at": "Áp dụng trong app"
-      },
-      {
         "t": "Click \"Save\"",
         "at": "Lưu"
       }
     ],
-    "keys": "workflow state flow arrows apply draw workflow change state wrong flow"
+    "keys": "workflow state flow arrows apply draw workflow change state wrong flow zoom zoom in zoom out fit to view"
   }
 ]

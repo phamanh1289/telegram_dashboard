@@ -412,6 +412,11 @@ def build_router(
         live_reads.forget()  # groups, members, Q&A read as the account before
 
 
+    @router.post("/api/telegram/reconnect", status_code=204)
+    async def telegram_reconnect(request: Request) -> None:
+        await S(request).bridge.reconnect()
+
+
     def _login_transport(request: Request):
         t = S(request).bridge.transport
         if t is None or not hasattr(t, "sign_in"):

@@ -42,7 +42,7 @@ function useSetup() {
     ["settings-ai-intro", !!intro],
     ["settings-notify", notify],
     ...(code ? [["agent-project", known(projects, (d) => d.length > 0)] as Step] : []),
-    ...(yt ? [["settings-workflow", known(wf, (d) => d.on)], ["settings-yt-instructions", known(notes, (d) => !!d[role]?.trim())]] as Step[] : []),
+    ...(yt ? [["settings-workflow", known(wf, (d) => d.edges.length > 0)], ["settings-yt-instructions", known(notes, (d) => !!d[role]?.trim())]] as Step[] : []),
   ];
   const sure = (s: Step[]) => s.filter(([, d]) => d !== null);
   return { need: sure(need), nice: sure(nice) };

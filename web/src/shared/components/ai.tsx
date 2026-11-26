@@ -3,7 +3,7 @@
 import { Popover } from "@base-ui/react/popover";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChartColumn, Copy, Cpu, ExternalLink, History, Play, SlidersHorizontal, UserRound, WandSparkles } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import { CHIP, Dropdown } from "@/shared/components/ui/dropdown";
@@ -22,6 +22,7 @@ import { cn } from "@/shared/lib/utils";
 import { BASE, card, type Effort, effortLabel, KEYS, meterTone, planName, planTier, type Provider, PROVIDERS, resetIn, ringTone, type RunKind, sectionHead, useAccounts, useAiPrefs, useClaudeAccount, useRecheck, windowName } from "@/shared/components/ai/prefs";
 import { AgentIcon } from "@/shared/components/ai/agent-icon";
 import { AiBot } from "@/shared/components/ai/chat";
+import { EffortSlider, type EffortVariant } from "@/shared/components/ai/effort-slider";
 import { AIS, HistoryTab, Quota, ResetTicket, secs, UsageTab } from "@/shared/components/ai/usage";
 
 // The AI CLIs (Claude, Codex, Antigravity) in one place: one model list over every CLI's models per kind of run (the
@@ -569,66 +570,6 @@ export function PrefsSection({ plain = false, scope: initial = "telegram", fixed
       </p>
       {save.isError && <p role="alert" className="text-xs text-error">{t("Không lưu được lựa chọn. Thử lại.")}</p>}
     </section>
-  );
-}
-
-const THUMB = 20; // px, the drawn thumb (.effort --t)
-
-/** How an effort pick shows: "full" = slider + the level's name (settings, the AI page); "short" = the name only, a click
- *  lists the levels (inside prompt boxes, where room is tight). */
-export type EffortVariant = "full" | "short";
-
-/** Stepped slider in the accent: drag it freely, it glides to the nearest step on release (only then saved); arrows step it.
- *  Drawn by `.effort` (globals.css); a native range underneath keeps the keyboard and a11y. `short`: the level chip alone. */
-function EffortSlider({ label, steps, value, onChange, className, inherit, bare, variant = "full" }: {
-  label: string; steps: Effort[]; value: Effort; onChange: (v: Effort) => void; className?: string; inherit?: string; bare?: boolean;
-  variant?: EffortVariant;
-}) {
-  const t = useT();
-  const input = useRef<HTMLInputElement>(null);
-  const [drag, setDrag] = useState<number | null>(null); // free position (0…last) while the pointer holds it
-  const i = Math.max(0, steps.indexOf(value)); // a step this CLI doesn't take reads as its default
-  const last = Math.max(1, steps.length - 1);
-  const pos = drag ?? i;
-  const near = Math.round(pos);
-  const name = (v: Effort) => (v === "" && inherit ? inherit : effortLabel(v));
-  const at = (e: React.PointerEvent<HTMLElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    return Math.min(1, Math.max(0, (e.clientX - r.left - THUMB / 2) / (r.width - THUMB))) * last;
-  };
-  const drop = () => {
-    if (drag == null) return;
-    setDrag(null);
-    if (steps[Math.round(drag)] !== value) onChange(steps[Math.round(drag)]);
-  };
-  // The level's name, deepening with it like the fill; a click lists every level to pick one without sliding.
-  const chip = (
-    <Dropdown label={t("{label}: chọn mức", { label })} value={steps[near]} onChange={(v) => onChange(v as Effort)}
-      options={steps.map((v) => ({ value: v, label: name(v) }))}
-      trigger={cn("flex h-7 shrink-0 cursor-pointer items-center justify-center gap-0.5 rounded-full pr-1.5 pl-2 text-xs font-medium whitespace-nowrap transition-[background-color,box-shadow] duration-(--dur-short) hover:shadow-groove data-popup-open:shadow-groove",
-        variant === "short" ? "min-w-[4.5rem]" : "w-[6.5rem]", steps[near] !== "" ? "text-hl-2" : "bg-paper-3 text-ink-2")}
-      style={steps[near] !== "" ? { background: `color-mix(in oklch, var(--color-hl) ${Math.round((near / last) * 30)}%, var(--color-hl-wash))` } : undefined} />
-  );
-  if (variant === "short") return chip;
-  return (
-    <span className="flex min-w-0 items-center gap-2.5 text-xs text-ink-3">
-      {!bare && <span aria-hidden>Effort</span>}
-      <span className={cn("effort", className)} data-drag={drag != null || undefined} style={{ "--pct": pos / last } as React.CSSProperties}
-        onPointerDown={(e) => {
-          if (e.button !== 0) return;
-          e.currentTarget.setPointerCapture(e.pointerId);
-          input.current?.focus({ preventScroll: true });
-          setDrag(at(e));
-        }}
-        onPointerMove={(e) => drag != null && setDrag(at(e))} onPointerUp={drop} onPointerCancel={() => setDrag(null)}>
-        {/* Dots on the inner steps only: the track's ends already mark the first and last. */}
-        {steps.map((v, k) => k > 0 && k < last && <span key={v} aria-hidden className="effort-tick" data-on={k <= pos || undefined} style={{ "--k": k / last } as React.CSSProperties} />)}
-        <span aria-hidden className="effort-thumb" />
-        <input ref={input} type="range" min={0} max={steps.length - 1} step={1} value={i} aria-label={label} aria-valuetext={name(steps[i])}
-          onChange={(ev) => onChange(steps[Number(ev.target.value)])} />
-      </span>
-      {chip}
-    </span>
   );
 }
 

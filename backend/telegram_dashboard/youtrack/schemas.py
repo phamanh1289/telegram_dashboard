@@ -196,10 +196,9 @@ StateName = Annotated[str, Field(min_length=1, max_length=100)]
 
 class Workflow(BaseModel):
     """The team's own State flow for one project (Settings › YouTrack › Workflow): boxes on a canvas
-    and arrows from → to. `on`: the app only moves a ticket along an arrow (YouTrack's own state
-    machine still applies on top)."""
+    and arrows from → to. Always applied: the app only moves a ticket along an arrow, none drawn = no
+    State change (YouTrack's own state machine still applies on top). An old file's `on` is ignored."""
 
-    on: bool = False
     pos: dict[StateName, tuple[float, float]] = Field(default_factory=dict, max_length=200)
     edges: list[tuple[StateName, StateName]] = Field(default_factory=list, max_length=1000)
     hidden: list[StateName] = Field(default_factory=list, max_length=200)  # boxes taken off the canvas
@@ -208,7 +207,6 @@ class Workflow(BaseModel):
 # The Dev flow a project starts with when Dev has none saved yet (QA / PO start empty). Only used
 # when the project has all these states; the rest are hidden.
 DEV_FLOW = {
-    "on": True,
     "pos": {
         "OPENED": (24, 24), "ASSIGN TO DESIGN": (288, 24), "TO DO": (24, 104), "CLOSED": (338, 110),
         "ON HOLD": (343, 178), "IN PROGRESS": (24, 182), "BUILT ON DEV": (347, 240),

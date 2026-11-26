@@ -27,7 +27,7 @@ import { tagsFor } from "@/features/telegram/lib/mentions";
 import { StoryUpdate } from "./story-update";
 import { Related } from "./ticket-extras";
 import { WorkView } from "./work";
-import { useFlow, WorkflowTip } from "./workflow";
+import { useFlow, useNoFlow, WorkflowTip } from "./workflow";
 
 // The UI flow dialog (and, with it, the drawing engine) loads only when it is opened.
 const FlowDialog = dynamic(() => import("./flow").then((m) => m.FlowDialog));
@@ -389,7 +389,7 @@ function FieldSelect({ ticket, name }: { ticket: Ticket; name: Field }) {
   const project = ticket.id.split("-")[0];
   const opts = useQuery({ ...ytFieldsQuery(project), enabled: !y.config?.mock });
   const { key, node } = FIELD[name], cur = ticket[key] ?? "";
-  const flowOf = useFlow(project);
+  const flowOf = useFlow(project), noFlow = useNoFlow(project);
   const flow = name === "State" ? flowOf(cur) : null; // the team's arrows out of this state; null: no rule
   const all = opts.data?.[name] ?? [];
   const values = flow ? all.filter((v) => v === cur || flow.includes(v)) : all;
@@ -399,11 +399,16 @@ function FieldSelect({ ticket, name }: { ticket: Ticket; name: Field }) {
   const options = (values.includes(cur) || !cur ? values : [cur, ...values]).map((v) => ({ v, node: node(v) }));
   async function change(v: string) {
     const go = (from: Ticket, to: string) => saveTicket(y.patchTicket, from, { [key]: to }, () => yt.setField(ticket.id, name, to));
-    if (await go(ticket, v)) toast({ text: `${ticket.id} ${name} → ${v}`, undo: cur ? () => void go({ ...ticket, [key]: v }, cur) : undefined });
+    // undo is a move back: offered only when the team workflow has that arrow (the server would refuse it)
+    const back = !!cur && (name !== "State" || flowOf(v)?.includes(cur) !== false);
+    if (await go(ticket, v)) toast({ text: `${ticket.id} ${name} → ${v}`, undo: back ? () => void go({ ...ticket, [key]: v }, cur) : undefined });
   }
   return <Picker label={node(ticket[key])} title={t("Đổi {field} {id}", { field: name, id: ticket.id })} value={cur} options={options} onPick={(v) => void change(v)}
-    foot={flow && all.length > values.length ? t(flow.length ? "Theo workflow của team: chỉ hiện các bước đi tiếp từ {state}" : "Workflow của team: {state} là bước cuối", { state: cur || "—" })
-      : name === "State" ? <WorkflowTip project={project} /> : undefined} />;
+    foot={name !== "State" ? undefined : <>
+      {flow && !noFlow && all.length > values.length && t(flow.length ? "Theo workflow của team: chỉ hiện các bước đi tiếp từ {state}"
+        : flowOf(null)?.includes(cur) ? "Workflow của team: {state} là bước cuối" : "{state} chưa có trong workflow của team nên chưa đổi được", { state: cur || "—" })}
+      <WorkflowTip project={project} />
+    </>} />;
 }
 
 /** A feature's own colour (AI has `ai-chip`): tinted at rest, filled under the pointer. */

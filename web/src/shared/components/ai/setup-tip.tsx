@@ -11,10 +11,11 @@ import { closeTip, useSetupTips, useTipShown } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 
 /** One line under an AI answer (or a menu) when a setting would make it better: `go` walks the guide feature `tour` on the
- *  page; "Để sau" closes this one for good (Cài đặt › Trợ lý biết tuốt › Gợi ý cài đặt turns them all off). */
-export function SetupTip({ id, when, text, go, tour, className }: { id: string; when: boolean; text: string; go: string; tour: string; className?: string }) {
+ *  page; "Để sau" closes this one for good (Cài đặt › Trợ lý biết tuốt › Gợi ý cài đặt turns them all off). `must`: the
+ *  setting is what unblocks the thing (no "Để sau", shown even with suggestions off). */
+export function SetupTip({ id, when, text, go, tour, must, className }: { id: string; when: boolean; text: string; go: string; tour: string; must?: boolean; className?: string }) {
   const t = useT();
-  const shown = useTipShown(id) && when;
+  const shown = (useTipShown(id) || !!must) && when;
   const still = useReducedMotion();
   return (
     <AnimatePresence initial={false}>
@@ -24,9 +25,11 @@ export function SetupTip({ id, when, text, go, tour, className }: { id: string; 
           <GuideBulb className="size-4 shrink-0" />
           <span className="min-w-48 flex-1">{text}</span>{/* narrow (a menu): the buttons wrap under the text */}
           <Button type="button" size="xs" variant="outline" className="rounded-full" onClick={() => openTour(tour)}>{go}</Button>
-          <Hint side="bottom" text={t("Ẩn gợi ý này. Bật / tắt mọi gợi ý ở Cài đặt › Trợ lý biết tuốt.")}>
-            <Button type="button" size="xs" variant="ghost" onClick={() => closeTip(id)}>{t("Để sau")}</Button>
-          </Hint>
+          {!must && (
+            <Hint side="bottom" text={t("Ẩn gợi ý này. Bật / tắt mọi gợi ý ở Cài đặt › Trợ lý biết tuốt.")}>
+              <Button type="button" size="xs" variant="ghost" onClick={() => closeTip(id)}>{t("Để sau")}</Button>
+            </Hint>
+          )}
         </motion.p>
       )}
     </AnimatePresence>

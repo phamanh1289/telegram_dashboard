@@ -13,7 +13,7 @@ import { openReplyById, ticketsIn } from "@/features/telegram/lib/inbox";
 import { tagsFor } from "@/features/telegram/lib/mentions";
 import { StoryUpdate } from "@/features/youtrack/components/story-update";
 import { ytTraceQuery } from "@/features/youtrack/lib/trace";
-import { bucket, isBuilt, type Ticket, yt, ytFieldsQuery, ytProjectsQuery } from "@/features/youtrack/lib/yt";
+import { bucket, isBuilt, nextStates, type Ticket, yt, ytFieldsQuery, ytProjectsQuery, ytWorkflowQuery } from "@/features/youtrack/lib/yt";
 import { Button } from "@/shared/components/ui/button";
 import { Hint } from "@/shared/components/ui/hint";
 import { MENU_ACTION, MENU_ITEM, MENU_POPUP } from "@/shared/components/ui/menu";
@@ -22,7 +22,7 @@ import { api, type DigestItem, errorText, type Message, statusQuery, type WaitRe
 import { type Key, t as tr, useT } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
 import { goApp } from "@/shared/lib/nav";
-import { getPref, isString, put, readNotify, setPref, usePrefValue, useRole, useRoleOrDev, type YtRole } from "@/shared/lib/prefs";
+import { getPref, isString, put, readNotify, readYtRole, setPref, usePrefValue, useRole, useRoleOrDev, type YtRole } from "@/shared/lib/prefs";
 import { timeLabel, ymd } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 
@@ -81,12 +81,16 @@ export function useWaits(on: boolean) {
   return { waits: q.data?.waits ?? NONE, error: q.isError ? q.error : null, retry: () => void q.refetch() };
 }
 
-/** The state a "Chờ design" ticket moves to on YouTrack: the project's own design state ("ASSIGN TO DESIGN" first). */
-async function designState(qc: QueryClient, id: string) {
+/** The state a "Chờ design" ticket moves to on YouTrack: the project's own design state ("ASSIGN TO DESIGN" first), only when the
+ *  team workflow has an arrow there from the ticket's State `from` (the server would refuse it). */
+async function designState(qc: QueryClient, id: string, from: string) {
   const p = id.split("-")[0];
   const fields = await qc.fetchQuery(ytFieldsQuery(p)).catch(() => undefined);
   const states: string[] = fields?.State ?? []; // unreadable: no offer (the wait itself is saved)
-  return states.find((s) => /assign to design/i.test(s)) ?? states.find((s) => /design/i.test(s) && !/confirm/i.test(s));
+  const to = states.find((s) => /assign to design/i.test(s)) ?? states.find((s) => /design/i.test(s) && !/confirm/i.test(s));
+  if (!to) return undefined;
+  const wf = await qc.fetchQuery(ytWorkflowQuery(p, readYtRole() ?? "dev")).catch(() => undefined);
+  return wf && nextStates(wf.edges, from || null).includes(to) ? to : undefined;
 }
 
 type StoryItem = Pick<DigestItem, "text" | "why" | "tickets" | "message_ids">;
@@ -107,7 +111,7 @@ async function park(qc: QueryClient, chatId: string, kind: string, it: WaitItem,
   const who = kind === "confirmations" || kind === "actions" || kind === "msg" ? it.who ?? "" : "";
   const w: Wait = { key, chat_id: chatId, on, label, text: it.text, why: it.why ?? "", who, tickets: it.tickets ?? [], message_ids: it.message_ids ?? [], state, at: Date.now() };
   if (!await changeFollow(qc, { add: [w] })) return setDone([key], false);
-  const to = ytOn && on === "design" && await designState(qc, id);
+  const to = ytOn && on === "design" && await designState(qc, id, state);
   toast({
     text: tr("Đã chuyển sang {on}", { on: waitName(c) }), undo: () => unpark(qc, key, true),
     action: to ? { label: tr("{id} sang {state}", { id, state: to }), run: () => void yt.setField(id, "State", to)

@@ -16,6 +16,7 @@ import { ShortcutsGroup } from "@/features/settings/components/shortcuts";
 import { TelegramGroup } from "@/features/settings/components/telegram";
 import { UpdateSection } from "@/features/settings/components/update";
 import { YouTrackGroup, type YtView } from "@/features/settings/components/youtrack";
+import { dropWorkflowDrafts } from "@/features/youtrack/components/workflow";
 import { AiBotIcon } from "@/shared/components/ai/chat";
 import { Input } from "@/shared/components/ui/input";
 import { Pill } from "@/shared/components/ui/segmented";
@@ -54,6 +55,7 @@ export function SettingsPage() {
   const t = useT();
   const docTitle = `${t("Cài đặt")} · Radar`; // app/settings/page.tsx sets no title, so Next leaves this one alone
   useEffect(() => { document.title = docTitle; }, [docTitle]);
+  useEffect(() => { dropWorkflowDrafts(); }, []); // opening Settings starts from the saved workflows: closing it (any way out, a reload too) dropped the unsaved edit
   const [, label, Icon, , lead] = GROUPS.find(([id]) => id === (tab ?? "general"))!;
   const pick = (id: GroupId) => { history.replaceState(null, "", `#${id}`); setTab(id); scrollTo({ top: 0 }); };
   const [ytView, setYtView] = useState<YtView>("connect");

@@ -11,10 +11,10 @@ import { toast } from "@/shared/lib/notifications";
 import { useT } from "@/shared/lib/i18n";
 import { isString, put, readList } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { bucket, fmt, stateColor, stateSem, tagsOf, type Ticket, titleOf, yt, ytFieldsQuery } from "@/features/youtrack/lib/yt";
+import { bucket, fixWorkflow, fmt, stateColor, stateSem, tagsOf, type Ticket, titleOf, yt, ytFieldsQuery } from "@/features/youtrack/lib/yt";
 import { Person, Prio, StatePill, Tag, TypeTag } from "./bits";
 import { saveTicket, useYt } from "./state";
-import { useFlow } from "./workflow";
+import { useFlow, useNoFlow } from "./workflow";
 
 /** Board drag: one spring for lift, the slots opening / closing and the card flying into place. */
 const DND = { type: "spring", stiffness: 460, damping: 36 } as const;
@@ -68,7 +68,7 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
   const reorder = (next: string[]) => savePlaced([...next, ...placed.order.filter((s) => !next.includes(s))]);
   const order = useMemo(() => new Map(rows.map((i, k) => [i.id, k])), [rows]);
   const write = !y.config?.mock;
-  const flow = useFlow(y.project);
+  const flow = useFlow(y.project), noFlow = useNoFlow(y.project);
   const canGo = (t: Ticket, to: string) => { const f = flow(t.state); return !f || f.includes(to); };
   const live = drag && !drag.land ? drag : null;
   // while a card is dragged, the states it can move to that have no column yet show as drop zones in a dock over the board's foot:
@@ -99,7 +99,7 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
   function release(to: string | null) {
     if (!drag) return;
     const tk = drag.t, ok = !!to && to !== drag.from && to !== "—" && canGo(tk, to);
-    if (to && to !== drag.from && to !== "—" && !ok) toast({ text: t("Workflow của team không cho {from} → {to}", { from: tk.state ?? "—", to }) });
+    if (to && to !== drag.from && to !== "—" && !ok) toast({ text: noFlow ? t("Vai trò chưa có workflow nên chưa đổi được State.") : t("Workflow của team không cho {from} → {to}", { from: tk.state ?? "—", to }), action: fixWorkflow() });
     setOver(null); setInDock(false);
     setDrag({ ...drag, land: ok ? to : drag.from });
     if (!ok) return;
@@ -109,7 +109,7 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
     const prev = tk.state, go = (from: Ticket, s: string) => saveTicket(y.patchTicket, from, { state: s }, () => yt.setField(tk.id, "State", s));
     void go(tk, to).then((saved) => {
       setPend(null);
-      if (saved) toast({ text: `${tk.id} → ${to}`, undo: prev ? () => void go({ ...tk, state: to }, prev) : undefined });
+      if (saved) toast({ text: `${tk.id} → ${to}`, undo: prev && canGo({ ...tk, state: to }, prev) ? () => void go({ ...tk, state: to }, prev) : undefined }); // back only along an arrow
     });
   }
   const releaseRef = useRef(release);

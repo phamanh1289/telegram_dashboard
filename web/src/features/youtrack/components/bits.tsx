@@ -34,14 +34,14 @@ export function Person({ name, empty = "—" }: { name: string | null; empty?: s
 }
 
 /** State as a chip tinted with its workflow tier colour (the swatch keeps it readable without colour too). */
-export function StatePill({ state }: { state: string | null }) {
+export function StatePill({ state, className }: { state: string | null; className?: string }) {
   const t = useT();
   const sem = stateSem(state), c = stateColor(state);
   return (
     <span aria-label={t("Trạng thái: {state}", { state: state || "—" })} style={{ background: `color-mix(in oklch, ${c} 15%, transparent)` }}
       className={cn("inline-flex items-center gap-1.5 rounded-[var(--radius-input)] px-1.5 text-xs leading-[22px] font-medium whitespace-nowrap text-ink",
-        sem === "ok" && "text-ok", sem === "bad" && "text-error")}>
-      <i className="size-2 shrink-0 rounded-[2px]" style={{ background: c }} />{state || "—"}
+        sem === "ok" && "text-ok", sem === "bad" && "text-error", className)}>
+      <i className="size-2 shrink-0 rounded-[2px]" style={{ background: c }} /><span className="truncate">{state || "—"}</span>
     </span>
   );
 }

@@ -236,6 +236,8 @@
     "what": "Shows whether Telegram is connected (Connected / Disconnected, retrying / Sign-in needed…) and whether the live update stream is running.",
     "how": [
       "Look at the bottom of the sidebar: a line with a green dot \"Telegram connected · Live updates\" means all is well; when something is wrong it becomes an AI robot plugging in a cable (cable out, grey = disconnected; robot reaching = connecting)",
+      "When the connection is lost or live updates pause, click the card to retry now instead of waiting for the next automatic try (the Retry button on the warning bar does the same); the YouTrack card on the YouTrack page works the same way when YouTrack cannot be reached. When the network comes back (Wi-Fi, VPN), live updates reconnect by themselves, no click needed",
+      "Once connected, click the card to open Telegram settings (the YouTrack card opens YouTrack settings)",
       "If it says \"AI is waiting for you to sign in\" or \"No Telegram cable yet\", click that card to open Telegram settings",
       "Follow the \"Telegram account\" section: enter the API ID/Hash, then sign in"
     ],

@@ -4,7 +4,8 @@ import { Check, Feather, Monitor, Moon, Palette, Pipette, RotateCcw, Sparkles, S
 import { useState } from "react";
 import { LookPreview } from "@/features/settings/components/look-preview";
 import { MascotRow } from "@/features/settings/components/mascot";
-import { Card, PickPill, picked, quietBtn, Row, Switch } from "@/features/settings/components/parts";
+import { Card, PickPill, picked, quietBtn, Row } from "@/features/settings/components/parts";
+import { Switch } from "@/shared/components/ui/switch";
 import { Dropdown } from "@/shared/components/ui/dropdown";
 import { Hint } from "@/shared/components/ui/hint";
 import { Pill, Segmented } from "@/shared/components/ui/segmented";

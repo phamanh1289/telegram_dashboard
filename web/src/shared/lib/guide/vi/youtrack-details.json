@@ -160,7 +160,7 @@
     "tab": "youtrack",
     "area": "Bảng bên › Ticket",
     "title": "Đổi State / Priority / Assignee",
-    "what": "Đổi trực tiếp State, Priority, Assignee của ticket trên YouTrack (State theo workflow; vai trò chưa bật workflow thì menu hiện mọi State, kèm gợi ý \"Vẽ workflow\"); thông báo có nút hoàn tác. Ticket của project khác thì danh sách Assignee / QC là team của project đó.",
+    "what": "Đổi trực tiếp State, Priority, Assignee của ticket trên YouTrack (State chỉ đi theo mũi tên của workflow; vai trò chưa có workflow thì chưa đổi được State, menu có gợi ý \"Vẽ workflow\"); thông báo có nút hoàn tác (với State: chỉ khi workflow có mũi tên quay lại). Workflow có State đã bị xóa trên YouTrack thì menu State báo kèm nút \"Sửa workflow\"; đổi State bị workflow chặn thì thông báo lỗi cũng có nút đó. Ticket của project khác thì danh sách Assignee / QC là team của project đó.",
     "how": [
       {
         "t": "Bấm \"Ticket\"",

@@ -183,7 +183,7 @@
     "tab": "youtrack",
     "area": "Ticket › Board",
     "title": "Kéo thả thẻ để đổi State",
-    "what": "Trên Board, kéo thẻ sang cột khác để đổi State trên YouTrack (lúc kéo, các State kế tiếp chưa có cột hiện thành ô thả trong thanh nổi ở đáy board, board không xô lệch; rê thẻ vào một ô thì ô phóng to, dòng trên cùng của thanh đổi thành \"Thả ra để chuyển … sang …\" và thẻ đang kéo thu gọn thành một chip chỉ ghi mã ticket ngay khi con trỏ vào thanh (ra khỏi thanh thì mở lại như cũ); thả ra thì cột State đó mọc ra ngay sau cột của thẻ; cột mà Workflow của team không cho chuyển tới bị làm mờ, thả vào đó thẻ quay về chỗ cũ); có nút hoàn tác trong thông báo. Kéo tiêu đề cột để đổi thứ tự cột (nhớ theo từng project). Cột đã xong được gộp thành một nút. Vai trò chưa bật workflow thì trên Board có dòng gợi ý \"Vẽ workflow\" (thẻ kéo được sang mọi State).",
+    "what": "Trên Board, kéo thẻ sang cột khác để đổi State trên YouTrack (lúc kéo, các State kế tiếp chưa có cột hiện thành ô thả trong thanh nổi ở đáy board, board không xô lệch; rê thẻ vào một ô thì ô phóng to, dòng trên cùng của thanh đổi thành \"Thả ra để chuyển … sang …\" và thẻ đang kéo thu gọn thành một chip chỉ ghi mã ticket ngay khi con trỏ vào thanh (ra khỏi thanh thì mở lại như cũ); thả ra thì cột State đó mọc ra ngay sau cột của thẻ; cột mà Workflow của team không cho chuyển tới bị làm mờ, thả vào đó thẻ quay về chỗ cũ); có nút hoàn tác trong thông báo. Kéo tiêu đề cột để đổi thứ tự cột (nhớ theo từng project). Cột đã xong được gộp thành một nút. Vai trò chưa có workflow thì chưa kéo thẻ sang State khác được, trên Board có dòng gợi ý \"Vẽ workflow\".",
     "how": [
       {
         "t": "Bấm \"Ticket\"",
@@ -338,7 +338,7 @@
     "tab": "youtrack",
     "area": "Ticket › Bảng › Thao tác hàng loạt",
     "title": "Chọn nhiều ticket, đổi Assignee / State / Priority hàng loạt, hỏi AI",
-    "what": "Tích nhiều ticket để đổi Assignee, State (theo workflow; vai trò chưa bật workflow thì menu State có gợi ý \"Vẽ workflow\") hoặc Priority cùng lúc: chọn giá trị là áp dụng ngay, có hoàn tác; ticket đổi lỗi vẫn được chọn để thử lại. Hoặc mở phiên AI về các ticket đã chọn.",
+    "what": "Tích nhiều ticket để đổi Assignee, State (theo mũi tên của workflow; vai trò chưa có workflow thì chưa đổi được, menu State có gợi ý \"Vẽ workflow\") hoặc Priority cùng lúc: chọn giá trị là áp dụng ngay, có hoàn tác (State: chỉ ticket có mũi tên quay lại); ticket đổi lỗi vẫn được chọn để thử lại. Hoặc mở phiên AI về các ticket đã chọn.",
     "how": [
       {
         "t": "Bấm \"Ticket\"",

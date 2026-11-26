@@ -160,7 +160,7 @@
     "tab": "youtrack",
     "area": "Side panel › Ticket",
     "title": "Change State / Priority / Assignee",
-    "what": "Changes the ticket's State, Priority and Assignee directly on YouTrack (State follows the workflow; while your role has no workflow on, the menu lists every State with a hint \"Draw the workflow\"); the notice has an undo button. For a ticket from another project, the Assignee / QC list is that project's team.",
+    "what": "Changes the ticket's State, Priority and Assignee directly on YouTrack (State only follows the workflow's arrows; while your role has no workflow, no State can be changed and the menu hints \"Draw the workflow\"); the notice has an undo button (for State: only when the workflow has an arrow back). When the workflow has States deleted on YouTrack, the State menu says so with a \"Fix the workflow\" button; a State change the workflow refuses shows that button in its error notice too. For a ticket from another project, the Assignee / QC list is that project's team.",
     "how": [
       {
         "t": "Click \"Tickets\"",

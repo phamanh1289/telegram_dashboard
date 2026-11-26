@@ -128,6 +128,7 @@ export function useSync(baseline: string) {
   const live = useRef(true);
   const es = useRef<EventSource | null>(null);
   const [stream, setStream] = useState<StreamState>("connecting");
+  const kick = useRef(() => {}); // "Thử lại": open the stream now instead of after its backoff
 
   const reset = useCallback(
     (cursor: string) => {
@@ -233,14 +234,24 @@ export function useSync(baseline: string) {
         void drain();
       } else if (!readNotify()) close();
     };
+    kick.current = () => {
+      clearTimeout(retry);
+      wait = 1000;
+      open();
+      void drain();
+    };
+    const onOnline = () => kick.current(); // network back (Wi-Fi, VPN): don't sit out the backoff
     open();
     document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("online", onOnline);
     return () => {
       live.current = false;
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("online", onOnline);
       close();
     };
   }, [drain, reset, qc]);
 
-  return stream;
+  const retry = useCallback(() => kick.current(), []);
+  return [stream, retry] as const;
 }

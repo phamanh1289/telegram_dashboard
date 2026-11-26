@@ -1,6 +1,7 @@
 """Telegram bridge: owns ingest, recovery and reply sending. Transport hides Telethon (transport.py)."""
 
 import asyncio
+import contextlib
 import logging
 import re
 import secrets
@@ -102,6 +103,7 @@ class TelegramBridge:
         self.state = "setup_required" if transport is None else "stopped"
         self.detail: str | None = None
         self._main: asyncio.Task | None = None
+        self._wake = asyncio.Event()  # reconnect(): cut the wait between two connect attempts short
         self._send_lock = asyncio.Lock()
         self.reaction = reaction  # emoji mirrored on Telegram when a tag is marked done ("" = off)
         self._react_lock = asyncio.Lock()
@@ -124,6 +126,15 @@ class TelegramBridge:
     async def start(self) -> None:
         if self.transport is not None and (self._main is None or self._main.done()):
             self._main = asyncio.create_task(self._run())
+
+    async def reconnect(self) -> None:
+        """Try now instead of waiting out the retry delay (sidebar card, Thử lại); restarts a loop that ended."""
+        if self.transport is None:
+            raise ApiError(409, "telegram_not_configured")
+        if self._main is None or self._main.done():
+            await self.start()
+        else:
+            self._wake.set()
 
     def forget_account(self) -> None:
         """Another account signs in: its name is read again on connect and its first backfill looks back in full."""
@@ -185,7 +196,9 @@ class TelegramBridge:
             elif backfill_at is not None and time.monotonic() >= backfill_at:
                 backfill_at = await self.backfill_mentions()
             # ponytail: liveness polling; Telethon 1.x exposes no reconnect event.
-            await asyncio.sleep(WATCH_INTERVAL if up else self.retry_delay)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._wake.wait(), WATCH_INTERVAL if up else self.retry_delay)
+            self._wake.clear()
 
     def ensure_connected(self) -> Transport:
         if self.transport is None or self.state != "connected":
