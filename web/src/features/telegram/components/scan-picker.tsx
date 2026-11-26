@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/shared/components/ui/dialog";
 import { Segmented } from "@/shared/components/ui/segmented";
-import { api, errorText, statusQuery } from "@/shared/lib/api";
+import { api, ApiError, errorText, statusQuery } from "@/shared/lib/api";
 import { useT } from "@/shared/lib/i18n";
 
 const DAYS = [1, 3, 7, 14, 30] as const; // backend caps at bridge.BACKFILL_MAX
@@ -20,9 +20,9 @@ export function ScanPicker() {
   const start = useRef<HTMLButtonElement>(null); // first focus: not the 1-day chip, whose ring reads as a second pick
   const scan = useMutation({
     mutationFn: () => api("/telegram/scan", { method: "POST", json: { days } }),
-    // either way read the status again: a 409 (picked in another tab) closes the popup too; errorText shows below
+    // either way read the status again: a 409 (picked in another tab) closes the popup too
     onSettled: () => void qc.invalidateQueries({ queryKey: ["status"] }),
-    onError: () => undefined,
+    onError: (e) => { if (e instanceof ApiError && e.code === "scan_not_waiting") scan.reset(); }, // not a failure to retry; others show below
   });
   return (
     <Dialog open={asking}>

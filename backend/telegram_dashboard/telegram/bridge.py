@@ -114,7 +114,8 @@ class TelegramBridge:
         self.on_tags = None  # async (new pending tags) -> None: autobe.AutoBe.on_tags, set by the app
         self._backfilled_at = datetime.fromtimestamp(0, UTC)  # last backfill that read everything
         self._partial: tuple[datetime, datetime, frozenset[str]] | None = None  # cut-short pass: cutoff, start, done
-        self.scan_days: int | None = BACKFILL_DAYS  # None: just signed in, waiting for the user to pick (scan_from)
+        # None: just signed in, waiting for the pick (scan_from); the pick until the first full scan; then BACKFILL_DAYS
+        self.scan_days: int | None = BACKFILL_DAYS
         self._scan_now = False  # scan_from asked for a scan: `_run` starts it on its next turn
         if transport is not None:
             transport.attach(self)
