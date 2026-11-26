@@ -1,8 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, LayoutGrid, Trash2, X } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { Download, LayoutGrid, Maximize, Minus, Plus, Trash2, X } from "lucide-react";
+import { animate, AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type KeyboardEvent as RKeyboardEvent, type PointerEvent as RPointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/button";
 import { Fold } from "@/shared/components/ui/fold";
@@ -207,10 +207,13 @@ export function WorkflowSection() {
 type Drag =
   | { kind: "move"; s: string; dx: number; dy: number; to: [number, number] | null; out: boolean } // to: where it is while dragged; out: over the column
   | { kind: "link"; s: string; x: number; y: number; over: string | null }
-  | { kind: "add"; s: string; x: number; y: number; ox: number; oy: number; moved: boolean; into: boolean }; // from the column; frame coordinates, o: start
+  | { kind: "add"; s: string; x: number; y: number; ox: number; oy: number; moved: boolean; into: boolean } // from the column; frame coordinates, o: start
+  | { kind: "pan"; ox: number; oy: number; left: number; top: number; moved: boolean }; // empty canvas: the view moves (client px, scroll at the start)
 type Sel = { edge: string } | { box: string } | null;
 
 const near0 = (v: number) => Math.max(0, Math.round(v));
+const ZOOM_MIN = 0.4, ZOOM_MAX = 1.6;
+const clampZoom = (z: number) => Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 100) / 100;
 
 function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
   states: string[]; hidden: string[]; wf: Workflow; onChange: (p: Partial<Workflow>) => void;
@@ -230,7 +233,48 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
   const has = new Set(wf.edges.map(key));
   const width = Math.max(0, ...states.map((s) => pos[s][0])) + W + PAD;
   const height = Math.max(0, ...states.map((s) => pos[s][1])) + H + PAD + 40; // + room for the empty hint below the boxes
-  const boxH = Math.min(480, Math.max(260, height)); // narrow screens (no full-height card): the canvas's own height
+  // zoom for a big flow: the boxes and arrows scale, positions stay in flow units (`at` divides by it)
+  const [zoom, setZoomState] = useState(1);
+  const zoomNow = useRef(1), zoomGoal = useRef(1); // now: the drawn value (mid-animation too); goal: where it is heading
+  const zoomAnim = useRef<ReturnType<typeof animate> | null>(null);
+  // the flow point to keep under the anchor while the zoom changes, applied after each render (the scroll extent has changed by then)
+  const zoomAnchor = useRef<{ fx: number; fy: number; ox: number; oy: number } | null>(null);
+  const still = useReducedMotion();
+  /** To `z`, keeping the flow point under `anchor` (client px; default the canvas centre) where it is on screen; eased
+   *  (buttons, keys, Vừa khung), or `instant` for a wheel / pinch, which already moves in small steps. */
+  const zoomTo = (z: number, anchor?: [number, number], instant = false) => {
+    const el = box.current, nz = clampZoom(z);
+    if (!el || nz === zoomGoal.current) return;
+    const r = el.getBoundingClientRect(), [ax, ay] = anchor ?? [r.left + el.clientWidth / 2, r.top + el.clientHeight / 2];
+    const ox = ax - r.left, oy = ay - r.top;
+    zoomAnchor.current = { fx: (ox + el.scrollLeft) / zoomNow.current, fy: (oy + el.scrollTop) / zoomNow.current, ox, oy };
+    zoomGoal.current = nz;
+    zoomAnim.current?.stop();
+    const show = (v: number) => { zoomNow.current = v; setZoomState(v); };
+    if (instant || still) { show(nz); return; }
+    zoomAnim.current = animate(zoomNow.current, nz, { duration: 0.22, ease: [0.2, 0, 0, 1], onUpdate: show });
+  };
+  useLayoutEffect(() => {
+    const el = box.current, a = zoomAnchor.current;
+    if (!el || !a) return;
+    el.scrollLeft = a.fx * zoom - a.ox;
+    el.scrollTop = a.fy * zoom - a.oy;
+    if (zoom === zoomGoal.current) zoomAnchor.current = null; // landed: free scrolling again
+  }, [zoom]);
+  useEffect(() => () => zoomAnim.current?.stop(), []);
+  const zoomStep = (d: number) => zoomTo(Math.round(zoomGoal.current * 10) / 10 + d); // on the 10 % marks (41 % + → 50 %), from where it is heading
+  const fitZoom = () => { const el = box.current; if (el) zoomTo(Math.min(1, el.clientWidth / width, el.clientHeight / height)); };
+  // Ctrl / ⌘ + wheel, and a trackpad pinch (which comes as one): zoom around the pointer. Not passive, to keep the page's own zoom off
+  const zoomRef = useRef(zoomTo);
+  useLayoutEffect(() => { zoomRef.current = zoomTo; });
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const wheel = (e: WheelEvent) => { if (!e.ctrlKey && !e.metaKey) return; e.preventDefault(); zoomRef.current(zoomGoal.current * Math.exp(-e.deltaY / 300), [e.clientX, e.clientY], true); };
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => el.removeEventListener("wheel", wheel);
+  }, []);
+  const boxH = Math.min(480, Math.max(260, height * zoom)); // narrow screens (no full-height card): the canvas's own height
 
   const link = (from: string, to: string) => { if (to !== from && !has.has(key([from, to]))) onChange({ edges: [...wf.edges, [from, to]] }); };
   const drop = (s: Sel) => { // Delete: the picked arrow, or the picked box off the canvas; the keyboard stays on the canvas
@@ -244,9 +288,13 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
     if (e.key === "Delete" || e.key === "Backspace") { if (sel) { e.preventDefault(); drop(sel); } }
     else if (e.key === "Escape" && (sel || linking)) { e.preventDefault(); setSel(null); setLinking(null); } // the next Esc closes Settings
     else if (e.key === "Enter" && s) { e.preventDefault(); if (linking && linking !== s) { link(linking, s); setLinking(null); } else setLinking(linking === s ? null : s); }
+    else if ((e.key === "+" || e.key === "=" || e.key === "-" || e.key === "0") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      if (e.key === "0") zoomTo(1); else zoomStep(e.key === "-" ? -0.1 : 0.1);
+    }
   }
 
-  const at = (e: RPointerEvent) => { const r = box.current!.getBoundingClientRect(); return [e.clientX - r.left + box.current!.scrollLeft, e.clientY - r.top + box.current!.scrollTop]; };
+  const at = (e: RPointerEvent) => { const r = box.current!.getBoundingClientRect(); return [(e.clientX - r.left + box.current!.scrollLeft) / zoom, (e.clientY - r.top + box.current!.scrollTop) / zoom]; };
   const inFrame = (e: RPointerEvent) => { const r = frame.current!.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   const zone = (e: RPointerEvent) => (document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-wf-zone]") as HTMLElement | null)?.dataset.wfZone;
   const stateAt = (e: RPointerEvent) => (document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-state]") as HTMLElement | null)?.dataset.state ?? null;
@@ -254,6 +302,12 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
   function move(e: RPointerEvent) {
     const d = live.current;
     if (!d) return;
+    if (d.kind === "pan") { // straight to the scroll: no re-render per move, one when it starts moving (the cursor)
+      const el = box.current!, dx = e.clientX - d.ox, dy = e.clientY - d.oy;
+      el.scrollLeft = d.left - dx; el.scrollTop = d.top - dy;
+      if (!d.moved && Math.hypot(dx, dy) > 4) setDrag({ ...d, moved: true });
+      return;
+    }
     if (d.kind === "move") {
       const out = zone(e) === "tray", [x, y] = at(e);
       setDrag({ ...d, out, to: out ? d.to : [near0(x - d.dx), near0(y - d.dy)] });
@@ -263,7 +317,8 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
   function up(e: RPointerEvent) {
     const d = live.current;
     setDrag(null);
-    if (d?.kind === "move") {
+    if (d?.kind === "pan") { if (!d.moved) { setSel(null); setLinking(null); } } // a click on the empty canvas lets go of the pick
+    else if (d?.kind === "move") {
       if (d.out) { onHide(d.s); setSel(null); } // dropped on the column: off (back to its old place if it returns)
       else if (d.to) onChange({ pos: { ...wf.pos, [d.s]: d.to } });
       else setSel(sel && "box" in sel && sel.box === d.s ? null : { box: d.s }); // a click: pick / let go
@@ -286,9 +341,13 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
     <div ref={frame} onPointerMove={move} onPointerUp={up} onPointerCancel={() => setDrag(null)} onLostPointerCapture={() => setDrag(null)} onKeyDown={keys}
       style={{ "--wf-h": `${boxH}px` } as React.CSSProperties} className="relative flex min-h-0 flex-1 touch-none select-none @max-lg:flex-col">
       <div data-wf-zone="canvas" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <div ref={box} tabIndex={-1} onPointerDown={(e) => { if (e.target === e.currentTarget) { setSel(null); setLinking(null); } }}
-          className={cn("relative h-(--wf-h) overflow-auto bg-paper-2 outline-none transition-shadow md:h-auto md:min-h-60 md:flex-1", drag?.kind === "add" && drag.into && "shadow-[inset_0_0_0_2px_var(--color-hl)]")}
+        {/* boxes and arrows take their own presses; the empty canvas drags the view (the hand), its click lets go of the pick */}
+        <div ref={box} tabIndex={-1} onPointerDown={(e) => { if (e.button || (e.target as Element).closest("button")) return; const el = box.current!; grab(e, { kind: "pan", ox: e.clientX, oy: e.clientY, left: el.scrollLeft, top: el.scrollTop, moved: false }); }}
+          className={cn("relative h-(--wf-h) cursor-grab overflow-auto bg-paper-2 outline-none transition-shadow md:h-auto md:min-h-60 md:flex-1", drag?.kind === "pan" && drag.moved && "cursor-grabbing", drag?.kind === "add" && drag.into && "shadow-[inset_0_0_0_2px_var(--color-hl)]")}
           style={{ backgroundImage: "radial-gradient(var(--color-rule) 1px, transparent 1px)", backgroundSize: "16px 16px" }}>
+          {/* the scroll extent follows the zoom; the flow inside is drawn at 1 and scaled */}
+          <div className="relative" style={{ width: width * zoom, height: height * zoom }}>
+          <div className="absolute top-0 left-0 origin-top-left" style={{ width, height, transform: `scale(${zoom})` }}>
           <svg width={width} height={height} overflow="visible" className="pointer-events-none absolute top-0 left-0">
             <defs>
               {["n", "s"].map((m) => (
@@ -344,11 +403,27 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
               </div>
             );
           })}
+          </div>
+          </div>
+        </div>
+        <div role="toolbar" aria-label={t("Zoom sơ đồ")} className="absolute right-3 bottom-3 z-10 flex items-center gap-0.5 rounded-full bg-cotton/90 p-0.5 shadow-stock backdrop-blur">
+          <Hint title={t("Thu nhỏ")} text={t("Phím − khi đang ở sơ đồ; Ctrl / ⌘ + cuộn hoặc chụm hai ngón trên trackpad để zoom quanh con trỏ.")}>
+            <Button type="button" size="icon-xs" variant="ghost" className="rounded-full" aria-label={t("Thu nhỏ")} disabled={zoom <= ZOOM_MIN} onClick={() => zoomStep(-0.1)}><Minus /></Button>
+          </Hint>
+          <Hint title={t("Về 100%")} text={t("Phím 0 khi đang ở sơ đồ.")}>
+            <Button type="button" size="xs" variant="ghost" className="min-w-12 rounded-full tabular-nums" aria-label={t("Về 100%")} onClick={() => zoomTo(1)}>{Math.round(zoom * 100)}%</Button>
+          </Hint>
+          <Hint title={t("Phóng to")} text={t("Phím + khi đang ở sơ đồ.")}>
+            <Button type="button" size="icon-xs" variant="ghost" className="rounded-full" aria-label={t("Phóng to")} disabled={zoom >= ZOOM_MAX} onClick={() => zoomStep(0.1)}><Plus /></Button>
+          </Hint>
+          <Hint title={t("Vừa khung")} text={t("Thu nhỏ để thấy cả sơ đồ trong khung (không phóng quá 100%).")}>
+            <Button type="button" size="icon-xs" variant="ghost" className="rounded-full" aria-label={t("Vừa khung")} onClick={fitZoom}><Maximize /></Button>
+          </Hint>
         </div>
         <AnimatePresence>
-          {(linking || !wf.edges.length) && ( // over the canvas's foot, outside its scroll
+          {(linking || !wf.edges.length) && ( // over the canvas's foot (left; the zoom bar is right), outside its scroll
             <motion.p key={linking ? "link" : "empty"} role="status" initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8, scale: 0.96 }} transition={{ type: "spring", stiffness: 420, damping: 32 }}
-              className="pointer-events-none absolute inset-x-3 bottom-3 mx-auto w-fit rounded-full bg-cotton/90 px-3 py-1 text-center text-xs text-ink-2 shadow-stock backdrop-blur">
+              className="pointer-events-none absolute bottom-3 left-3 w-fit max-w-[calc(100%-13rem)] rounded-2xl bg-cotton/90 px-3 py-1 text-xs text-ink-2 shadow-stock backdrop-blur">
               {linking ? t("Nối từ {state}: Tab tới ô đích rồi Enter (Esc để hủy)", { state: linking }) : t("Kéo chấm tròn của một ô sang ô khác để nối, hoặc Lấy từ YouTrack.")}
             </motion.p>
           )}
@@ -356,7 +431,7 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
       </div>
       {/* the states not in the workflow: drag one onto the canvas (or click it) to add it, drag a box here to take it off */}
       <ul data-wf-zone="tray" aria-label={t("State chưa dùng trong workflow")}
-        className={cn("flex min-h-0 w-44 shrink-0 flex-col gap-1.5 overflow-y-auto border-l border-rule bg-cotton p-2 transition-colors duration-(--dur-micro) @max-lg:max-h-32 @max-lg:w-auto @max-lg:flex-row @max-lg:flex-wrap @max-lg:border-t @max-lg:border-l-0",
+        className={cn("flex min-h-0 w-48 shrink-0 flex-col gap-2.5 overflow-y-auto border-l border-rule bg-cotton p-3 transition-colors duration-(--dur-micro) @max-lg:max-h-32 @max-lg:w-auto @max-lg:flex-row @max-lg:flex-wrap @max-lg:border-t @max-lg:border-l-0",
           drag?.kind === "move" && drag.out && "bg-hl-wash", "max-md:max-h-(--wf-h)")}>
         <AnimatePresence initial={false}>
           {hidden.map((s) => (
@@ -366,7 +441,7 @@ function Canvas({ states, hidden, wf, onChange, onHide, onShow, fit }: {
               <button type="button" aria-label={t("Thêm {state} vào workflow", { state: s })} onClick={() => onShow(s)}
                 onPointerDown={(e) => { if (e.button) return; const [x, y] = inFrame(e); grab(e, { kind: "add", s, x, y, ox: x, oy: y, moved: false, into: false }); }}
                 className="flex w-full max-w-full cursor-grab rounded-[var(--radius-input)] bg-cotton text-left shadow-stock transition-shadow hover:shadow-[0_0_0_1px_var(--color-hl)] focus-visible:ring-2 focus-visible:ring-hl active:cursor-grabbing">
-                <StatePill state={s} className="w-full min-w-0 py-0.5" />
+                <StatePill state={s} className="h-9 w-full min-w-0 px-2.5" />
               </button>
             </motion.li>
           ))}

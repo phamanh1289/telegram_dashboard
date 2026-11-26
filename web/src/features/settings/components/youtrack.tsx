@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Plug, RotateCw, Sparkles, Workflow } from "lucide-react";
+import { ExternalLink, Plug, RotateCw, Sparkles, UserRound, Workflow } from "lucide-react";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { Card, linkCls, Row, StatusLine, tMap, useFillHeight } from "@/features/settings/components/parts";
 import { Switch } from "@/shared/components/ui/switch";
@@ -30,7 +30,10 @@ export function YouTrackGroup({ view, setView }: { view: YtView; setView: (v: Yt
   // the role a card edits for (Instructions; Workflow falls back to Dev, as the server does), picked in Cài đặt › Chung
   const chip = (r: YtRole | null) => {
     const name = YT_ROLES.find(([x]) => x === r)?.[1];
-    return name && <span className="rounded-full bg-paper-2 px-2 py-0.5 text-xs text-ink-2 shadow-groove">{t("Vai trò:")} <b className="font-bold">{t(name)}</b></span>;
+    // stands out: what the card shows and saves depends on it
+    return name && <span className="inline-flex items-center gap-1.5 rounded-full bg-hl-wash px-2.5 py-1 text-sm text-hl-2 ring-1 ring-hl/35">
+      <UserRound className="size-3.5" aria-hidden />{t("Vai trò:")} <b className="font-bold">{t(name)}</b>
+    </span>;
   };
   return <>
     <Segmented id="set-yt-view" variant="card" label={t("Nhóm cài đặt YouTrack")} value={view} onChange={setView}
