@@ -38,6 +38,24 @@ test("code step: boxes follow the length, paste keeps digits, eyes close on 2FA"
   await expect(page.getByLabel("Số điện thoại")).toBeVisible();
 });
 
+test("code of unknown length: up to 8 digits, nothing sends until Đăng nhập", async ({ page }) => {
+  await loggedOut(page);
+  await page.route("**/api/telegram/code", (r) => r.fulfill({ json: { via: "other", length: null } }));
+  let sent = "";
+  await page.route("**/api/telegram/sign-in", (r) => { sent = r.request().postData() ?? ""; return r.fulfill({ json: { password_required: true } }); });
+  await page.goto("/");
+  await page.getByLabel("Số điện thoại").fill("+84 900 000 000");
+  await page.getByRole("button", { name: "Gửi mã" }).click();
+  await page.getByLabel("Mã đăng nhập").fill("1234567");
+  await expect(page.locator('[data-slot="code-cell"]')).toHaveCount(8);
+  await page.getByLabel("Mã đăng nhập").fill("123456789");
+  await expect(page.getByLabel("Mã đăng nhập")).toHaveValue("12345678");
+  expect(sent).toBe("");
+  await page.getByRole("button", { name: "Đăng nhập" }).click();
+  await expect(page.getByLabel("Mật khẩu 2FA")).toBeVisible();
+  expect(JSON.parse(sent)).toEqual({ code: "12345678" });
+});
+
 test("flood_wait shows the error and shakes, not a normal state", async ({ page }) => {
   await loggedOut(page);
   await page.route("**/api/telegram/code", (r) => r.fulfill({ status: 429, json: { error: { code: "flood_wait", retry_after: 30, detail: null } } }));

@@ -3,17 +3,19 @@
 import { useState } from "react";
 import { cn } from "@/shared/lib/utils";
 
-/** A one-time code as `length` boxes (5 when unknown): one real input over them, so paste, autofill and the keyboard
- *  work as usual; it keeps digits only and calls `onComplete` once every box is filled. */
+/** A one-time code as `length` boxes: one real input over them, so paste, autofill and the keyboard work as usual; it
+ *  keeps digits only and calls `onComplete` once every box is filled. Length unknown: up to 8 digits (the server's
+ *  rule), the boxes grow as you type and nothing sends by itself. */
 export function CodeInput({ value, onChange, length, onComplete, label, autoFocus }: {
   value: string; onChange: (v: string) => void; length?: number | null; onComplete?: (v: string) => void; label: string; autoFocus?: boolean;
 }) {
-  const n = length || 5;
+  const n = length || 8; // most digits the code takes
+  const cells = length || Math.max(5, Math.min(n, value.length + 1));
   const [focus, setFocus] = useState(!!autoFocus);
-  const at = Math.min(value.length, n - 1);
+  const at = Math.min(value.length, cells - 1);
   return (
     <span className="relative flex gap-2">
-      {Array.from({ length: n }, (_, i) => (
+      {Array.from({ length: cells }, (_, i) => (
         <span key={i} data-slot="code-cell" aria-hidden
           className={cn("grid h-11 w-10 place-items-center rounded-md border bg-cotton font-mono text-lg font-bold text-ink transition-[border-color,box-shadow] duration-(--dur-micro)",
             focus && i === at ? "border-hl ring-2 ring-hl/25" : "border-rule-2")}>
@@ -29,7 +31,7 @@ export function CodeInput({ value, onChange, length, onComplete, label, autoFocu
           // typed or pasted into a full code: start over with the new digits, not the old ones plus a stray one
           const v = (d.length > n && value.length === n ? d.slice(n) : d).slice(0, n);
           onChange(v);
-          if (v.length === n && v !== value) onComplete?.(v);
+          if (length && v.length === n && v !== value) onComplete?.(v);
         }}
         className="absolute inset-0 size-full cursor-text bg-transparent text-transparent caret-transparent outline-none selection:bg-transparent" />
     </span>

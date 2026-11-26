@@ -13,7 +13,7 @@ import { GeneralGroup } from "@/features/settings/components/general";
 import { LookSection } from "@/features/settings/components/look";
 import { Card, useStatus } from "@/features/settings/components/parts";
 import { ShortcutsGroup } from "@/features/settings/components/shortcuts";
-import { TelegramGroup } from "@/features/settings/components/telegram";
+import { TelegramGroup, useAgentTagsShown } from "@/features/settings/components/telegram";
 import { UpdateSection } from "@/features/settings/components/update";
 import { YouTrackGroup, type YtView } from "@/features/settings/components/youtrack";
 import { dropWorkflowDrafts } from "@/features/youtrack/components/workflow";
@@ -23,7 +23,6 @@ import { Pill } from "@/shared/components/ui/segmented";
 import { YtLogo } from "@/shared/components/yt-logo";
 import { type Key, tr, useT } from "@/shared/lib/i18n";
 import { POP, POP_FADE } from "@/shared/lib/motion";
-import { useRole, usesCode } from "@/shared/lib/prefs";
 import { cn, fold } from "@/shared/lib/utils";
 
 type GroupId = "general" | "look" | "bot" | "telegram" | "youtrack" | "ai" | "data" | "shortcuts" | "github" | "contact";
@@ -169,7 +168,7 @@ export function SettingsPage() {
 // ---- search -------------------------------------------------------------------------------------
 
 /** One findable setting: its name, group, the card holding it (scrolled to), YouTrack's sub-view, extra words to match. */
-type Entry = { t: Key; g: GroupId; card?: Key; view?: YtView; k?: string; dev?: true }; // dev: a card QA / PO do not see
+type Entry = { t: Key; g: GroupId; card?: Key; view?: YtView; k?: string; dev?: true }; // dev: on "Tag khi AI Agent hỏi", shown as useAgentTagsShown says
 const ENTRIES: Entry[] = [
   { t: "Vai trò Dev, QA/QC, PO/PM", g: "general", card: "Vai trò", k: "role" },
   { t: "Ngôn ngữ Tiếng Việt / English", g: "general", card: "Ngôn ngữ", k: "language lang vietnamese tieng anh" },
@@ -235,9 +234,9 @@ function SettingsSearch({ onGo }: { onGo: (e: Entry) => void }) {
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
   }, []);
-  const code = usesCode(useRole());
+  const agentTags = useAgentTagsShown();
   const words = fold(q).split(/\s+/).filter(Boolean);
-  const hits = words.length ? INDEX.filter((x) => (code || !x.e.dev) && words.every((w) => x.hay.includes(w))).map((x) => x.e).slice(0, 8) : [];
+  const hits = words.length ? INDEX.filter((x) => (agentTags || !x.e.dev) && words.every((w) => x.hay.includes(w))).map((x) => x.e).slice(0, 8) : [];
   const cur = Math.min(at, Math.max(0, hits.length - 1));
   const pick = (e: Entry) => { onGo(e); setQ(""); box.current?.blur(); };
   return (

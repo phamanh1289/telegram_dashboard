@@ -9,6 +9,7 @@ import { BUILTIN_WAITS, ROLE_WAITS, saveWaitChoices, toChoice, useWaitChoices, W
 import { ADD_CHIP, POP, RulesCount, RulesSection, rulesQuery } from "@/features/telegram/components/tools-menu";
 import { Card, quietBtn, Row, usePrivacy } from "@/features/settings/components/parts";
 import { TelegramLogin } from "@/features/telegram/components/login";
+import { Fold } from "@/shared/components/ui/fold";
 import { Switch } from "@/shared/components/ui/switch";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { useT } from "@/shared/lib/i18n";
@@ -17,6 +18,14 @@ import { applyRowActions, getPref, onPrefs, OVERDUE_CHOICES, QA_REMIND_CHOICES, 
 /** A waiting time's chip icon: off, a timer under an hour, else the clock showing its hours (24 h on 12). */
 const CLOCKS: Record<number, typeof Timer> = { 1: Clock1, 2: Clock2, 4: Clock4, 8: Clock8, 24: Clock12 };
 const clock = (mins: number) => (!mins ? BellOff : mins < 60 ? Timer : CLOCKS[mins / 60] ?? Clock12);
+
+/** "Tag khi AI Agent hỏi" (card and search hit): Dev, or QA / PO while such rules are left from a Dev role (to remove
+ *  them), like RulesSection's relay / agent rows. */
+export function useAgentTagsShown() {
+  const code = usesCode(useRole());
+  const left = useQuery({ ...rulesQuery, select: (rs) => rs.some((r) => r.kind.startsWith("tag_")) }).data;
+  return code || !!left;
+}
 
 /** Telegram-only preferences: the account, the queue, notifications, Q&A, Briefing, rules, local data. */
 export function TelegramGroup() {
@@ -30,8 +39,7 @@ export function TelegramGroup() {
   const [notify, setNotify] = useState(readNotify);
   const [notifyNote, setNotifyNote] = useState("");
   const code = usesCode(useRole()); // QA / PO: no AI Agent, no Đối chiếu BE
-  // QA / PO only see "Tag khi AI Agent hỏi" while such rules are left from a Dev role (to remove them), like RulesSection's relay / agent rows
-  const tagRules = useQuery({ ...rulesQuery, select: (rs) => rs.some((r) => r.kind.startsWith("tag_")) }).data;
+  const agentTags = useAgentTagsShown();
   async function toggleNotify(on: boolean) {
     if (on) {
       if (typeof Notification === "undefined") return setNotifyNote(t("Trình duyệt này không hỗ trợ thông báo."));
@@ -96,9 +104,9 @@ export function TelegramGroup() {
       <RulesSection kinds={["priority", "relay", "agent"]} />
     </Card>
 
-    {(code || tagRules) && <Card advanced badge={<RulesCount kinds={["tag_be", "tag_po", "tag_qc"]} />} title="Tag khi AI Agent hỏi" info="Người được tag ở đầu câu hỏi mà phiên AI Agent gửi BE / PO / QC vào nhóm: phiên mới soạn sẵn tag này, lúc gửi tự thêm tag còn thiếu.">
+    <Fold open={agentTags}><Card advanced badge={<RulesCount kinds={["tag_be", "tag_po", "tag_qc"]} />} title="Tag khi AI Agent hỏi" info="Người được tag ở đầu câu hỏi mà phiên AI Agent gửi BE / PO / QC vào nhóm: phiên mới soạn sẵn tag này, lúc gửi tự thêm tag còn thiếu.">
       <RulesSection kinds={["tag_be", "tag_po", "tag_qc"]} />
-    </Card>}
+    </Card></Fold>
 
   </>;
 }
