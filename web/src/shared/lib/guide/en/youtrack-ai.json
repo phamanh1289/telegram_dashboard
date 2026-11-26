@@ -27,7 +27,7 @@
         "at": "Thêm ticket: số hoặc ID, nhiều cái cách dấu phẩy, Enter"
       },
       {
-        "t": "Click \"New chat\" to start over (or \"Cancel\" to stop, \"Copy\" to copy)",
+        "t": "Click \"New chat\" to start over (or \"Cancel\" to stop, \"Copy\" to copy). \"Delete session\" (click twice) removes the session from AI history and closes the panel",
         "at": "Cuộc mới"
       }
     ],

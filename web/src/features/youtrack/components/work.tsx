@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, LibraryBig, SquareTerminal, MessageSquareText, Plus, RotateCcw, Sparkles } from "lucide-react";
+import { ChevronRight, LibraryBig, SquareTerminal, MessageSquareText, Plus, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { AiPromptBox, AiSend, SessionCode, UserBubble, useFollow } from "@/shared/components/ai/chat";
@@ -35,14 +35,16 @@ function builtinRun(k: Builtin["kind"], rows: Pick<Ticket, "id" | "type" | "summ
 // Many tickets picked → AI: the tickets quoted, one prompt about them, follow-ups in the box. A folder: the AI also
 // reads that code (read-only). Every session stays in the YouTrack tab (its history), never in Telegram › AI Agent.
 
-/** The AI session every AI action opens: `auto` is the run it starts with (or a saved answer to show), then the chat goes on here. */
-export function WorkView({ title, ids: initial, auto, start, resume }: { title: string; ids: string[]; auto?: AiAuto; start?: AiStart; resume?: AiSession }) {
+/** The AI session every AI action opens: `auto` is the run it starts with (or a saved answer to show), then the chat goes on here.
+ *  `canDelete`: a "Xóa phiên" button (the side panel; Lịch sử AI has its own trash on the list). */
+export function WorkView({ title, ids: initial, auto, start, resume, canDelete }: { title: string; ids: string[]; auto?: AiAuto; start?: AiStart; resume?: AiSession; canDelete?: boolean }) {
   const t = useT();
   const y = useYt();
   // every turn is kept in the history as it starts (pending), then with its answer; a new conversation (run, Cuộc mới,
   // other tickets) gets a new entry
   const [ids, setIds] = useState(initial);
-  const { onTurn, session, againRef, code } = useHistory(title, ids, resume?.id);
+  const { onTurn, session, againRef, code, remove } = useHistory(title, ids, resume?.id);
+  const [sure, setSure] = useState(false); // "Xóa phiên" clicked once: the next click deletes
   const ai = useAi(onTurn, session);
   const [retry, setRetry] = useState(resume?.pending); // a saved turn that never got its answer
   const attached = useRef(false);
@@ -256,7 +258,11 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
                 <LibraryBig className="size-3.5" />{t(chips.length ? "Kho prompt" : "Kho prompt: chọn hoặc ghim prompt")}
               </button></Hint>
               {noted && <Hint side="bottom" title={t("Instructions của team")} text={notes.data![y.mode].slice(0, 300)}><span className="ml-auto rounded-full bg-hl-wash px-2 text-xs leading-5 font-medium text-hl-2">{t("Có instructions {role}", { role: ({ dev: "Dev", qa: "QC", po: "PO" })[y.mode] })}</span></Hint>}
-              {chatting && <Hint side="bottom" text={t("Bắt đầu cuộc trò chuyện mới với các ticket này")}><Button type="button" size="xs" variant="ghost" className={noted ? "" : "ml-auto"} disabled={busy} onClick={ai.cancel}><RotateCcw /> {t("Cuộc mới")}</Button></Hint>}
+              {chatting && <span className={cn("flex gap-1", !noted && "ml-auto")}>{/* together: they wrap as one */}
+                <Hint side="bottom" text={t("Bắt đầu cuộc trò chuyện mới với các ticket này")}><Button type="button" size="xs" variant="ghost" disabled={busy} onClick={ai.cancel}><RotateCcw /> {t("Cuộc mới")}</Button></Hint>
+                {canDelete && code && <Hint side="bottom" text={t("Xóa phiên này khỏi Lịch sử AI và đóng panel")}><Button type="button" size="xs" variant={sure ? "destructive" : "ghost"} onBlur={() => setSure(false)}
+                onClick={() => { if (!sure) { setSure(true); return; } remove(); y.setSheet(null); }}><Trash2 /> {t(sure ? "Bấm lần nữa để xóa" : "Xóa phiên")}</Button></Hint>}
+              </span>}
             </div>
           }
           tools={!!list.length && dev && <>

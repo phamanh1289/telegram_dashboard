@@ -117,7 +117,7 @@ export function Sheet() {
             <div className={cn("min-h-0 flex-1 p-4 sm:p-5", s.kind === "work" ? "flex flex-col" : "overflow-y-auto")}>{/* work: a chat, it scrolls its own middle */}
               {s.kind === "ticket" ? <TicketView key={s.id} id={s.id} draft={s.comment} />
                 : s.kind === "list" ? <TicketList rows={s.rows} />
-                : <WorkView key={s.title + s.ids.join() + (s.resume?.id ?? "")} title={s.title} ids={s.ids} auto={s.auto} start={s.start} resume={s.resume} />}
+                : <WorkView key={s.title + s.ids.join() + (s.resume?.id ?? "")} title={s.title} ids={s.ids} auto={s.auto} start={s.start} resume={s.resume} canDelete />}
             </div>
           </motion.aside>
         </>

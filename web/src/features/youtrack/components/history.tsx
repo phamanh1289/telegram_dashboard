@@ -110,7 +110,9 @@ export function useHistory(title: string, ids: string[], resumeId = "") {
       changed();
     };
   };
-  return { onTurn, session, againRef: again, code: code ? sessionId({ id: code }, "YT") : "" };
+  /** Delete this conversation from the history (a run of it stops), as the history's own trash does. */
+  const remove = () => { if (sid.current) { drop([sid.current]); changed(); } };
+  return { onTurn, session, againRef: again, code: code ? sessionId({ id: code }, "YT") : "", remove };
 }
 
 /** A one-shot AI use with no follow-up (AI filter, ticket draft): kept as it starts, then with its result as text.
