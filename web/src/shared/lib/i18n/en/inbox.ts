@@ -674,4 +674,11 @@ export default {
   "{label} · {n} ngày": "{label} · {n} days",
   "{who} đã trả lời: {text}": "{who} replied: {text}",
   "Không đọc được trạng thái dashboard": "Could not read the dashboard status",
+  "Đang quét tag 14 ngày qua ở mọi nhóm": "Scanning 14 days of tags in every group",
+  "Lần đầu sẽ lâu hơn một chút": "The first time takes a little longer",
+  "Tag mới vẫn hiện ngay khi có": "New tags still show as soon as they come",
+  "Telegram bắt chờ một lúc": "Telegram asked us to wait a bit",
+  "App tự gom tiếp phần còn lại": "The app picks up the rest by itself",
+  "Đang gom tag…": "Gathering tags…",
+  "Đang gom tag 14 ngày qua ở mọi nhóm…": "Gathering the last 14 days of tags from every group…",
 } satisfies Dict;

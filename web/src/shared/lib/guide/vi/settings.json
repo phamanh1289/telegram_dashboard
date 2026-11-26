@@ -145,7 +145,7 @@
     "tab": "settings",
     "area": "Cài đặt › Telegram › Tài khoản Telegram",
     "title": "Kết nối và đăng nhập Telegram",
-    "what": "Nhập API ID/Hash lấy tại my.telegram.org, rồi đăng nhập bằng số điện thoại → mã → mật khẩu 2FA. Chỉ lưu trên máy này.",
+    "what": "Nhập API ID/Hash lấy tại my.telegram.org, rồi đăng nhập bằng số điện thoại → mã → mật khẩu 2FA. Chỉ lưu trên máy này. Đăng nhập xong, app hỏi vai trò rồi tự gom các tin tag / reply bạn trong 14 ngày gần nhất vào Việc cần xử lý.",
     "how": [
       {
         "t": "Chọn mục \"Telegram\"",

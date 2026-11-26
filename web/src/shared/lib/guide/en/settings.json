@@ -145,7 +145,7 @@
     "tab": "settings",
     "area": "Settings › Telegram › Telegram account",
     "title": "Connect and sign in to Telegram",
-    "what": "Enter the API ID/Hash from my.telegram.org, then sign in with your phone number → code → 2FA password. Stored only on this machine.",
+    "what": "Enter the API ID/Hash from my.telegram.org, then sign in with your phone number → code → 2FA password. Stored only on this machine. Once signed in, the app asks your role, then gathers the tags / replies to you from the last 14 days into To do.",
     "how": [
       {
         "t": "Choose the \"Telegram\" section",

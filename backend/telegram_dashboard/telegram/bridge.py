@@ -211,6 +211,9 @@ class TelegramBridge:
         looks back only to the last complete backfill (Telethon's catch-up replays the rest).
         Cut short / failed: the monotonic time `_run` retries it at (status detail says so meanwhile)."""
         started = datetime.now(UTC)
+        # the inbox shows "gathering", not "no tag yet", until it ends (first sign-in: 14 days)
+        if self.state == "connected":
+            self._set_state("connected", "backfilling")
         cutoff = max(started - timedelta(days=BACKFILL_DAYS), self._backfilled_at - BACKFILL_MARGIN)
         skip: frozenset[str] = frozenset()
         if self._partial:  # finishing a cut-short pass: as far back, without the groups it read in full

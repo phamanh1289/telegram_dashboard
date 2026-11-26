@@ -21,7 +21,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Hint } from "@/shared/components/ui/hint";
 import { api, errorText, type Message, type PendingItem, type QaItem, type Task } from "@/shared/lib/api";
 import { fmtDate, type Key, type T, useT } from "@/shared/lib/i18n";
-import { inQaPage, msgKey, openQa, openReplyById, openTask, ticketClick, pendingQuery, sentQuery, sessionId, TASK_STATE, ticketsIn, useTaskList, waitLabel } from "@/features/telegram/lib/inbox";
+import { inQaPage, msgKey, openQa, openReplyById, openTask, ticketClick, pendingQuery, scanLines, sentQuery, sessionId, TASK_STATE, ticketsIn, useScan, useTaskList, waitLabel } from "@/features/telegram/lib/inbox";
 import { useNow } from "@/shared/hooks/use-now";
 import { useRole } from "@/shared/lib/prefs";
 import { loopKey, useDoneLoop, useLoopBack } from "@/features/telegram/lib/report-back";
@@ -236,7 +236,9 @@ export function TodayPage({ onReply, onGo, onBriefGroup }: {
   const free = !mine.length && !pending.isError && !partial; // a failed read is not "all done"
   const none = free && !theirs.length && !theirWait && !snoozed.isError; // nobody waits either way: one scene, no sections
 
+  const scan = useScan();
   if (wait) return <AiFetching kind="today" />;
+  if (scan && free) return <AiFetching kind="inbox" lines={scanLines(scan)} />; // gathering tags: not "all done" yet
   return (
     <MotionConfig reducedMotion="user">
       <section aria-label={t("Hôm nay")} className="@container flex min-h-0 flex-col overflow-y-auto">

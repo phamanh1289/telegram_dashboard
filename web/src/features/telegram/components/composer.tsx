@@ -29,7 +29,7 @@ import { api, ApiError, apiStream, errorText, type AiResult, type Message, type 
 import { draftKey, msgKey, remind, saveDraft, typing, useSessionOn } from "@/features/telegram/lib/inbox";
 import { fitsSend, SEND_ERRORS, SEND_MAX, sendLost, sendLostText } from "@/features/telegram/lib/send";
 import { toast } from "@/shared/lib/notifications";
-import { getPref, put, readIntro, setPref, readPlatform, readReplyCode, saveReplyCode, useIntro, useRole, usesCode, type YtRole } from "@/shared/lib/prefs";
+import { getPref, put, readIntro, setPref, readPlatform, readReplyCode, saveReplyCode, useIntro, useRole, useSetupTips, usesCode, type YtRole } from "@/shared/lib/prefs";
 import { cn, MOD } from "@/shared/lib/utils";
 import { type Key, useT } from "@/shared/lib/i18n";
 
@@ -125,7 +125,7 @@ export function Composer({
     if (old.length) setTurns((l) => [...old, ...l]); // eslint-disable-line react-hooks/set-state-in-effect -- seeded once from the saved log
   }, [sessionQ.isSuccess, session, savedLog.isFetchedAfterMount, savedLog.data, replyTo]);
   const aiName = useAiPrefs().nameOf();
-  const role = useRole(), intro = useIntro();
+  const role = useRole(), intro = useIntro(), tips = useSetupTips();
   const example = ROLE_ASK[role ?? "dev"];
   const missing = role === "qa" ? askMissing(analysis) : "";
   const [picked, setPicked] = useState(0); // which AI option is in the textarea
@@ -411,10 +411,10 @@ export function Composer({
       <div className={cn("flex min-h-0 flex-col overflow-y-auto @3xl:grid @3xl:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] @3xl:grid-rows-[minmax(0,1fr)_auto] @3xl:overflow-hidden",
         pane === "ai" && "@max-3xl:overflow-hidden")}>
         {/* Narrow: the reply or the assistant, so the AI prompt box stays pinned at the bottom of its pane. */}
-        {(aiConfigured || tools) && (
+        {(aiConfigured || tools || tips) && ( // no AI: the pane still opens on the locked assistant (how to set AI up)
           <div className="shrink-0 px-3 pt-2 @3xl:hidden">
             <Segmented id="composer-pane" label={t("Khung")} variant="bar" value={pane} onChange={setPane}
-              items={[{ value: "reply", label: <><Send className="size-3.5" aria-hidden />{t("Trả lời")}</> }, { value: "ai", label: <><Sparkles className="size-3.5" aria-hidden />{aiConfigured ? t("Trợ lý AI") : t("Công cụ")}</> }]} />
+              items={[{ value: "reply", label: <><Send className="size-3.5" aria-hidden />{t("Trả lời")}</> }, { value: "ai", label: <><Sparkles className="size-3.5" aria-hidden />{aiConfigured || !tools ? t("Trợ lý AI") : t("Công cụ")}</> }]} />
           </div>
         )}
         {/* The thread as it reads in the group: messages before, the tag in place, messages after. */}

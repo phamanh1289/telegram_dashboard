@@ -44,6 +44,15 @@ test("signed in with no role: Telegram asks the role first, then opens the inbox
   expect(await page.evaluate(() => localStorage.getItem("ytMode"))).toBe("qa");
 });
 
+test("first scan after sign-in: an empty list says it is gathering tags, not all done", async ({ page }) => {
+  await page.route("**/api/status", async (r) => r.fulfill({ json: { ...(await (await r.fetch()).json()), detail: "backfilling" } }));
+  await page.route("**/api/events*", (r) => r.abort()); // the live stream would carry the real (finished) scan
+  await page.route(/\/api\/pending/, (r) => r.fulfill({ json: [] }));
+  await page.goto("/?chat=__all__");
+  await expect(page.getByText("Đang quét tag 14 ngày qua ở mọi nhóm")).toBeVisible();
+  await expect(page.getByText("Không còn việc nào")).toHaveCount(0);
+});
+
 test("telegram text renders as text only (no XSS)", async ({ page }) => {
   await open(page);
   await expect(row(page, 120)).toContainText("<img src=x onerror=");

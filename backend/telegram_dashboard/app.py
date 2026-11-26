@@ -331,8 +331,10 @@ def create_app(
             return not await request.is_disconnected()
 
         def bridge_status() -> dict:
-            # loop: the Báo lại list changed; auto: the last failure of the BE automation (autobe.py)
-            return {"state": s.bridge.state, "loop": s.store.loop_rev, "auto": [s.autobe.rev, s.autobe.error]}
+            # detail: "backfilling" / "backfill_partial" (the inbox's first scan); loop: the Báo lại list changed;
+            # auto: the last failure of the BE automation (autobe.py)
+            return {"state": s.bridge.state, "detail": s.bridge.detail, "loop": s.store.loop_rev,
+                    "auto": [s.autobe.rev, s.autobe.error]}
 
         yield ServerSentEvent(retry=3000, comment="open")
         async for ev in event_stream(s.store, s.hub, start, alive=alive, status=bridge_status):

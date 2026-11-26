@@ -16,7 +16,7 @@ import { Hint } from "@/shared/components/ui/hint";
 import { Kbd } from "@/shared/components/ui/kbd";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { errorText, type Message, type PendingItem, type Task } from "@/shared/lib/api";
-import { acted, COMPOSER, getMessage, inQaPage, msgKey, openReplyById, PartialError, pendingQuery, pinAll, QaCodes, setHandled, settled, taskListQuery, useListShortcuts, useTasks, waitLabel } from "@/features/telegram/lib/inbox";
+import { acted, COMPOSER, getMessage, inQaPage, msgKey, openReplyById, PartialError, pendingQuery, pinAll, QaCodes, scanLines, setHandled, settled, taskListQuery, useListShortcuts, useScan, useTasks, waitLabel } from "@/features/telegram/lib/inbox";
 import { useNow } from "@/shared/hooks/use-now";
 import { fold } from "@/shared/lib/utils";
 import { type LoopItem, loopKey, useDoneLoop, useLoopBack } from "@/features/telegram/lib/report-back";
@@ -130,6 +130,7 @@ export function PendingInbox({
     [inGroup, view, now, tasks],
   );
   const items = useMemo(() => sections.flatMap((s) => s.rows.map((p) => p.message)), [sections]);
+  const scan = useScan(), scanning = !!scan && !!q.data && view === "todo" && items.length === 0; // gathering tags, not "nothing left"
   // Multi-select (to-do only): Space / Shift+click; a bar acts on all of them; Esc clears.
   const [sel, setSel] = useState<Set<string>>(() => new Set());
   const pick = useCallback((m: Message) => setSel((cur) => {
@@ -165,7 +166,7 @@ export function PendingInbox({
             { value: "pinned", label: t("Đã ghim"), title: t("Tin bạn ghim để giữ lại, kể cả khi đã xử lý (g p)") },
           ]} />}
         <p className="min-w-0 truncate text-sm text-ink-2" aria-live="polite">
-          {q.isError && !q.data ? t("Không tải được danh sách.") : !q.data ? t("Đang tải…") : items.length === 0 ? (pinned ? t("Chưa có tin ghim") : view === "working" ? t("Không có tin đang xử lý") : t("Không còn việc nào")) : (
+          {q.isError && !q.data ? t("Không tải được danh sách.") : !q.data ? t("Đang tải…") : items.length === 0 ? (pinned ? t("Chưa có tin ghim") : view === "working" ? t("Không có tin đang xử lý") : scanning ? t("Đang gom tag…") : t("Không còn việc nào")) : (
             <>
               {t.n(pinned ? "{n} tin đã ghim" : view === "working" ? "{n} tin đang xử lý" : "{n} tin đang chờ bạn", { n: <span className="font-mono text-base font-bold text-ink tabular-nums">{items.length}</span> })}
               {late > 0 && <span className="ml-2 font-medium text-signal-2">{t.n("({n} quá hạn)", { n: <span className="font-mono tabular-nums">{late}</span> })}</span>}
@@ -192,7 +193,7 @@ export function PendingInbox({
 
       {/* the loading scene covers the visible box from outside the scroll, so it stays centred however far the list scrolled */}
       <div className="relative flex min-h-0 flex-1 flex-col">
-      {wait && <AiFetching kind="inbox" cover />}
+      {(wait || scanning) && <AiFetching kind="inbox" cover lines={!wait && scan ? scanLines(scan) : undefined} />}
       <div ref={box} className="relative min-h-0 flex-1 overflow-y-auto bg-cotton">
         {q.isError && (
           <div role="alert" className="grid justify-items-start gap-2 px-5 py-6 text-sm">

@@ -9,7 +9,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { api, type ChatsResponse } from "@/shared/lib/api";
 import { useT } from "@/shared/lib/i18n";
-import { inQaPage, pendingQuery, QaCodes } from "@/features/telegram/lib/inbox";
+import { inQaPage, pendingQuery, QaCodes, useScan } from "@/features/telegram/lib/inbox";
 import { cn } from "@/shared/lib/utils";
 
 import { Avatar } from "@/shared/components/avatar";
@@ -74,6 +74,7 @@ export function ChatList({
   onSelect: (id: string | null) => void;
 }) {
   const t = useT();
+  const scan = useScan(); // the first scan after sign-in: an empty list is still filling
   const chats = useChats(range);
   const items = chats.data?.items ?? [];
   const pendingTotal = items.reduce((n, c) => n + c.pending_count, 0);
@@ -113,7 +114,7 @@ export function ChatList({
           </div>
         )}
         {chats.isSuccess && items.length === 0 && (
-          <p className="px-3 py-2 text-sm leading-relaxed text-ink-3">{t("Chưa có tin nào tag bạn. Tin mới sẽ hiện ở đây ngay khi có người tag.")}</p>
+          <p className="px-3 py-2 text-sm leading-relaxed text-ink-3">{t(scan ? "Đang gom tag 14 ngày qua ở mọi nhóm…" : "Chưa có tin nào tag bạn. Tin mới sẽ hiện ở đây ngay khi có người tag.")}</p>
         )}
         <ul className="zebra grid grid-cols-[minmax(0,1fr)] gap-1">
           {items.map((c) => (
